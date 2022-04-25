@@ -84,7 +84,7 @@ impl SpackRepo {
   /// # let td = tempdir::TempDir::new("spack-summon-test")?;
   /// # std::env::set_var("HOME", td.path());
   /// let spack_exe = SpackRepo::summon().await?;
-  /// let _ = File::open(&spack_exe.script_path).expect("spack summon executable should exist");
+  /// let _ = File::open(&spack_exe.script_path)?;
   /// # Ok(())
   /// # }) // async
   /// # }

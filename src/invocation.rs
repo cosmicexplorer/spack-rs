@@ -5,14 +5,17 @@
 
 use super::summoning::SpackRepo;
 
-use async_process::{Command, Stdio, Child, ChildStdout};
+use async_process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use displaydoc::Display;
+use futures_lite::future;
 use lazy_static::lazy_static;
 use regex::Regex;
 use signal_hook::consts::{signal::*, TERM_SIGNALS};
 use thiserror::Error as ThisError;
 
-use std::{collections::HashMap, io, os::unix::process::ExitStatusExt, process, str};
+use std::{
+  collections::HashMap, future::Future, io, os::unix::process::ExitStatusExt, process, str,
+};
 
 /// Things that can go wrong when detecting python.
 #[derive(Debug, Display, ThisError)]
@@ -211,34 +214,80 @@ impl Invocation {
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// use std::process::Output;
   /// use futures_lite::prelude::*;
   /// use spack::{invocation::*, summoning::SpackRepo};
   /// let python = Python::detect().await?;
   /// let spack_exe = SpackRepo::summon().await?;
   /// let spack = Invocation::create(python, spack_exe).await?;
-  /// let Streaming { child, mut stdout } = spack.clone().invoke_streaming(&["--version"])?;
+  /// let Streaming { child, mut stdout, .. } = spack.clone().invoke_streaming(&["--version"])?;
   /// let mut version: String = "".to_string();
   /// stdout.read_to_string(&mut version).await?;
   /// let version = version.strip_suffix("\n").unwrap();
   /// assert!(version == &spack.version);
-  /// let Output { status, .. } = child.output().await?;
-  /// Invocation::analyze_exit_status(&status).unwrap();
+  /// let output = child.output().await?;
+  /// Invocation::analyze_exit_status(&output.status)
+  ///   .map_err(|e| spack::Error::Invocation(spack, output, e))?;
   /// # Ok(())
   /// # }) // async
   /// # }
   ///```
   pub fn invoke_streaming(self, args: &[&str]) -> Result<Streaming, crate::Error> {
-    let mut child = self.command(args).stdout(Stdio::piped()).spawn()?;
+    let mut child = self
+      .command(args)
+      .stdout(Stdio::piped())
+      .stderr(Stdio::piped())
+      .spawn()?;
     let stdout = child.stdout.take().unwrap();
-    Ok(Streaming { child, stdout })
+    let stderr = child.stderr.take().unwrap();
+    Ok(Streaming {
+      child,
+      stdout,
+      stderr,
+    })
   }
 }
 
 /// A handle to the result of [Invocation::invoke_streaming].
 pub struct Streaming {
-  /// The live child process.
+  /// The handle to the live child process (live until [Child::output] is called).
   pub child: Child,
   /// The stdout stream, separated from the process handle.
   pub stdout: ChildStdout,
+  /// The stderr stream, separated from the process handler.
+  pub stderr: ChildStderr,
+}
+
+/// A line of either stdout or stderr from a subprocess.
+#[allow(missing_docs)]
+pub(crate) enum StdioLine {
+  Out(String),
+  Err(String),
+}
+
+impl StdioLine {
+  /// Select on both stdout and stderr, with preference given to stderr if both are ready.
+  pub fn merge_streams<F>(out: F, err: F) -> impl Future<Output = io::Result<Option<Self>>>
+  where
+    F: Future<Output = Option<io::Result<String>>>,
+  {
+    let err = async move {
+      match err.await {
+        Some(line) => match line {
+          Ok(line) => Ok(Some(StdioLine::Err(line))),
+          Err(e) => Err(e),
+        },
+        None => Ok(None),
+      }
+    };
+    let out = async move {
+      match out.await {
+        Some(line) => match line {
+          Ok(line) => Ok(Some(StdioLine::Out(line))),
+          Err(e) => Err(e),
+        },
+        None => Ok(None),
+      }
+    };
+    future::or(err, out)
+  }
 }
