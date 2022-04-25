@@ -78,17 +78,17 @@ impl Python {
 
 /// Errors that can occur when executing spack.
 #[derive(Debug, Display, ThisError)]
-pub enum SpackInvocationError {
-  /// a spack invocation exited with non-zero status {0}: {1:?}
-  NonZeroExit(i32, process::Output),
-  /// a spack invocation exited with termination signal {0} ({1}): {2:?}
-  ProcessTerminated(i32, &'static str, process::Output),
-  /// a spack invocation exited with non-termination signal {0} ({1}): {2:?}
-  ProcessKilled(i32, &'static str, process::Output),
-  /// unknown error invoking spack: {0}: {1:?}
-  UnknownError(String, process::Output),
-  /// i/o error invoking spack process: {0}: {1:?}
-  Io(#[source] io::Error, process::Output),
+pub enum InvocationError {
+  /// a spack invocation exited with non-zero status {0}
+  NonZeroExit(i32),
+  /// a spack invocation exited with termination signal {0} ({1})
+  ProcessTerminated(i32, &'static str),
+  /// a spack invocation exited with non-termination signal {0} ({1})
+  ProcessKilled(i32, &'static str),
+  /// unknown error invoking spack: {0}
+  UnknownError(String),
+  /// i/o error invoking spack process: {0}
+  Io(#[source] io::Error),
 }
 
 /// Builder for spack invocations.
@@ -117,12 +117,31 @@ lazy_static! {
 }
 
 impl SpackInvocation {
+  /// Raise an error if the process exited with any type of failure.
+  pub fn analyze_exit_status(status: &process::ExitStatus) -> Result<(), InvocationError> {
+    if let Some(code) = status.code() {
+      if code == 0 {
+        Ok(())
+      } else {
+        Err(InvocationError::NonZeroExit(code))
+      }
+    } else if let Some(signal) = status.signal() {
+      Err(if TERM_SIGNALS.contains(&signal) {
+        InvocationError::ProcessTerminated(signal, SIGNAL_NAMES.get(&signal).unwrap())
+      } else {
+        InvocationError::ProcessKilled(signal, SIGNAL_NAMES.get(&signal).unwrap())
+      })
+    } else {
+      Err(InvocationError::UnknownError(
+        "no exit code and no signal".to_string(),
+      ))
+    }
+  }
+
   /// Create an instance. You should prefer to call .clone() on the first instance you construct.
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// # let td = tempdir::TempDir::new("spack-summon-test")?;
-  /// # std::env::set_var("HOME", td.path());
   /// use spack::{invocation::{Python, SpackInvocation}, summoning::SpackRepo};
   /// let python = Python::detect().await?;
   /// let spack_exe = SpackRepo::summon().await?;
@@ -138,21 +157,18 @@ impl SpackInvocation {
       exe,
       version: "".to_string(),
     };
-    let output = this.clone().invoke(&["--version".to_string()]).await?;
+    let output = this.clone().invoke(&["--version"]).await?;
     this.version = str::from_utf8(&output.stdout)
       .map_err(|e| {
-        SpackInvocationError::UnknownError(
-          format!(
-            "could not parse utf8 from '{} {} --version' stdout ({}); received:\n{:?}",
-            PYTHON_CMD,
-            this.exe.script_path.display(),
-            &e,
-            &output.stdout,
-          ),
-          output.clone(),
-        )
+        InvocationError::UnknownError(format!(
+          "could not parse utf8 from '{} {} --version' stdout ({}); received:\n{:?}",
+          PYTHON_CMD,
+          this.exe.script_path.display(),
+          &e,
+          &output.stdout,
+        ))
       })
-      .map_err(|e| crate::Error::Spack(this.clone(), e))?
+      .map_err(|e| crate::Error::Invocation(this.clone(), output.clone(), e))?
       .strip_suffix("\n")
       .expect("expected final newline")
       .to_string();
@@ -163,57 +179,27 @@ impl SpackInvocation {
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// # let td = tempdir::TempDir::new("spack-summon-test")?;
-  /// # std::env::set_var("HOME", td.path());
   /// use std::{process::Output, str};
   /// use spack::{invocation::{Python, SpackInvocation}, summoning::SpackRepo};
   /// let python = Python::detect().await?;
   /// let spack_exe = SpackRepo::summon().await?;
   /// let spack = SpackInvocation::create(python, spack_exe).await?;
-  /// let Output { stdout, .. } = spack.clone().invoke(&["--version".to_string()]).await?;
+  /// let Output { stdout, .. } = spack.clone().invoke(&["--version"]).await?;
   /// let version = str::from_utf8(&stdout).unwrap().strip_suffix("\n").unwrap();
   /// assert!(version == &spack.version);
   /// # Ok(())
   /// # }) // async
   /// # }
   ///```
-  pub async fn invoke(self, args: &[String]) -> Result<process::Output, crate::Error> {
+  pub async fn invoke(self, args: &[&str]) -> Result<process::Output, crate::Error> {
     let output = Command::new(&self.exe.script_path)
       .current_dir(&self.exe.repo_path)
       .env("SPACK_PYTHON", PYTHON_CMD)
       .args(args)
       .output()
       .await?;
-    if let Some(code) = output.status.code() {
-      if code == 0 {
-        Ok(output)
-      } else {
-        Err(crate::Error::Spack(
-          self,
-          SpackInvocationError::NonZeroExit(code, output),
-        ))
-      }
-    } else if let Some(signal) = output.status.signal() {
-      Err(if TERM_SIGNALS.contains(&signal) {
-        crate::Error::Spack(
-          self,
-          SpackInvocationError::ProcessTerminated(
-            signal,
-            SIGNAL_NAMES.get(&signal).unwrap(),
-            output,
-          ),
-        )
-      } else {
-        crate::Error::Spack(
-          self,
-          SpackInvocationError::ProcessKilled(signal, SIGNAL_NAMES.get(&signal).unwrap(), output),
-        )
-      })
-    } else {
-      Err(crate::Error::Spack(
-        self,
-        SpackInvocationError::UnknownError("no exit code and no signal".to_string(), output),
-      ))
-    }
+    Self::analyze_exit_status(&output.status)
+      .map_err(|e| crate::Error::Invocation(self, output.clone(), e))?;
+    Ok(output)
   }
 }

@@ -39,6 +39,7 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings: */
 #![allow(clippy::mutex_atomic)]
 
+pub mod commands;
 pub mod invocation;
 pub mod summoning;
 mod utils;
@@ -47,7 +48,7 @@ use displaydoc::Display;
 use hex_literal::hex;
 use thiserror::Error;
 
-use std::io;
+use std::{io, process};
 
 const EMCC_CAPABLE_SPACK_URL: &str =
   "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.0-emcc.tar.gz";
@@ -68,9 +69,12 @@ pub enum Error {
   UnknownError(String),
   /// python detection failed: {0}
   Python(#[from] invocation::PythonError),
-  /// spack invocation {0:?} failed: {1}
-  Spack(
+  /// spack invocation {0:?} failed: {2}:\n{1:?}
+  Invocation(
     invocation::SpackInvocation,
-    #[source] invocation::SpackInvocationError,
+    process::Output,
+    #[source] invocation::InvocationError,
   ),
+  /// spack command failed: {0}
+  Command(#[from] commands::CommandError),
 }
