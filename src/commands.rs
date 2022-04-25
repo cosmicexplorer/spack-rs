@@ -3,7 +3,7 @@
 
 //! Invoking specific spack commands.
 
-use crate::invocation::SpackInvocation;
+use crate::invocation::Invocation;
 
 use displaydoc::Display;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ pub mod install {
   #[allow(missing_docs)]
   #[derive(Debug, Clone)]
   pub struct Install {
-    pub spack: SpackInvocation,
+    pub spack: Invocation,
     pub spec: CLISpec,
   }
 
@@ -61,7 +61,7 @@ pub mod install {
     /// use spack::{commands::{*, install::*}, invocation::*, summoning::*};
     /// let python = Python::detect().await?;
     /// let spack_exe = SpackRepo::summon().await?;
-    /// let spack = SpackInvocation::create(python, spack_exe).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
     /// let install = Install { spack, spec: CLISpec::new("python@3:") };
     /// let found_spec = install.install().await?;
     /// assert!(&found_spec.name == "python");
@@ -133,7 +133,7 @@ pub mod find {
   #[allow(missing_docs)]
   #[derive(Debug, Clone)]
   pub struct Find {
-    pub spack: SpackInvocation,
+    pub spack: Invocation,
     pub spec: CLISpec,
   }
 

@@ -5,7 +5,7 @@
 
 use super::summoning::SpackRepo;
 
-use async_process::Command;
+use async_process::{Command, Stdio, Child, ChildStdout};
 use displaydoc::Display;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -93,7 +93,7 @@ pub enum InvocationError {
 
 /// Builder for spack invocations.
 #[derive(Debug, Clone)]
-pub struct SpackInvocation {
+pub struct Invocation {
   /// Information about the python executable.
   pub python: Python,
   /// Information about the spack launcher script.
@@ -116,7 +116,7 @@ lazy_static! {
   ]);
 }
 
-impl SpackInvocation {
+impl Invocation {
   /// Raise an error if the process exited with any type of failure.
   pub fn analyze_exit_status(status: &process::ExitStatus) -> Result<(), InvocationError> {
     if let Some(code) = status.code() {
@@ -142,10 +142,10 @@ impl SpackInvocation {
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// use spack::{invocation::{Python, SpackInvocation}, summoning::SpackRepo};
+  /// use spack::{invocation::{Python, Invocation}, summoning::SpackRepo};
   /// let python = Python::detect().await?;
   /// let spack_exe = SpackRepo::summon().await?;
-  /// let spack = SpackInvocation::create(python, spack_exe).await?;
+  /// let spack = Invocation::create(python, spack_exe).await?;
   /// assert!(spack.version == "0.18.0.dev0".to_string());
   /// # Ok(())
   /// # }) // async
@@ -175,15 +175,24 @@ impl SpackInvocation {
     Ok(this)
   }
 
+  fn command(&self, args: &[&str]) -> Command {
+    let mut command = Command::new(&self.exe.script_path);
+    command
+      .current_dir(&self.exe.repo_path)
+      .env("SPACK_PYTHON", PYTHON_CMD)
+      .args(args);
+    command
+  }
+
   /// Invoke spack as an async process, checking if a Command exited with nonzero.
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
   /// use std::{process::Output, str};
-  /// use spack::{invocation::{Python, SpackInvocation}, summoning::SpackRepo};
+  /// use spack::{invocation::{Python, Invocation}, summoning::SpackRepo};
   /// let python = Python::detect().await?;
   /// let spack_exe = SpackRepo::summon().await?;
-  /// let spack = SpackInvocation::create(python, spack_exe).await?;
+  /// let spack = Invocation::create(python, spack_exe).await?;
   /// let Output { stdout, .. } = spack.clone().invoke(&["--version"]).await?;
   /// let version = str::from_utf8(&stdout).unwrap().strip_suffix("\n").unwrap();
   /// assert!(version == &spack.version);
@@ -192,14 +201,44 @@ impl SpackInvocation {
   /// # }
   ///```
   pub async fn invoke(self, args: &[&str]) -> Result<process::Output, crate::Error> {
-    let output = Command::new(&self.exe.script_path)
-      .current_dir(&self.exe.repo_path)
-      .env("SPACK_PYTHON", PYTHON_CMD)
-      .args(args)
-      .output()
-      .await?;
+    let output = self.command(args).output().await?;
     Self::analyze_exit_status(&output.status)
       .map_err(|e| crate::Error::Invocation(self, output.clone(), e))?;
     Ok(output)
   }
+
+  /// Invoke spack as an async process, streaming its stdout.
+  ///```
+  /// # fn main() -> Result<(), spack::Error> {
+  /// # tokio_test::block_on(async {
+  /// use std::process::Output;
+  /// use futures_lite::prelude::*;
+  /// use spack::{invocation::*, summoning::SpackRepo};
+  /// let python = Python::detect().await?;
+  /// let spack_exe = SpackRepo::summon().await?;
+  /// let spack = Invocation::create(python, spack_exe).await?;
+  /// let Streaming { child, mut stdout } = spack.clone().invoke_streaming(&["--version"])?;
+  /// let mut version: String = "".to_string();
+  /// stdout.read_to_string(&mut version).await?;
+  /// let version = version.strip_suffix("\n").unwrap();
+  /// assert!(version == &spack.version);
+  /// let Output { status, .. } = child.output().await?;
+  /// Invocation::analyze_exit_status(&status).unwrap();
+  /// # Ok(())
+  /// # }) // async
+  /// # }
+  ///```
+  pub fn invoke_streaming(self, args: &[&str]) -> Result<Streaming, crate::Error> {
+    let mut child = self.command(args).stdout(Stdio::piped()).spawn()?;
+    let stdout = child.stdout.take().unwrap();
+    Ok(Streaming { child, stdout })
+  }
+}
+
+/// A handle to the result of [Invocation::invoke_streaming].
+pub struct Streaming {
+  /// The live child process.
+  pub child: Child,
+  /// The stdout stream, separated from the process handle.
+  pub stdout: ChildStdout,
 }

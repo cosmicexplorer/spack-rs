@@ -71,7 +71,7 @@ pub enum Error {
   Python(#[from] invocation::PythonError),
   /// spack invocation {0:?} failed: {2}:\n{1:?}
   Invocation(
-    invocation::SpackInvocation,
+    invocation::Invocation,
     process::Output,
     #[source] invocation::InvocationError,
   ),
