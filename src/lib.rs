@@ -39,6 +39,7 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings: */
 #![allow(clippy::mutex_atomic)]
 
+pub mod invocation;
 pub mod summoning;
 mod utils;
 
@@ -52,6 +53,7 @@ const EMCC_CAPABLE_SPACK_URL: &str =
   "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.0-emcc.tar.gz";
 const EMCC_URL_SHA256SUM: [u8; 32] =
   hex!("64309696f958e98dcaf80f843589084559d6dda6d54f06556279a1a7be4500cf");
+const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.0-emcc";
 
 /// Errors that can occur.
 #[derive(Debug, Display, Error)]
@@ -64,4 +66,11 @@ pub enum Error {
   Checksum(&'static str, String, String),
   /// unknown error: {0}
   UnknownError(String),
+  /// python detection failed: {0}
+  Python(#[from] invocation::PythonError),
+  /// spack invocation {0:?} failed: {1}
+  Spack(
+    invocation::SpackInvocation,
+    #[source] invocation::SpackInvocationError,
+  ),
 }
