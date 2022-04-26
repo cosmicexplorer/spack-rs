@@ -120,6 +120,19 @@ impl Argv {
   pub(crate) fn as_strs(&self) -> Vec<&str> {
     self.0.iter().map(|s| s.as_ref()).collect()
   }
+
+  pub(crate) fn trailing_args(self) -> Self {
+    if self.0.is_empty() {
+      Self(vec![])
+    } else {
+      Self(
+        ["--".to_string()]
+          .into_iter()
+          .chain(self.0.into_iter())
+          .collect(),
+      )
+    }
+  }
 }
 
 /// spack invocation {invocation:?} with argv {argv:?} failed: {error}\n(output):\n{output:?}
@@ -235,6 +248,8 @@ impl Invocation {
   }
 
   fn command(&self, argv: &[&str]) -> Command {
+    dbg!(&self.exe);
+    dbg!(argv);
     let mut command = Command::new(&self.exe.script_path);
     command
       .current_dir(&self.exe.repo_path)

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
 
-use std::{fs, io, path::PathBuf, process};
+use std::{io, path::PathBuf, process};
 
 /// An (abstract *or* concrete) spec string for a command-line argument.
 ///
@@ -286,22 +286,21 @@ pub mod build_env {
 
   impl BuildEnv {
     fn dump_args(&self) -> io::Result<Vec<String>> {
-      Ok(if let Some(dump) = &self.dump {
-        vec![
-          "--dump".to_string(),
-          format!("{}", fs::canonicalize(&dump)?.display()),
-        ]
+      dbg!(self);
+      let args = if let Some(d) = &self.dump {
+        vec!["--dump".to_string(), format!("{}", d.display())]
       } else {
         vec![]
-      })
+      };
+      Ok(args)
     }
 
     /// Execute `spack build-env "$self.spec" -- $self.argv`.
     ///```
-    /// # #[allow(warnings)]
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use std::{fs, io::{self, Read, BufRead}, path::PathBuf, process};
+    /// let td = tempdir::TempDir::new("spack-summon-test")?;
+    /// use std::{fs, io::BufRead};
     /// use spack::{commands::{*, build_env::*, install::*}, invocation::*, summoning::*};
     ///
     /// // Locate all the executables.
@@ -341,7 +340,7 @@ pub mod build_env {
     /// assert!(spec_was_found);
     ///
     /// // Now let's write out the environment to a file!
-    /// let dump = PathBuf::from(".env-dump");
+    /// let dump = td.path().join(".env-dump");
     /// let build_env = BuildEnv {
     ///   spack,
     ///   spec: found_spec.hashed_spec(),
@@ -368,8 +367,8 @@ pub mod build_env {
         ["build-env".to_string()]
           .into_iter()
           .chain(self.dump_args()?.into_iter())
-          .chain([self.spec.0.to_string(), "--".to_string()].into_iter())
-          .chain(self.argv.0.into_iter())
+          .chain([self.spec.0.to_string()].into_iter())
+          .chain(self.argv.trailing_args().0.into_iter())
           .collect(),
       );
       let output = self
