@@ -106,7 +106,7 @@ pub struct Invocation {
 }
 
 /// argv=[{0:?}]
-#[derive(Debug, Display, Clone)]
+#[derive(Debug, Display, Clone, Default)]
 pub struct Argv(pub Vec<String>);
 
 impl From<&[&str]> for Argv {

@@ -3,7 +3,7 @@
 
 //! Rust wrappers for [spack](https://github.com/spack/spack). For use in [build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html).
 
-/* FIXME: remove nightly feature! */
+/* FIXME: remove nightly features! */
 #![feature(async_closure)]
 #![deny(unsafe_code)]
 /* Turn all warnings into errors! */

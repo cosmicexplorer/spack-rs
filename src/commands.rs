@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
 
-use std::process;
+use std::{fs, io, path::PathBuf, process};
 
 /// An (abstract *or* concrete) spec string for a command-line argument.
 ///
@@ -33,6 +33,8 @@ pub enum CommandError {
   Install(install::Install, #[source] install::InstallError),
   /// find error from {0:?}: {1}
   Find(find::Find, #[source] find::FindError),
+  /// build-env error from {0:?}: {1}
+  BuildEnv(build_env::BuildEnv, #[source] build_env::BuildEnvError),
 }
 
 /// Install command.
@@ -250,6 +252,132 @@ pub mod find {
           value
         ))),
       }
+    }
+  }
+}
+
+/// Build-env command.
+pub mod build_env {
+  use super::*;
+
+  /// Errors setting up the build environment.
+  #[derive(Debug, Display, Error)]
+  pub enum BuildEnvError {
+    /// {0}
+    Inner(#[source] Box<crate::Error>),
+    /// io error: {0}
+    Io(#[from] io::Error),
+  }
+
+  /// Build-env request.
+  #[derive(Debug, Clone)]
+  pub struct BuildEnv {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// Which spec to get into the environment of.
+    pub spec: CLISpec,
+    /// Optional output file for sourcing environment modifications.
+    pub dump: Option<PathBuf>,
+    /// Optional command line to evaluate within the package environment.
+    ///
+    /// If this argv is empty, the contents of the environment are printed to stdout with `env`.
+    pub argv: Argv,
+  }
+
+  impl BuildEnv {
+    fn dump_args(&self) -> io::Result<Vec<String>> {
+      Ok(if let Some(dump) = &self.dump {
+        vec![
+          "--dump".to_string(),
+          format!("{}", fs::canonicalize(&dump)?.display()),
+        ]
+      } else {
+        vec![]
+      })
+    }
+
+    /// Execute `spack build-env "$self.spec" -- $self.argv`.
+    ///```
+    /// # #[allow(warnings)]
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use std::{fs, io::{self, Read, BufRead}, path::PathBuf, process};
+    /// use spack::{commands::{*, build_env::*, install::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate all the executables.
+    /// let python = Python::detect().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
+    ///
+    /// let abstract_spec = CLISpec::new("python@3:");
+    ///
+    /// // Let's get a python 3 or later installed!
+    /// let install = Install { spack: spack.clone(), spec: abstract_spec };
+    /// let found_spec = install.clone().install().await
+    ///   .map_err(|e| CommandError::Install(install, e))?;
+    ///
+    /// // Now let's activate the build environment for it!
+    /// let build_env = BuildEnv {
+    ///   spack: spack.clone(),
+    ///   // Use the precise spec we just ensured was installed.
+    ///   spec: found_spec.hashed_spec(),
+    ///   dump: None,
+    ///   argv: Argv(vec![]),
+    /// };
+    /// // Execute build-env to get an env printed to stdout.
+    /// let output = build_env.clone().build_env().await
+    ///   .map_err(|e| CommandError::BuildEnv(build_env, e))?;
+    ///
+    /// // Example ad-hoc parsing of environment source files.
+    /// let mut spec_was_found: bool = false;
+    /// for line in output.stdout.lines() {
+    ///   let line = line?;
+    ///   if line.starts_with("SPACK_SHORT_SPEC") {
+    ///     spec_was_found = true;
+    ///     assert!("python" == &line[17..23]);
+    ///   }
+    /// }
+    /// assert!(spec_was_found);
+    ///
+    /// // Now let's write out the environment to a file!
+    /// let dump = PathBuf::from(".env-dump");
+    /// let build_env = BuildEnv {
+    ///   spack,
+    ///   spec: found_spec.hashed_spec(),
+    ///   dump: Some(dump.clone()),
+    ///   argv: Argv(vec![]),
+    /// };
+    /// // We will have written to ./.env-dump!
+    /// let _ = build_env.clone().build_env().await
+    ///   .map_err(|e| CommandError::BuildEnv(build_env, e))?;
+    /// spec_was_found = false;
+    /// for line in fs::read_to_string(&dump)?.lines() {
+    ///   if line.starts_with("SPACK_SHORT_SPEC") {
+    ///     spec_was_found = true;
+    ///     assert!("python" == &line[18..24]);
+    ///   }
+    /// }
+    /// assert!(spec_was_found);
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub async fn build_env(self) -> Result<process::Output, BuildEnvError> {
+      let argv = Argv(
+        ["build-env".to_string()]
+          .into_iter()
+          .chain(self.dump_args()?.into_iter())
+          .chain([self.spec.0.to_string(), "--".to_string()].into_iter())
+          .chain(self.argv.0.into_iter())
+          .collect(),
+      );
+      let output = self
+        .spack
+        .invoke(argv)
+        .await
+        .map_err(|e| BuildEnvError::Inner(Box::new(crate::Error::Invocation(e))))?;
+      Ok(output)
     }
   }
 }
