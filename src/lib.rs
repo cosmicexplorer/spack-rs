@@ -3,6 +3,8 @@
 
 //! Rust wrappers for [spack](https://github.com/spack/spack). For use in [build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html).
 
+/* FIXME: remove nightly feature! */
+#![feature(async_closure)]
 #![deny(unsafe_code)]
 /* Turn all warnings into errors! */
 /* #![deny(warnings)] */
@@ -48,7 +50,7 @@ use displaydoc::Display;
 use hex_literal::hex;
 use thiserror::Error;
 
-use std::{io, process};
+use std::io;
 
 const EMCC_CAPABLE_SPACK_URL: &str =
   "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.0-emcc.tar.gz";
@@ -64,17 +66,13 @@ pub enum Error {
   /// io error: {0}
   Io(#[from] io::Error),
   /// checksum error from URL {0}; expected {1}, got {2}
-  Checksum(&'static str, String, String),
+  Checksum(String, String, String),
   /// unknown error: {0}
   UnknownError(String),
   /// python detection failed: {0}
   Python(#[from] invocation::PythonError),
-  /// spack invocation {0:?} failed: {2}:\n{1:?}
-  Invocation(
-    invocation::Invocation,
-    process::Output,
-    #[source] invocation::InvocationError,
-  ),
+  /// invocation error: {0}
+  Invocation(#[from] invocation::InvocationErrorWrapper),
   /// spack command failed: {0}
   Command(#[from] commands::CommandError),
 }

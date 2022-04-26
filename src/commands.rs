@@ -3,17 +3,19 @@
 
 //! Invoking specific spack commands.
 
-use crate::invocation::{Invocation, InvocationError, StdioLine, Streaming};
+use crate::invocation::{Argv, Invocation, InvocationError, StdioLine};
 
 use displaydoc::Display;
-use futures_lite::{io::BufReader, prelude::*};
+
 use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
 
-use std::{io, process};
+use std::process;
 
-/// A spec string for a command-line argument.
+/// An (abstract *or* concrete) spec string for a command-line argument.
+///
+/// This is used in [`find::Find::find`] to resolve concrete specs from the string.
 #[derive(Debug, Clone)]
 pub struct CLISpec(pub String);
 
@@ -60,71 +62,61 @@ pub mod install {
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
     /// use spack::{commands::{*, install::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate all the executables.
     /// let python = Python::detect().await?;
-    /// let spack_exe = SpackRepo::summon().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
     /// let spack = Invocation::create(python, spack_exe).await?;
-    /// let install = Install { spack, spec: CLISpec::new("python@3:") };
-    /// let found_spec = install.install().await?;
-    /// assert!(&found_spec.name == "python");
-    /// assert!(&found_spec.version.0[..2] == "3.");
+    ///
+    /// // Install libiberty, if we don't have it already!
+    /// let install = Install { spack: spack.clone(), spec: CLISpec::new("libiberty@2.37") };
+    /// let found_spec = install.clone().install().await
+    ///   .map_err(|e| CommandError::Install(install, e))?;
+    ///
+    /// // The result matches our query!
+    /// assert!(&found_spec.name == "libiberty");
+    /// assert!(&found_spec.version.0 == "2.37");
     /// # Ok(())
     /// # }) // async
     /// # }
     ///```
-    pub async fn install(self) -> Result<FoundSpec, CommandError> {
+    pub async fn install(self) -> Result<FoundSpec, InstallError> {
       let Self { spack, spec } = self.clone();
-      let args: Vec<&str> = [
-        "install",
-        "--verbose",
-        "--fail-fast",
-        /* FIXME: determine appropriate amount of build parallelism! */
-        "-j16",
-      ]
-      .into_iter()
-      .chain([spec.0.as_ref()].into_iter())
-      .collect();
-      let Streaming {
-        child,
-        stdout,
-        stderr,
-      } = spack
-        .clone()
-        .invoke_streaming(&args)
-        .map_err(|e| CommandError::Install(self.clone(), InstallError::Inner(Box::new(e))))?;
-      /* stdout wrapping. */
-      let mut out_lines = BufReader::new(stdout).lines();
-      /* stderr wrapping. */
-      let mut err_lines = BufReader::new(stderr).lines();
+      /* Generate spack argv. */
+      let argv = Argv(
+        [
+          "install",
+          "--verbose",
+          "--fail-fast",
+          /* FIXME: determine appropriate amount of build parallelism! */
+          "-j16",
+        ]
+        .into_iter()
+        .map(|s| s.to_string())
+        .chain([spec.0.clone()].into_iter())
+        .collect(),
+      );
 
-      /* Crossing the streams!!! */
-      while let Some(line) =
-        StdioLine::merge_streams(out_lines.next().boxed(), err_lines.next().boxed())
-          .await
-          .map_err(|e| {
-            CommandError::Install(self.clone(), InstallError::Inner(Box::new(e.into())))
-          })?
-      {
-        match line {
+      /* Kick off the child process, reading its streams asynchronously. */
+      let streaming = spack
+        .clone()
+        .invoke_streaming(argv.clone())
+        .map_err(|e| InstallError::Inner(Box::new(crate::Error::Invocation(e))))?;
+      streaming
+        /* Copy over all stderr lines to our stderr, and stdout lines to our stdout. */
+        .exhaust_output_streams_and_wait::<InvocationError, _>(async move |line| match line {
           StdioLine::Err(err) => {
             eprintln!("{}", err);
+            Ok(())
           }
           StdioLine::Out(out) => {
             println!("{}", out);
+            Ok(())
           }
-        }
-      }
-
-      /* Ensure process exits successfully. */
-      child
-        .output()
-        .await
-        .map_err(|e: io::Error| InstallError::Inner(Box::new(e.into())))
-        .and_then(|output| {
-          Invocation::analyze_exit_status(&output.status).map_err(|e: InvocationError| {
-            InstallError::Inner(Box::new(crate::Error::Invocation(spack.clone(), output, e)))
-          })
         })
-        .map_err(|e: InstallError| CommandError::Install(self, e))?;
+        .await
+        .map_err(|e| InstallError::Inner(Box::new(crate::Error::Invocation(e))))?;
 
       /* Find the first match for the spec we just tried to install. */
       /* NB: this will probably immediately break if the CLI spec covers more than one concrete
@@ -134,7 +126,8 @@ pub mod install {
         .clone()
         .find()
         .await
-        .map_err(|e| CommandError::Find(find, e))?;
+        .map_err(|e| CommandError::Find(find, e))
+        .map_err(|e| InstallError::Inner(Box::new(crate::Error::from(e))))?;
       Ok(found_specs[0].clone())
     }
   }
@@ -148,7 +141,7 @@ pub struct ConcreteVersion(pub String);
 pub mod find {
   use super::*;
 
-  /// A single package's spec from running [Find::find].
+  /// A single package's spec from running [`Find::find`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
   pub struct FoundSpec {
     /// package name: {0}
@@ -163,6 +156,13 @@ pub mod find {
     /// 32-character hash uniquely identifying this spec: {0}
     pub hash: String,
     full_hash: String,
+  }
+
+  impl FoundSpec {
+    /// Get a CLI argument matching the exact spec found previously.
+    pub fn hashed_spec(&self) -> CLISpec {
+      CLISpec(format!("{}/{}", &self.name, &self.hash))
+    }
   }
 
   /// Errors finding.
@@ -189,28 +189,51 @@ pub mod find {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, find::*}, invocation::*, summoning::*};
+    /// use spack::{commands::{*, install::*, find::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate our scripts.
     /// let python = Python::detect().await?;
-    /// let spack_exe = SpackRepo::summon().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
     /// let spack = Invocation::create(python, spack_exe).await?;
-    /// let find = Find { spack, spec: CLISpec::new("python@3:") };
-    /// let found_specs = find.clone().find().await.map_err(|e| CommandError::Find(find, e))?;
+    ///
+    /// // Ensure a python is installed that is at least version 3.
+    /// let install = Install { spack: spack.clone(), spec: CLISpec::new("python@3:") };
+    /// let found_spec = install.clone().install().await
+    ///   .map_err(|e| CommandError::Install(install, e))?;
+    ///
+    /// // Look for a python spec with that exact hash.
+    /// let find = Find { spack, spec: found_spec.hashed_spec() };
+    ///
+    /// // .find() will return an array of values, which may have any length.
+    /// let found_specs = find.clone().find().await
+    ///   .map_err(|e| CommandError::Find(find, e))?;
+    ///
+    /// // We just choose the first.
     /// assert!(&found_specs[0].name == "python");
+    /// // Verify that this is the same spec as before.
+    /// assert!(&found_specs[0].hash == &found_spec.hash);
+    /// // The fields of the '--json' output of 'find'
+    /// // are deserialized into FoundSpec instances.
     /// assert!(&found_specs[0].version.0[..2] == "3.");
     /// # Ok(())
     /// # }) // async
     /// # }
     ///```
     pub async fn find(self) -> Result<Vec<FoundSpec>, FindError> {
-      let Self { spack, spec } = self;
-      let args: Vec<&str> = ["find", "--json"]
-        .into_iter()
-        .chain([spec.0.as_ref()].into_iter())
-        .collect();
+      let Self { spack, spec } = self.clone();
+      let args = Argv(
+        ["find", "--json"]
+          .into_iter()
+          .map(|s| s.to_string())
+          .chain([spec.0].into_iter())
+          .collect(),
+      );
       let process::Output { stdout, .. } = spack
-        .invoke(&args)
+        .clone()
+        .invoke(args.clone())
         .await
-        .map_err(|e| FindError::Inner(Box::new(e)))?;
+        .map_err(|e| FindError::Inner(Box::new(crate::Error::Invocation(e))))?;
       match serde_json::from_slice::<'_, serde_json::Value>(&stdout)
         .map_err(|e| FindError::Serde(format!("{:?}", &stdout), e))?
       {
