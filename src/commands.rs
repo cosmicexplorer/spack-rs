@@ -300,7 +300,7 @@ pub mod build_env {
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
     /// let td = tempdir::TempDir::new("spack-summon-test")?;
-    /// use std::{fs, io::BufRead};
+    /// use std::{fs, io::BufRead, process::Output};
     /// use spack::{commands::{*, build_env::*, install::*}, invocation::*, summoning::*};
     ///
     /// // Locate all the executables.
@@ -309,10 +309,8 @@ pub mod build_env {
     /// let spack_exe = SpackRepo::summon(cache_dir).await?;
     /// let spack = Invocation::create(python, spack_exe).await?;
     ///
-    /// let abstract_spec = CLISpec::new("python@3:");
-    ///
     /// // Let's get a python 3 or later installed!
-    /// let install = Install { spack: spack.clone(), spec: abstract_spec };
+    /// let install = Install { spack: spack.clone(), spec: CLISpec::new("python@3:") };
     /// let found_spec = install.clone().install().await
     ///   .map_err(|e| CommandError::Install(install, e))?;
     ///
@@ -339,10 +337,10 @@ pub mod build_env {
     /// }
     /// assert!(spec_was_found);
     ///
-    /// // Now let's write out the environment to a file!
+    /// // Now let's write out the environment to a file using --dump!
     /// let dump = td.path().join(".env-dump");
     /// let build_env = BuildEnv {
-    ///   spack,
+    ///   spack: spack.clone(),
     ///   spec: found_spec.hashed_spec(),
     ///   dump: Some(dump.clone()),
     ///   argv: Argv(vec![]),
@@ -358,6 +356,17 @@ pub mod build_env {
     ///   }
     /// }
     /// assert!(spec_was_found);
+    ///
+    /// // Now let's try running a command line in a build-env!
+    /// let build_env = BuildEnv {
+    ///   spack,
+    ///   spec: found_spec.hashed_spec(),
+    ///   dump: None,
+    ///   argv: ["sh", "-c", "echo $SPACK_SHORT_SPEC"].as_ref().into(),
+    /// };
+    /// let Output { stdout, .. } = build_env.clone().build_env().await
+    ///   .map_err(|e| CommandError::BuildEnv(build_env, e))?;
+    /// assert!(&stdout[..6] == b"python");
     /// # Ok(())
     /// # }) // async
     /// # }
