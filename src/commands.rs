@@ -3,7 +3,7 @@
 
 //! Invoking specific spack commands.
 
-use crate::invocation::{Argv, Invocation, InvocationError, StdioLine};
+use crate::invocation::{Argv, Invocation, InvocationError, StdioLine, Streaming};
 
 use displaydoc::Display;
 
@@ -11,7 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
 
-use std::{io, path::PathBuf, process};
+use std::{
+  io::{self, BufRead, Write},
+  path::PathBuf,
+  process,
+};
 
 /// An (abstract *or* concrete) spec string for a command-line argument.
 ///
@@ -35,6 +39,13 @@ pub enum CommandError {
   Find(find::Find, #[source] find::FindError),
   /// build-env error from {0:?}: {1}
   BuildEnv(build_env::BuildEnv, #[source] build_env::BuildEnvError),
+  /// python error from {0:?}: {1}
+  Python(python::SpackPython, #[source] python::SpackPythonError),
+  /// compiler-find error from {0:?}: {1}
+  CompilerFind(
+    compiler_find::CompilerFind,
+    #[source] compiler_find::CompilerFindError,
+  ),
 }
 
 /// Install command.
@@ -386,6 +397,255 @@ pub mod build_env {
         .await
         .map_err(|e| BuildEnvError::Inner(Box::new(crate::Error::Invocation(e))))?;
       Ok(output)
+    }
+  }
+}
+
+/// spack python command.
+pub mod python {
+  use super::*;
+
+  use tempfile::{NamedTempFile, TempPath};
+
+  use std::path::Path;
+
+  /// Errors executing spack's python interpreter.
+  #[derive(Debug, Display, Error)]
+  pub enum SpackPythonError {
+    /// {0}
+    Inner(#[source] Box<crate::Error>),
+    /// io error {0}
+    Io(#[from] io::Error),
+  }
+
+  /// spack python command request.
+  #[derive(Debug, Clone)]
+  pub struct SpackPython {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// The contents of the python script to execute.
+    pub script: String,
+    /// Further command-line args to pass to the python script.
+    pub argv: Argv,
+  }
+
+  impl SpackPython {
+    fn setup_command(script: String, argv: Argv) -> io::Result<(TempPath, Argv)> {
+      /* Create the script. */
+      let script_path = {
+        let (mut script_file, script_path) = NamedTempFile::new()?.into_parts();
+        script_file.write_all(script.as_bytes())?;
+        script_file.sync_all()?;
+        script_path
+      };
+
+      /* Craft the command line. */
+      let script_path_ref: &Path = script_path.as_ref();
+      let argv = Argv(
+        [
+          "python".to_string(),
+          format!("{}", script_path_ref.display()),
+        ]
+        .into_iter()
+        .chain(argv.as_strs().into_iter().map(|s| s.to_string()))
+        .collect(),
+      );
+
+      Ok((script_path, argv))
+    }
+
+    /// Execute `spack python <$self.script $self.argv`.
+    ///
+    /// See [`Invocation::invoke`].
+    ///```
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use std::{process::Output, str};
+    /// use spack::{commands::{*, python::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate executable scripts.
+    /// let python = Python::detect().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
+    ///
+    /// // Create python execution request.
+    /// let spack_python = SpackPython {
+    ///   spack: spack.clone(),
+    ///   script: "import spack; print(spack.__version__)".to_string(),
+    ///   argv: Argv(vec![]),
+    /// };
+    ///
+    /// // Spawn the child process and wait for it to end.
+    /// let Output { stdout, .. } = spack_python.clone().invoke().await
+    ///   .map_err(|e| CommandError::Python(spack_python, e))?;
+    /// // Parse stdout into utf8...
+    /// let version = str::from_utf8(&stdout).unwrap()
+    ///   // ...and strip the trailing newline...
+    ///   .strip_suffix("\n").unwrap();
+    /// // ...to verify it matches `spack.version`.
+    /// assert!(version == &spack.version);
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub async fn invoke(self) -> Result<process::Output, SpackPythonError> {
+      let Self {
+        spack,
+        script,
+        argv,
+      } = self;
+
+      let (_script_path, argv) = Self::setup_command(script, argv)?;
+      let output = spack
+        .invoke(argv)
+        .await
+        .map_err(|e| SpackPythonError::Inner(Box::new(crate::Error::Invocation(e))))?;
+      Ok(output)
+    }
+
+    /// Execute `spack python <$self.script $self.argv` and stream its output.
+    ///
+    /// See [`Invocation::invoke_streaming`].
+    ///```
+    /// #[allow(warnings)]
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use futures_lite::prelude::*;
+    /// use spack::{commands::{*, python::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate executable scripts.
+    /// let python = Python::detect().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
+    ///
+    /// // Create python execution request.
+    /// let spack_python = SpackPython {
+    ///   spack: spack.clone(),
+    ///   script: "import spack; print(spack.__version__)".to_string(),
+    ///   argv: Argv(vec![]),
+    /// };
+    ///
+    /// // Spawn the child process and wait for it to end.
+    /// let Streaming { child, mut stdout, .. } = spack_python.clone().invoke_streaming()
+    ///   .map_err(|e| CommandError::Python(spack_python, e))?;
+    ///
+    /// // Slurp stdout all at once into a string.
+    /// let mut version: String = "".to_string();
+    /// stdout.read_to_string(&mut version).await?;
+    /// // Parse the spack version from stdout, and verify it matches `spack.version`.
+    /// let version = version.strip_suffix("\n").unwrap();
+    /// assert!(version == &spack.version);
+    ///
+    /// // Now verify the process exited successfully.
+    /// let output = child.output().await?;
+    /// spack.analyze_exit_status(Argv(vec![]), output)?;
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub fn invoke_streaming(self) -> Result<Streaming, SpackPythonError> {
+      let Self {
+        spack,
+        script,
+        argv,
+      } = self;
+
+      let (script_path, argv) = Self::setup_command(script, argv)?;
+      /* FIXME: We don't ever delete the script! */
+      script_path.keep().unwrap();
+      let streaming = spack
+        .invoke_streaming(argv)
+        .map_err(|e| SpackPythonError::Inner(Box::new(crate::Error::Invocation(e))))?;
+      Ok(streaming)
+    }
+  }
+}
+
+/// Compiler-find command.
+pub mod compiler_find {
+  use super::*;
+
+  /// Errors locating a compiler.
+  #[derive(Debug, Display, Error)]
+  pub enum CompilerFindError {
+    /// {0}
+    Inner(#[source] Box<crate::Error>),
+    /// io error {0}
+    Io(#[from] io::Error),
+  }
+
+  /// Compiler-find request.
+  #[derive(Debug, Clone)]
+  pub struct CompilerFind {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// Paths to search for compilers in.
+    pub paths: Vec<PathBuf>,
+  }
+
+  /// A compiler found by [CompilerFind::compiler_find].
+  pub struct FoundCompiler {
+    /// The compiler spec for the found compiler.
+    pub spec: String,
+  }
+
+  const COMPILER_SPEC_SOURCE: &str = include_str!("compiler-find.py");
+
+  impl CompilerFind {
+    /// Run `spack compiler find $self.paths`.
+    ///```
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use spack::{commands::{*, compiler_find::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate all the executables.
+    /// let python = Python::detect().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
+    ///
+    /// // Create compiler-find execution request.
+    /// let compiler_find = CompilerFind {
+    ///   spack: spack.clone(),
+    ///   paths: vec![],
+    /// };
+    /// let found_compilers = compiler_find.clone().compiler_find().await
+    ///   .map_err(|e| CommandError::CompilerFind(compiler_find, e))?;
+    /// // The first compiler on the list is clang!
+    /// assert!(found_compilers[0].spec.starts_with("clang"));
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub async fn compiler_find(self) -> Result<Vec<FoundCompiler>, CompilerFindError> {
+      let Self { spack, paths } = self.clone();
+
+      let python = python::SpackPython {
+        spack: spack.clone(),
+        script: COMPILER_SPEC_SOURCE.to_string(),
+        argv: Argv(
+          paths
+            .into_iter()
+            .map(|p| format!("{}", p.display()))
+            .collect(),
+        ),
+      };
+      let output = python
+        .clone()
+        .invoke()
+        .await
+        .map_err(|e| CommandError::Python(python, e))
+        .map_err(|e| CompilerFindError::Inner(Box::new(e.into())))?;
+
+      let mut compilers = Vec::new();
+      for line in output.stdout.lines() {
+        compilers.push(FoundCompiler {
+          spec: line?.to_string(),
+        });
+      }
+      Ok(compilers)
     }
   }
 }
