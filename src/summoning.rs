@@ -3,19 +3,34 @@
 
 //! Get a copy of spack.
 
-use crate::{utils, Error};
+use crate::utils;
 
+use displaydoc::Display;
 use flate2::read::GzDecoder;
 use hex::ToHex;
 use reqwest;
 use sha2::{Digest, Sha256};
 use tar;
+use thiserror::Error;
 
 use std::{
   env, fs,
   io::{self, Read, Write},
   path::{Path, PathBuf},
 };
+
+/// Errors that can occur while summoning.
+#[derive(Debug, Display, Error)]
+pub enum SummoningError {
+  /// reqwest error: {0}
+  Http(#[from] reqwest::Error),
+  /// i/o error: {0}
+  Io(#[from] io::Error),
+  /// checksum error from URL {0}; expected {1}, got {2}
+  Checksum(String, String, String),
+  /// unknown error: {0}
+  UnknownError(String),
+}
 
 /// Base directory for cached spack installs.
 #[derive(Clone, Debug)]
@@ -27,7 +42,7 @@ impl CacheDir {
   /// Goes to `~/.spack/summonings`.
   ///
   /// Name intentionally chosen to be overridden later after upstreaming to spack (?).
-  pub fn get_or_create() -> Result<Self, Error> {
+  pub fn get_or_create() -> Result<Self, SummoningError> {
     let path = PathBuf::from(env::var("HOME").expect("$HOME should always be defined!"))
       .join(".spack")
       .join("summonings");
@@ -79,11 +94,11 @@ impl SpackTarball {
     self.downloaded_location.as_ref()
   }
 
-  pub fn unzip(self, cache_dir: CacheDir) -> Result<Option<()>, Error> {
+  pub fn unzip(self, cache_dir: CacheDir) -> Result<Option<()>, SummoningError> {
     SpackRepo::unzip_archive(self.downloaded_path(), &cache_dir.unpacking_path())
   }
 
-  pub async fn fetch_spack_tarball(cache_dir: CacheDir) -> Result<Self, Error> {
+  pub async fn fetch_spack_tarball(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let tgz_path = cache_dir.tarball_path();
 
     match fs::File::open(&tgz_path) {
@@ -99,7 +114,7 @@ impl SpackTarball {
             downloaded_location: tgz_path,
           })
         } else {
-          Err(Error::Checksum(
+          Err(SummoningError::Checksum(
             format!("file://{}", tgz_path.display()),
             crate::EMCC_URL_SHA256SUM.encode_hex(),
             checksum.encode_hex(),
@@ -121,7 +136,7 @@ impl SpackTarball {
             downloaded_location: tgz_path,
           })
         } else {
-          Err(Error::Checksum(
+          Err(SummoningError::Checksum(
             crate::EMCC_CAPABLE_SPACK_URL.to_string(),
             crate::EMCC_URL_SHA256SUM.encode_hex(),
             checksum.encode_hex(),
@@ -143,7 +158,7 @@ pub struct SpackRepo {
 }
 
 impl SpackRepo {
-  pub(crate) fn unzip_archive(from: &Path, into: &Path) -> Result<Option<()>, Error> {
+  pub(crate) fn unzip_archive(from: &Path, into: &Path) -> Result<Option<()>, SummoningError> {
     match fs::File::open(from) {
       Ok(tgz) => {
         let gz_decoded = GzDecoder::new(tgz);
@@ -155,13 +170,13 @@ impl SpackRepo {
     }
   }
 
-  fn unzip_spack_archive(cache_dir: CacheDir) -> Result<Option<()>, Error> {
+  fn unzip_spack_archive(cache_dir: CacheDir) -> Result<Option<()>, SummoningError> {
     let from = cache_dir.tarball_path();
     let into = cache_dir.unpacking_path();
     Self::unzip_archive(&from, &into)
   }
 
-  fn get_spack_script(cache_dir: CacheDir) -> Result<Self, Error> {
+  fn get_spack_script(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let path = cache_dir.spack_script();
     let _ = fs::File::open(&path)?;
     Ok(Self {
@@ -174,8 +189,6 @@ impl SpackRepo {
   ///
   /// If necessary, download the release tarball, validate its checksum, then expand the
   /// tarball. Return the path to the spack root directory.
-  ///
-  ///
   ///```
   /// use spack::summoning::*;
   /// use std::fs::File;
@@ -183,14 +196,14 @@ impl SpackRepo {
   /// # tokio_test::block_on(async {
   /// # let td = tempdir::TempDir::new("spack-summon-test")?;
   /// # std::env::set_var("HOME", td.path());
-  /// let cache_dir = CacheDir::get_or_create()?;
-  /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+  /// let cache_dir = CacheDir::get_or_create().unwrap();
+  /// let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
   /// let _ = File::open(&spack_exe.script_path)?;
   /// # Ok(())
   /// # }) // async
   /// # }
   ///```
-  pub async fn summon(cache_dir: CacheDir) -> Result<Self, Error> {
+  pub async fn summon(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let current_link_path = cache_dir.unpacking_path();
 
     let () = match fs::read_dir(current_link_path) {
@@ -205,7 +218,7 @@ impl SpackRepo {
             let spack_tarball = SpackTarball::fetch_spack_tarball(cache_dir.clone()).await?;
             /* (3.1) After fetching it, we need to try extracting it again. */
             spack_tarball.unzip(cache_dir.clone())?.ok_or_else(|| {
-              Error::UnknownError(format!("unzipping archive at {:?} failed!", &cache_dir))
+              SummoningError::UnknownError(format!("unzipping archive at {:?} failed!", &cache_dir))
             })
           }
         }

@@ -3,8 +3,6 @@
 
 //! Rust wrappers for [spack](https://github.com/spack/spack). For use in [build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html).
 
-/* FIXME: remove nightly features! */
-#![feature(async_closure)]
 #![deny(unsafe_code)]
 /* Turn all warnings into errors! */
 /* #![deny(warnings)] */
@@ -53,26 +51,21 @@ use thiserror::Error;
 use std::io;
 
 const EMCC_CAPABLE_SPACK_URL: &str =
-  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.0-emcc.tar.gz";
+  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.1-emcc.tar.gz";
 const EMCC_URL_SHA256SUM: [u8; 32] =
-  hex!("64309696f958e98dcaf80f843589084559d6dda6d54f06556279a1a7be4500cf");
-const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.0-emcc";
+  hex!("3877704f9bdbdda72d0db9f62e5d337bc63b06c3657beaff04988ae7a9f3d0a2");
+const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.1-emcc";
 
 /// Errors that can occur.
 #[derive(Debug, Display, Error)]
 pub enum Error {
-  /// reqwest error: {0}
-  Http(#[from] reqwest::Error),
   /// io error: {0}
   Io(#[from] io::Error),
-  /// checksum error from URL {0}; expected {1}, got {2}
-  Checksum(String, String, String),
-  /// unknown error: {0}
-  UnknownError(String),
-  /// python detection failed: {0}
-  Python(#[from] invocation::PythonError),
-  /// invocation error: {0}
-  Invocation(#[from] invocation::InvocationErrorWrapper),
+  /* FIXME: there should be a bigger distinction between these two cases! */
+  /// spack command line failed: {0}
+  Command(#[from] invocation::command::CommandErrorWrapper),
   /// spack command failed: {0}
-  Command(#[from] commands::CommandError),
+  SpackCommand(#[from] commands::CommandError),
+  /// invocation error: {0}
+  Invocation(#[from] invocation::spack::InvocationError),
 }
