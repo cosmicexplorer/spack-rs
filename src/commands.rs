@@ -3,7 +3,9 @@
 
 //! Invoking specific spack commands.
 
-use crate::invocation::{Argv, Invocation, InvocationError, StdioLine, Streaming};
+use crate::invocation::{
+  Argv, Invocation, InvocationError, InvocationErrorWrapper, StdioLine, Streaming,
+};
 
 use displaydoc::Display;
 
@@ -17,10 +19,12 @@ use std::{
   process,
 };
 
-/// An (abstract *or* concrete) spec string for a command-line argument.
+/// {0}
 ///
-/// This is used in [`find::Find::find`] to resolve concrete specs from the string.
-#[derive(Debug, Clone)]
+/// An (abstract *or* concrete) spec string for a command-line argument. This is used in
+/// [`find::Find::find`] to resolve concrete specs from the string.
+#[derive(Debug, Display, Clone)]
+#[ignore_extra_doc_attributes]
 pub struct CLISpec(pub String);
 
 impl CLISpec {
@@ -96,6 +100,17 @@ pub mod install {
     ///```
     pub async fn install(self) -> Result<FoundSpec, InstallError> {
       let Self { spack, spec } = self.clone();
+
+      /* Check if the spec already exists. */
+      let cached_find = Find {
+        spack: spack.clone(),
+        spec: spec.clone(),
+      };
+      /* FIXME: ensure we have a test for both cached and uncached!!! */
+      if let Ok(found_specs) = cached_find.find().await {
+        return Ok(found_specs[0].clone());
+      }
+
       /* Generate spack argv. */
       let argv = Argv(
         [
@@ -153,6 +168,11 @@ pub struct ConcreteVersion(pub String);
 /// Find command.
 pub mod find {
   use super::*;
+
+  use lazy_static::lazy_static;
+  use regex::Regex;
+
+  use std::str;
 
   /// A single package's spec from running [`Find::find`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
@@ -222,7 +242,7 @@ pub mod find {
     /// let found_specs = find.clone().find().await
     ///   .map_err(|e| CommandError::Find(find, e))?;
     ///
-    /// // We just choose the first.
+    /// // Here, we just check the first of the found specs.
     /// assert!(&found_specs[0].name == "python");
     /// // Verify that this is the same spec as before.
     /// assert!(&found_specs[0].hash == &found_spec.hash);
@@ -242,6 +262,7 @@ pub mod find {
           .chain([spec.0].into_iter())
           .collect(),
       );
+
       let process::Output { stdout, .. } = spack
         .clone()
         .invoke(args.clone())
@@ -262,6 +283,70 @@ pub mod find {
           "unable to parse find output: {:?}",
           value
         ))),
+      }
+    }
+
+    /// Execute `spack find -p "$self.spec"`.
+    ///```
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use std::fs;
+    /// use spack::{commands::{*, install::*, find::*}, invocation::*, summoning::*};
+    ///
+    /// // Locate our scripts.
+    /// let python = Python::detect().await?;
+    /// let cache_dir = CacheDir::get_or_create()?;
+    /// let spack_exe = SpackRepo::summon(cache_dir).await?;
+    /// let spack = Invocation::create(python, spack_exe).await?;
+    ///
+    /// // Ensure a python is installed that is at least version 3.
+    /// let install = Install { spack: spack.clone(), spec: CLISpec::new("python@3:") };
+    /// let found_spec = install.clone().install().await
+    ///   .map_err(|e| CommandError::Install(install, e))?;
+    ///
+    /// // Look for a python spec with that exact hash.
+    /// let find = Find { spack, spec: found_spec.hashed_spec() };
+    ///
+    /// // .find_prefix() will return the spec's prefix root wrapped in an Option.
+    /// let python_prefix = find.clone().find_prefix().await
+    ///   .map_err(|e| CommandError::Find(find, e))?.unwrap();
+    ///
+    /// // Verify that this prefix contains the python3 executable.
+    /// let python3_exe = python_prefix.join("bin").join("python3");
+    /// assert!(fs::File::open(python3_exe).is_ok());
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub async fn find_prefix(self) -> Result<Option<PathBuf>, FindError> {
+      let Self { spack, spec } = self.clone();
+      let args = Argv(
+        ["find", "--no-groups", "-p", spec.0.as_ref()]
+          .map(|s| s.to_string())
+          .into_iter()
+          .collect(),
+      );
+
+      match spack.clone().invoke(args.clone()).await {
+        Ok(process::Output { stdout, .. }) => {
+          lazy_static! {
+            static ref FIND_PREFIX_REGEX: Regex =
+              Regex::new(r"^([^@]+)@([^ ]+) +([^ ].*)\n$").unwrap();
+          }
+          let stdout = str::from_utf8(&stdout).unwrap();
+          let m = FIND_PREFIX_REGEX.captures(&stdout).unwrap();
+          let name = m.get(1).unwrap().as_str();
+          /* FIXME: this method should be using a custom `spack python` script!! */
+          assert!(spec.0.starts_with(name));
+          let prefix: PathBuf = m.get(3).unwrap().as_str().into();
+          Ok(Some(prefix))
+        }
+        Err(InvocationErrorWrapper {
+          output: Some(process::Output { stdout, .. }),
+          error: InvocationError::NonZeroExit(1),
+          ..
+        }) if stdout.starts_with(b"==> No package matches") => Ok(None),
+        Err(e) => Err(FindError::Inner(Box::new(crate::Error::Invocation(e)))),
       }
     }
   }
@@ -587,8 +672,19 @@ pub mod compiler_find {
 
   /// A compiler found by [CompilerFind::compiler_find].
   pub struct FoundCompiler {
+    spec: String,
+  }
+
+  impl FoundCompiler {
+    /// Wrap the output of a custom script for [`CompilerFind::compiler_find`].
+    pub fn new(spec: String) -> Self {
+      Self { spec }
+    }
+
     /// The compiler spec for the found compiler.
-    pub spec: String,
+    pub fn compiler_spec(&self) -> &str {
+      self.spec.as_ref()
+    }
   }
 
   const COMPILER_SPEC_SOURCE: &str = include_str!("compiler-find.py");
@@ -614,7 +710,7 @@ pub mod compiler_find {
     /// let found_compilers = compiler_find.clone().compiler_find().await
     ///   .map_err(|e| CommandError::CompilerFind(compiler_find, e))?;
     /// // The first compiler on the list is clang!
-    /// assert!(found_compilers[0].spec.starts_with("clang"));
+    /// assert!(found_compilers[0].compiler_spec().starts_with("clang"));
     /// # Ok(())
     /// # }) // async
     /// # }
