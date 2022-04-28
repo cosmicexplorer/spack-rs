@@ -370,7 +370,7 @@ pub mod install {
   use super::{find::*, *};
   use crate::invocation::{
     command::{self, stream::Streamable, CommandBase},
-    spack,
+    env, spack,
   };
 
   /// Errors installing.
@@ -485,7 +485,6 @@ pub mod install {
     /// # }
     ///```
     pub async fn install(self) -> Result<(), InstallError> {
-      let Self { spack, spec } = self.clone();
       let command = self.hydrate_command(
         [
           "--verbose",
@@ -498,6 +497,26 @@ pub mod install {
       )?;
 
       /* Kick off the child process, reading its streams asynchronously. */
+      let streaming = command.invoke_streaming()?;
+      streaming.wait().await?;
+
+      Ok(())
+    }
+
+    pub async fn install_with_env(
+      self,
+      load_env: env::LoadEnvironment,
+    ) -> Result<(), InstallError> {
+      let Self { spack, spec } = self;
+      let env_inv = env::EnvInvocation {
+        inner: spack,
+        load_env,
+      };
+      let command = env_inv.hydrate_command(
+        ["install", "--verbose", "--fail-fast", "-j16", &spec.0]
+          .as_ref()
+          .into(),
+      )?;
       let streaming = command.invoke_streaming()?;
       streaming.wait().await?;
 
