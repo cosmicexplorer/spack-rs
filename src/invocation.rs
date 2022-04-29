@@ -93,10 +93,27 @@ pub mod command {
   ///```
   #[derive(Debug, Clone)]
   pub struct Command {
+    /// Executable name, which may be absolute or relative to `$PATH` entries.
     pub exe: PathBuf,
+    /// The working directory for the child process; otherwise, the working directory is inherited
+    /// from the parent process.
     pub wd: Option<PathBuf>,
+    /// Arguments to pass to the executable. These should *not* be quoted at all.
     pub argv: Argv,
+    /// Any extra environment variables to set within the child process. The environment is
+    /// otherwise inherited from the parent.
     pub env: HashMap<String, String>,
+  }
+
+  impl Default for Command {
+    fn default() -> Self {
+      Self {
+        exe: PathBuf::from(""),
+        wd: None,
+        argv: Argv::empty(),
+        env: HashMap::new(),
+      }
+    }
   }
 
   impl Command {
@@ -115,22 +132,25 @@ pub mod command {
     }
   }
 
+  /// Declare higher-level operations which desugar to command lines by implementing this trait.
   pub trait CommandBase {
+    /// Given a list of positional arguments, generate a command line which may or may not
+    /// incorporate those additional arguments.
     fn hydrate_command(self, argv: Argv) -> Result<Command, CommandErrorWrapper>;
   }
 
-  /// Errors that can occur when executing spack.
+  /// Errors that can occur when executing command lines.
   #[derive(Debug, Display, Error)]
   pub enum CommandError {
-    /// a spack invocation exited with non-zero status {0}
+    /// a command line exited with non-zero status {0}
     NonZeroExit(i32),
-    /// a spack invocation exited with termination signal {0} ({1})
+    /// a command line exited with termination signal {0} ({1})
     ProcessTerminated(i32, &'static str),
-    /// a spack invocation exited with non-termination signal {0} ({1})
+    /// a command line exited with non-termination signal {0} ({1})
     ProcessKilled(i32, &'static str),
-    /// unknown error invoking spack: {0}
+    /// unknown error from command line: {0}
     UnknownError(String),
-    /// i/o error invoking spack process: {0}
+    /// i/o error invoking command line: {0}
     Io(#[from] io::Error),
   }
 

@@ -1,7 +1,10 @@
 /* Copyright 2022 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
-//! Rust wrappers for [spack](https://github.com/spack/spack). For use in [build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html).
+//! Rust wrappers for [`spack`]. For use in [build scripts].
+//!
+//! [`spack`]: https://github.com/spack/spack
+//! [build scripts]: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
 #![deny(unsafe_code)]
 /* Turn all warnings into errors! */
@@ -42,7 +45,11 @@
 pub mod commands;
 pub mod invocation;
 pub mod summoning;
-mod utils;
+pub mod utils;
+pub mod wasm;
+
+pub use invocation::{command, spack::Invocation};
+pub use utils::ensure_prefix;
 
 use displaydoc::Display;
 use hex_literal::hex;

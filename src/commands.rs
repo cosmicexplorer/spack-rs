@@ -22,6 +22,12 @@ use std::{
 #[ignore_extra_doc_attributes]
 pub struct CLISpec(pub String);
 
+impl From<&str> for CLISpec {
+  fn from(value: &str) -> Self {
+    Self(value.to_string())
+  }
+}
+
 impl CLISpec {
   /// Construct a cli spec from a [str].
   pub fn new<R: AsRef<str>>(r: R) -> Self {
@@ -503,6 +509,9 @@ pub mod install {
       Ok(())
     }
 
+    /// Do [`Self::install`], but after sourcing the contents of `load_env`.
+    ///
+    /// FIXME: DOCUMENT AND TEST!!
     pub async fn install_with_env(
       self,
       load_env: env::LoadEnvironment,
