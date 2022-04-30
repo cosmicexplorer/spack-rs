@@ -4,9 +4,6 @@
 //! Invoking specific spack commands.
 
 use displaydoc::Display;
-
-use serde::{Deserialize, Serialize};
-use serde_json;
 use thiserror::Error;
 
 use std::{
@@ -38,6 +35,9 @@ impl CLISpec {
 /// Errors executing spack commands.
 #[derive(Debug, Display, Error)]
 pub enum CommandError {
+  /* FIXME: make pub trait ConfigCommand(.as_config() -> Config) to have only one error per command type!! */
+  /// config error from {0:?}: {1}
+  ConfigGetCompilers(config::GetCompilers, #[source] config::ConfigError),
   /// find error from {0:?}: {1}
   Find(find::Find, #[source] find::FindError),
   /// find prefix error from {0:?}: {1}
@@ -53,22 +53,220 @@ pub enum CommandError {
     compiler_find::CompilerFind,
     #[source] compiler_find::CompilerFindError,
   ),
+  /// find compiler specs error from {0:?}: {1}
+  FindCompilerSpecs(
+    compiler_find::FindCompilerSpecs,
+    #[source] compiler_find::CompilerFindError,
+  ),
+}
+
+pub mod config {
+  use super::*;
+  use crate::{
+    invocation::command::{
+      self,
+      sync::{Output, SyncInvocable},
+      CommandBase,
+    },
+    Invocation,
+  };
+
+  use lazy_static::lazy_static;
+  use serde::{Deserialize, Serialize};
+  use serde_yaml;
+
+  use std::fmt::Debug;
+
+  /// Errors manipulating config.
+  #[derive(Debug, Display, Error)]
+  pub enum ConfigError {
+    /// command error: {0}
+    Command(#[from] command::CommandErrorWrapper),
+    /// yaml error {0}
+    Yaml(#[from] serde_yaml::Error),
+    /// error manipulating yaml object {0}: {1}
+    YamlManipulation(String, &'static str),
+  }
+
+  impl ConfigError {
+    pub fn yaml_manipulation<D: Debug>(yaml_source: D, msg: &'static str) -> Self {
+      Self::YamlManipulation(format!("{:?}", yaml_source), msg)
+    }
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct Config {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// The scope to request the config be drawn from.
+    pub scope: Option<String>,
+  }
+
+  impl CommandBase for Config {
+    fn hydrate_command(
+      self,
+      argv: command::Argv,
+    ) -> Result<command::Command, command::CommandErrorWrapper> {
+      let Self { spack, scope } = self;
+      let scope_args = if let Some(scope) = &scope {
+        vec!["--scope", scope]
+      } else {
+        vec![]
+      };
+      let argv = command::Argv(
+        ["config"]
+          .into_iter()
+          .chain(scope_args.into_iter())
+          .map(|s| s.to_string())
+          .chain(argv.0.into_iter())
+          .collect(),
+      );
+      Ok(spack.hydrate_command(argv)?)
+    }
+  }
+
+  /// Request to execute `spack config get "$self.section"` and parse the YAML output.
+  #[derive(Debug, Clone)]
+  struct Get {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// The scope to request the config be drawn from.
+    pub scope: Option<String>,
+    /// Section name to print.
+    pub section: String,
+  }
+
+  impl CommandBase for Get {
+    fn hydrate_command(
+      self,
+      argv: command::Argv,
+    ) -> Result<command::Command, command::CommandErrorWrapper> {
+      /* We do not accept any additional arguments for this command! */
+      argv.drop_empty();
+      let Self {
+        spack,
+        scope,
+        section,
+      } = self;
+      let args: command::Argv = ["get", &section].as_ref().into();
+      Ok(Config { spack, scope }.hydrate_command(args)?)
+    }
+  }
+
+  /// Paths to specific executables this compiler owns.
+  #[derive(Debug, Display, Serialize, Deserialize, Clone)]
+  pub struct CompilerPaths {
+    /// Path to the C compiler.
+    pub cc: Option<PathBuf>,
+    /// Path to the C++ compiler.
+    pub cxx: Option<PathBuf>,
+    /// Path to the FORTRAN 77 compiler.
+    pub f77: Option<PathBuf>,
+    /// Path to the fortran 90 compiler.
+    pub fc: Option<PathBuf>,
+  }
+
+  /// A single compiler's spec from running [`GetCompilers::get_compilers`].
+  #[derive(Debug, Display, Serialize, Deserialize, Clone)]
+  pub struct CompilerSpec {
+    /// Spec string that can be used to select the given compiler after a `%` in a [`CLISpec`].
+    pub spec: String,
+    /// Paths which could be located for this compiler.
+    pub paths: CompilerPaths,
+    flags: serde_yaml::Value,
+    operating_system: String,
+    target: String,
+    modules: serde_yaml::Value,
+    environment: serde_yaml::Value,
+    extra_rpaths: serde_yaml::Value,
+  }
+
+  /// Request to execute `spack config get compilers` and parse the YAML output.
+  #[derive(Debug, Clone)]
+  pub struct GetCompilers {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// The scope to request the config be drawn from.
+    pub scope: Option<String>,
+  }
+
+  impl CommandBase for GetCompilers {
+    fn hydrate_command(
+      self,
+      argv: command::Argv,
+    ) -> Result<command::Command, command::CommandErrorWrapper> {
+      let Self { spack, scope } = self;
+      Ok(
+        Get {
+          spack,
+          scope,
+          section: "compilers".to_string(),
+        }
+        .hydrate_command(argv)?,
+      )
+    }
+  }
+
+  impl GetCompilers {
+    pub async fn get_compilers(self) -> Result<Vec<CompilerSpec>, ConfigError> {
+      let command = self.hydrate_command(command::Argv::empty())?;
+      let Output { stdout } = command.invoke().await?;
+
+      let top_level: serde_yaml::Value = serde_yaml::from_slice(&stdout)?;
+      lazy_static! {
+        static ref TOP_LEVEL_KEY: serde_yaml::Value =
+          serde_yaml::Value::String("compilers".to_string());
+        static ref SECOND_KEY: serde_yaml::Value =
+          serde_yaml::Value::String("compiler".to_string());
+      }
+      let compiler_objects: Vec<&serde_yaml::Value> = top_level
+        .as_mapping()
+        .and_then(|m| m.get(&TOP_LEVEL_KEY))
+        .and_then(|c| c.as_sequence())
+        .ok_or_else(|| {
+          ConfigError::yaml_manipulation(
+            &top_level,
+            "expected top-level YAML to be a mapping with key 'compilers'",
+          )
+        })?
+        .iter()
+        .map(|o| {
+          o.as_mapping()
+            .and_then(|c| c.get(&SECOND_KEY))
+            .ok_or_else(|| {
+              ConfigError::yaml_manipulation(
+                o,
+                "expected 'compilers' entries to be mappings with key 'compiler'",
+              )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+      let compiler_specs: Vec<CompilerSpec> = compiler_objects
+        .into_iter()
+        .map(|v| serde_yaml::from_value(v.clone()))
+        .collect::<Result<Vec<CompilerSpec>, _>>()?;
+
+      Ok(compiler_specs)
+    }
+  }
 }
 
 /// Find command.
 pub mod find {
   use super::*;
-  use crate::invocation::{
-    command::{
+  use crate::{
+    invocation::command::{
       self,
       sync::{Output, SyncInvocable},
       CommandBase,
     },
-    spack,
+    Invocation,
   };
 
   use lazy_static::lazy_static;
   use regex::Regex;
+  use serde::{Deserialize, Serialize};
+  use serde_json;
 
   use std::str;
 
@@ -103,21 +301,20 @@ pub mod find {
   /// Errors finding.
   #[derive(Debug, Display, Error)]
   pub enum FindError {
-    /// spack invocation error {0}
-    Invocation(#[from] spack::InvocationError),
+    /// command line error {0}
+    Command(#[from] command::CommandErrorWrapper),
     /// installation error {0}
     Install(#[from] install::InstallError),
-    /// json error {0}: {1}
-    Serde(String, #[source] serde_json::Error),
+    /// json error {0}
+    Json(#[from] serde_json::Error),
     /// unknown error: {0}
     Unknown(String),
   }
 
   /// Find request.
-  #[allow(missing_docs)]
   #[derive(Debug, Clone)]
   pub struct Find {
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     pub spec: CLISpec,
   }
 
@@ -144,7 +341,7 @@ pub mod find {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*, find::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, install::*, find::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await?;
@@ -172,23 +369,15 @@ pub mod find {
     /// # }
     ///```
     pub async fn find(self) -> Result<Vec<FoundSpec>, FindError> {
-      let command = self
-        .hydrate_command(command::Argv::empty())
-        .map_err(|e| FindError::Invocation(e.into()))?;
-      let command::sync::Output { stdout } = command
-        .invoke()
-        .await
-        .map_err(|e| FindError::Invocation(e.into()))?;
+      let command = self.hydrate_command(command::Argv::empty())?;
+      let command::sync::Output { stdout } = command.invoke().await?;
 
-      match serde_json::from_slice::<'_, serde_json::Value>(&stdout)
-        .map_err(|e| FindError::Serde(format!("{:?}", &stdout), e))?
-      {
+      match serde_json::from_slice::<'_, serde_json::Value>(&stdout)? {
         serde_json::Value::Array(values) => {
           let found_specs: Vec<FoundSpec> = values
             .into_iter()
             .map(|v| serde_json::from_value(v))
-            .collect::<Result<Vec<FoundSpec>, _>>()
-            .map_err(|e| FindError::Serde(format!("{:?}", &stdout), e))?;
+            .collect::<Result<Vec<FoundSpec>, _>>()?;
           Ok(found_specs)
         }
         value => Err(FindError::Unknown(format!(
@@ -202,7 +391,7 @@ pub mod find {
   /// Find prefix request.
   #[derive(Debug, Clone)]
   pub struct FindPrefix {
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     pub spec: CLISpec,
   }
 
@@ -230,7 +419,7 @@ pub mod find {
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
     /// use std::fs;
-    /// use spack::{commands::{*, install::*, find::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, install::*, find::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await?;
@@ -257,9 +446,7 @@ pub mod find {
     ///```
     pub async fn find_prefix(self) -> Result<Option<PathBuf>, FindError> {
       let spec = self.spec.clone();
-      let command = self
-        .hydrate_command(command::Argv::empty())
-        .map_err(|e| FindError::Invocation(e.into()))?;
+      let command = self.hydrate_command(command::Argv::empty())?;
 
       match command.invoke().await {
         Ok(Output { stdout }) => {
@@ -282,7 +469,7 @@ pub mod find {
           error: command::CommandError::NonZeroExit(1),
           ..
         }) if stdout.starts_with(b"==> No package matches") => Ok(None),
-        Err(e) => Err(FindError::Invocation(e.into())),
+        Err(e) => Err(e.into()),
       }
     }
   }
@@ -291,10 +478,12 @@ pub mod find {
 /// Load command.
 pub mod load {
   use super::*;
-  use crate::invocation::{
-    command::{self, sync::SyncInvocable, CommandBase},
-    env::LoadEnvironment,
-    spack,
+  use crate::{
+    invocation::{
+      command::{self, sync::SyncInvocable, CommandBase},
+      env::LoadEnvironment,
+    },
+    Invocation,
   };
 
   use std::str;
@@ -304,8 +493,6 @@ pub mod load {
   pub enum LoadError {
     /// command error: {0}
     Command(#[from] command::CommandErrorWrapper),
-    /// invocation error: {0}
-    Invocation(#[from] spack::InvocationError),
     /// utf8 decoding error: {0}
     Utf8(#[from] str::Utf8Error),
   }
@@ -314,7 +501,7 @@ pub mod load {
   #[derive(Debug, Clone)]
   pub struct Load {
     #[allow(missing_docs)]
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     /// Specs to load the environment for.
     pub specs: Vec<CLISpec>,
   }
@@ -343,7 +530,7 @@ pub mod load {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*, load::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, install::*, load::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await?;
@@ -374,9 +561,12 @@ pub mod load {
 /// Install command.
 pub mod install {
   use super::{find::*, *};
-  use crate::invocation::{
-    command::{self, stream::Streamable, CommandBase},
-    env, spack,
+  use crate::{
+    invocation::{
+      command::{self, stream::Streamable, CommandBase},
+      env,
+    },
+    Invocation,
   };
 
   /// Errors installing.
@@ -386,15 +576,12 @@ pub mod install {
     Inner(#[source] Box<CommandError>),
     /// spack command error {0}
     Command(#[from] command::CommandErrorWrapper),
-    /// invocation error {0}
-    Invocation(#[from] spack::InvocationError),
   }
 
   /// Install request.
-  #[allow(missing_docs)]
   #[derive(Debug, Clone)]
   pub struct Install {
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     pub spec: CLISpec,
   }
 
@@ -424,7 +611,7 @@ pub mod install {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, install::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await?;
@@ -473,7 +660,7 @@ pub mod install {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, install::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await?;
@@ -537,13 +724,13 @@ pub mod install {
 /// Build-env command.
 pub mod build_env {
   use super::*;
-  use crate::invocation::{
-    command::{
+  use crate::{
+    invocation::command::{
       self,
       sync::{Output, SyncInvocable},
       CommandBase,
     },
-    spack,
+    Invocation,
   };
 
   use std::path::PathBuf;
@@ -553,8 +740,6 @@ pub mod build_env {
   pub enum BuildEnvError {
     /// {0}
     Command(#[from] command::CommandErrorWrapper),
-    /// invocation error {0}
-    Invocation(#[from] spack::InvocationError),
     /// install error {0}
     Install(#[from] install::InstallError),
     /// io error: {0}
@@ -565,7 +750,7 @@ pub mod build_env {
   #[derive(Debug, Clone)]
   pub struct BuildEnv {
     #[allow(missing_docs)]
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     /// Which spec to get into the environment of.
     pub spec: CLISpec,
     /// Optional output file for sourcing environment modifications.
@@ -615,11 +800,12 @@ pub mod build_env {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// let td = tempdir::TempDir::new("spack-summon-test")?;
+    /// let td = tempdir::TempDir::new("spack-summon-test").unwrap();
     /// use std::{fs, io::BufRead};
     /// use spack::{
+    ///   Invocation,
     ///   commands::{*, build_env::*, install::*},
-    ///   invocation::{command::{*, sync::Output}, spack::Invocation},
+    ///   invocation::{command::{*, sync::Output}},
     /// };
     ///
     /// // Locate all the executables.
@@ -645,7 +831,7 @@ pub mod build_env {
     /// // Example ad-hoc parsing of environment source files.
     /// let mut spec_was_found: bool = false;
     /// for line in output.stdout.lines() {
-    ///   let line = line?;
+    ///   let line = line.unwrap();
     ///   if line.starts_with("SPACK_SHORT_SPEC") {
     ///     spec_was_found = true;
     ///     assert!("python" == &line[17..23]);
@@ -665,7 +851,7 @@ pub mod build_env {
     /// let _ = build_env.clone().build_env().await
     ///   .map_err(|e| spack::commands::CommandError::BuildEnv(build_env, e))?;
     /// spec_was_found = false;
-    /// for line in fs::read_to_string(&dump)?.lines() {
+    /// for line in fs::read_to_string(&dump).expect(".env-dump was created").lines() {
     ///   if line.starts_with("SPACK_SHORT_SPEC") {
     ///     spec_was_found = true;
     ///     assert!("python" == &line[18..24]);
@@ -698,9 +884,9 @@ pub mod build_env {
 /// spack python command.
 pub mod python {
   use super::*;
-  use crate::invocation::{
-    command::{self, CommandBase},
-    spack,
+  use crate::{
+    invocation::command::{self, CommandBase},
+    Invocation,
   };
 
   use tempfile::{NamedTempFile, TempPath};
@@ -712,11 +898,9 @@ pub mod python {
   /// use std::str;
   /// use futures_lite::io::AsyncReadExt;
   /// use spack::{
+  ///   Invocation,
   ///   commands::python::*,
-  ///   invocation::{
-  ///     command::{*, sync::{Output, SyncInvocable}, stream::Streamable},
-  ///     spack::Invocation,
-  ///   },
+  ///   invocation::{command::{*, sync::{Output, SyncInvocable}, stream::Streamable}},
   /// };
   ///
   /// // Locate all the executables.
@@ -727,10 +911,10 @@ pub mod python {
   ///   spack: spack.clone(),
   ///   script: "import spack; print(spack.__version__)".to_string(),
   /// };
-  /// let command = spack_python.hydrate_command(Argv::empty())?;
+  /// let command = spack_python.hydrate_command(Argv::empty()).expect("hydration failed");
   ///
   /// // Spawn the child process and wait for it to end.
-  /// let Output { stdout } = command.clone().invoke().await?;
+  /// let Output { stdout } = command.clone().invoke().await.expect("sync command failed");
   /// // Parse stdout into utf8...
   /// let version = str::from_utf8(&stdout).unwrap()
   ///   // ...and strip the trailing newline...
@@ -739,7 +923,7 @@ pub mod python {
   /// assert!(version == &spack.version);
   ///
   /// // Spawn the child process and wait for it to end.
-  /// let mut streaming = command.invoke_streaming()?;
+  /// let mut streaming = command.invoke_streaming().expect("streaming command invocation failed");
   ///
   /// // Slurp stdout all at once into a string.
   /// let mut version: String = "".to_string();
@@ -749,7 +933,7 @@ pub mod python {
   /// assert!(version == &spack.version);
   ///
   /// // Now verify the process exited successfully.
-  /// streaming.wait().await?;
+  /// streaming.wait().await.expect("streaming command should have succeeded");
   /// # Ok(())
   /// # }) // async
   /// # }
@@ -757,7 +941,7 @@ pub mod python {
   #[derive(Debug, Clone)]
   pub struct SpackPython {
     #[allow(missing_docs)]
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     /// The contents of the python script to execute.
     pub script: String,
   }
@@ -812,95 +996,162 @@ pub mod python {
 /// Compiler-find command.
 pub mod compiler_find {
   use super::*;
-  use crate::invocation::{
-    command::{
+  use crate::{
+    invocation::command::{
       self,
       sync::{Output, SyncInvocable},
       CommandBase,
     },
-    spack,
+    Invocation,
   };
 
-  use std::{
-    io::{self, BufRead},
-    path::PathBuf,
-  };
+  use serde::{Deserialize, Serialize};
+  use serde_json;
+
+  use std::{io, path::PathBuf};
 
   /// Errors locating a compiler.
   #[derive(Debug, Display, Error)]
   pub enum CompilerFindError {
-    /// {0}
+    /// command line error {0}
     Command(#[from] command::CommandErrorWrapper),
     /// io error {0}
     Io(#[from] io::Error),
+    /// json error {0}
+    Json(#[from] serde_json::Error),
+    /// unknown error: {0}
+    Unknown(String),
   }
 
   /// Compiler-find request.
   #[derive(Debug, Clone)]
   pub struct CompilerFind {
     #[allow(missing_docs)]
-    pub spack: spack::Invocation,
+    pub spack: Invocation,
     /// Paths to search for compilers in.
     pub paths: Vec<PathBuf>,
   }
 
-  /// A compiler found by [CompilerFind::compiler_find].
-  pub struct FoundCompiler {
-    spec: String,
-  }
-
-  impl FoundCompiler {
-    /// Wrap the output of a custom script for [`CompilerFind::compiler_find`].
-    pub fn new(spec: String) -> Self {
-      Self { spec }
+  impl CommandBase for CompilerFind {
+    fn hydrate_command(
+      self,
+      argv: command::Argv,
+    ) -> Result<command::Command, command::CommandErrorWrapper> {
+      /* We do not accept any additional arguments for this command! */
+      argv.drop_empty();
+      let Self { spack, paths } = self;
+      let args = command::Argv(
+        ["compiler", "find"]
+          .map(|s| s.to_string())
+          .into_iter()
+          .chain(paths.into_iter().map(|p| format!("{}", p.display())))
+          .collect(),
+      );
+      Ok(spack.hydrate_command(args)?)
     }
-
-    /// The compiler spec for the found compiler.
-    pub fn compiler_spec(&self) -> &str {
-      self.spec.as_ref()
-    }
   }
-
-  const COMPILER_SPEC_SOURCE: &str = include_str!("compiler-find.py");
 
   impl CompilerFind {
-    /// Run `spack compiler find $self.paths`.
+    /// Run `spack compiler find $self.paths`, without parsing the output.
+    ///
+    /// Use [`FindCompilerSpecs::find_compiler_specs`] to get information about the compilers spack
+    /// can find.
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, compiler_find::*}, invocation::spack::Invocation};
+    /// use spack::{commands::{*, compiler_find::*}, Invocation};
     ///
     /// // Locate all the executables.
     /// let spack = Invocation::summon().await.unwrap();
     ///
     /// // Create compiler-find execution request.
-    /// let compiler_find = CompilerFind {
+    /// let find_compiler_specs = FindCompilerSpecs {
     ///   spack: spack.clone(),
     ///   paths: vec![],
     /// };
-    /// let found_compilers = compiler_find.clone().compiler_find().await
-    ///   .map_err(|e| CommandError::CompilerFind(compiler_find, e))?;
+    /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
+    ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
     /// // The first compiler on the list is clang!
-    /// assert!(found_compilers[0].compiler_spec().starts_with("clang"));
+    /// assert!(found_compilers[0].compiler.name.starts_with("clang"));
     /// # Ok(())
     /// # }) // async
     /// # }
     ///```
-    pub async fn compiler_find(self) -> Result<Vec<FoundCompiler>, CompilerFindError> {
+    pub async fn compiler_find(self) -> Result<(), CompilerFindError> {
       let command = self.hydrate_command(command::Argv::empty())?;
-      let Output { stdout } = command.invoke().await?;
-
-      let mut compilers = Vec::new();
-      for line in stdout.lines() {
-        compilers.push(FoundCompiler {
-          spec: line?.to_string(),
-        });
-      }
-      Ok(compilers)
+      let _ = command.invoke().await?;
+      Ok(())
     }
   }
 
-  impl CommandBase for CompilerFind {
+  #[derive(Debug, Clone)]
+  pub struct FindCompilerSpecs {
+    #[allow(missing_docs)]
+    pub spack: Invocation,
+    /// Paths to search for compilers in.
+    pub paths: Vec<PathBuf>,
+  }
+
+  /// A compiler found by [`CompilerFind::compiler_find`].
+  #[derive(Debug, Display, Serialize, Deserialize, Clone)]
+  pub struct FoundCompiler {
+    pub compiler: CompilerSpec,
+  }
+
+  #[derive(Debug, Display, Serialize, Deserialize, Clone)]
+  pub struct CompilerSpec {
+    pub name: String,
+    pub version: String,
+  }
+
+  const COMPILER_SPEC_SOURCE: &str = include_str!("compiler-find.py");
+
+  impl FindCompilerSpecs {
+    /// Run a custom `spack python` script to print out compiler specs located in the given paths.
+    ///
+    /// If the given set of [`Self::paths`] is empty, use the defaults from config.
+    ///```
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use spack::{commands::{*, compiler_find::*}, Invocation};
+    ///
+    /// // Locate all the executables.
+    /// let spack = Invocation::summon().await.unwrap();
+    ///
+    /// // Create compiler-find execution request.
+    /// let find_compiler_specs = FindCompilerSpecs {
+    ///   spack: spack.clone(),
+    ///   paths: vec![],
+    /// };
+    /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
+    ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
+    /// // The first compiler on the list is clang!
+    /// assert!(found_compilers[0].compiler.name.starts_with("clang"));
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
+    pub async fn find_compiler_specs(self) -> Result<Vec<FoundCompiler>, CompilerFindError> {
+      let command = self.hydrate_command(command::Argv::empty())?;
+      let Output { stdout } = command.invoke().await?;
+
+      match serde_json::from_slice::<'_, serde_json::Value>(&stdout)? {
+        serde_json::Value::Array(values) => {
+          let compiler_specs: Vec<FoundCompiler> = values
+            .into_iter()
+            .map(|v| serde_json::from_value(v))
+            .collect::<Result<Vec<FoundCompiler>, _>>()?;
+          Ok(compiler_specs)
+        }
+        value => Err(CompilerFindError::Unknown(format!(
+          "unable to parse compiler-find.py output: {:?}",
+          value
+        ))),
+      }
+    }
+  }
+
+  impl CommandBase for FindCompilerSpecs {
     fn hydrate_command(
       self,
       argv: command::Argv,

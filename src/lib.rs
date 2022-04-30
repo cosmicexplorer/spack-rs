@@ -49,13 +49,11 @@ pub mod utils;
 pub mod wasm;
 
 pub use invocation::{command, spack::Invocation};
-pub use utils::ensure_prefix;
+pub use utils::{ensure_installed, ensure_prefix};
 
 use displaydoc::Display;
 use hex_literal::hex;
 use thiserror::Error;
-
-use std::io;
 
 const EMCC_CAPABLE_SPACK_URL: &str =
   "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.1-emcc.tar.gz";
@@ -65,14 +63,12 @@ const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.1-emcc";
 
 /// Errors that can occur.
 #[derive(Debug, Display, Error)]
+#[ignore_extra_doc_attributes]
 pub enum Error {
-  /// io error: {0}
-  Io(#[from] io::Error),
-  /* FIXME: there should be a bigger distinction between these two cases! */
-  /// spack command line failed: {0}
-  Command(#[from] invocation::command::CommandErrorWrapper),
+  /// invocation summoning error: {0}
+  ///
+  /// This will occur if spack itself cannot be set up.
+  Summoning(#[from] invocation::spack::InvocationSummoningError),
   /// spack command failed: {0}
   SpackCommand(#[from] commands::CommandError),
-  /// invocation error: {0}
-  Invocation(#[from] invocation::spack::InvocationError),
 }

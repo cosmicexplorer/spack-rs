@@ -194,11 +194,11 @@ impl SpackRepo {
   /// use std::fs::File;
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// # let td = tempdir::TempDir::new("spack-summon-test")?;
+  /// # let td = tempdir::TempDir::new("spack-summon-test").unwrap();
   /// # std::env::set_var("HOME", td.path());
   /// let cache_dir = CacheDir::get_or_create().unwrap();
   /// let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
-  /// let _ = File::open(&spack_exe.script_path)?;
+  /// let _ = File::open(&spack_exe.script_path).expect("spack script should exist");
   /// # Ok(())
   /// # }) // async
   /// # }

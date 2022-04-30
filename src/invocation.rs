@@ -22,6 +22,7 @@ pub mod command {
   }
 
   impl Argv {
+    /* FIXME: make this return a Result<(), CommandValidationError> with new validation error type! */
     /// Assert that this command has no additional arguments, and drop `self`.
     pub fn drop_empty(self) {
       assert!(self.0.is_empty());
@@ -62,13 +63,13 @@ pub mod command {
   /// };
   ///
   /// // Locate executable scripts.
-  /// let spack = Invocation::summon().await?;
+  /// let spack = Invocation::summon().await.unwrap();
   ///
   /// let argv: command::Argv = ["--version"].as_ref().into();
   ///
   /// // Spawn the child process and wait for it to end.
-  /// let command = spack.clone().hydrate_command(argv.clone())?;
-  /// let Output { stdout } = command.clone().invoke().await?;
+  /// let command = spack.clone().hydrate_command(argv.clone()).unwrap();
+  /// let Output { stdout } = command.clone().invoke().await.expect("sync invocation failed");
   /// // Parse stdout into utf8...
   /// let version = str::from_utf8(&stdout).unwrap()
   ///   // ...and strip the trailing newline...
@@ -77,16 +78,16 @@ pub mod command {
   /// assert!(version == &spack.version);
   ///
   /// // Spawn the child process and stream its output, ignoring stderr.
-  /// let mut streaming = command.invoke_streaming()?;
+  /// let mut streaming = command.invoke_streaming().expect("streaming invocation failed");
   /// // Slurp stdout all at once into a string.
   /// let mut version: String = "".to_string();
-  /// streaming.stdout.read_to_string(&mut version).await?;
+  /// streaming.stdout.read_to_string(&mut version).await.expect("reading stdout failed");
   /// // Parse the spack version from stdout, and verify it matches `spack.version`.
   /// let version = version.strip_suffix("\n").unwrap();
   /// assert!(version == &spack.version);
   ///
   /// // Now verify the process exited successfully.
-  /// streaming.wait().await?;
+  /// streaming.wait().await.expect("streaming command should have succeeded");
   /// # Ok(())
   /// # }) // async
   /// # }
@@ -134,6 +135,7 @@ pub mod command {
 
   /// Declare higher-level operations which desugar to command lines by implementing this trait.
   pub trait CommandBase {
+    /* FIXME: make this return a Result<_, CommandValidationError> with new validation error type! */
     /// Given a list of positional arguments, generate a command line which may or may not
     /// incorporate those additional arguments.
     fn hydrate_command(self, argv: Argv) -> Result<Command, CommandErrorWrapper>;
@@ -507,7 +509,7 @@ pub mod spack {
   use std::{io, str};
 
   #[derive(Debug, Display, Error)]
-  pub enum InvocationError {
+  pub enum InvocationSummoningError {
     /// error executing command: {0}
     Command(#[from] command::CommandErrorWrapper),
     /// error summoning: {0}
@@ -561,7 +563,7 @@ pub mod spack {
     /// let python = Python::detect().await.unwrap();
     /// let cache_dir = CacheDir::get_or_create().unwrap();
     /// let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
-    /// let spack = Invocation::create(python, spack_exe).await?;
+    /// let spack = Invocation::create(python, spack_exe).await.expect("creation should succeed");
     ///
     /// // This is the current version number for the spack installation.
     /// assert!(spack.version == "0.18.0.dev0".to_string());
@@ -610,7 +612,7 @@ pub mod spack {
     /// # Ok(())
     /// # }) // async
     /// # }
-    pub async fn summon() -> Result<Self, InvocationError> {
+    pub async fn summon() -> Result<Self, InvocationSummoningError> {
       let python = python::Python::detect().await?;
       let cache_dir = summoning::CacheDir::get_or_create()?;
       let spack_repo = summoning::SpackRepo::summon(cache_dir).await?;
@@ -654,14 +656,15 @@ pub mod env {
   ///
   /// // Look for a python spec with that exact hash.
   /// let load = Load { spack: spack.clone(), specs: vec![found_py_spec.hashed_spec()] };
-  /// let python_env = load.clone().load().await.unwrap();
+  /// let python_env = load.clone().load().await.expect("load command failed");
   ///
   /// let env_spack = EnvInvocation {
   ///   inner: spack.clone(),
   ///   load_env: python_env,
   /// };
-  /// let command = env_spack.hydrate_command(["--version"].as_ref().into())?;
-  /// let Output { stdout } = command.invoke().await?;
+  /// let command = env_spack.hydrate_command(["--version"].as_ref().into())
+  ///   .expect("env wrapping failed");
+  /// let Output { stdout } = command.invoke().await.expect("version command failed");
   /// // Parse stdout into utf8...
   /// let version = str::from_utf8(&stdout).unwrap()
   ///   // ...and strip the trailing newline...

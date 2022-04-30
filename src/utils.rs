@@ -3,7 +3,7 @@
 
 use crate::{
   commands::{self, find, install},
-  invocation::{command, spack},
+  invocation::spack::Invocation,
 };
 
 use std::{
@@ -31,9 +31,7 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
   }
 }
 
-/// Install a `spec`, then return its installation root prefix from within `opt/spack/...`.
-///
-/// The installation via `spack install` will be cached using spack's normal caching mechanisms.
+/// Call [`ensure_installed`], then return its installation root prefix from within `opt/spack/...`.
 ///```
 /// # fn main() -> Result<(), spack::Error> {
 /// # tokio_test::block_on(async {
@@ -52,25 +50,17 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
 ///   argv: ["--version"].as_ref().into(),
 ///   ..Default::default()
 /// };
-/// let output = command.invoke().await?;
+/// let output = command.invoke().await.expect("expected m4 command to succeed");
 /// assert!(output.stdout.starts_with(b"m4 "));
 /// # Ok(())
 /// # }) // async
 /// # }
 ///```
 pub async fn ensure_prefix(
-  spack: spack::Invocation,
+  spack: Invocation,
   spec: commands::CLISpec,
 ) -> Result<PathBuf, crate::Error> {
-  let install = install::Install {
-    spack: spack.clone(),
-    spec,
-  };
-  let found_spec = install
-    .clone()
-    .install_find()
-    .await
-    .map_err(|e| commands::CommandError::Install(install, e))?;
+  let found_spec = ensure_installed(spack.clone(), spec).await?;
   let find_prefix = find::FindPrefix {
     spack,
     spec: found_spec.hashed_spec(),
@@ -82,4 +72,36 @@ pub async fn ensure_prefix(
     .map_err(|e| commands::CommandError::FindPrefix(find_prefix, e))?
     .expect("when using a spec with a hash, FindPrefix should never return None");
   Ok(prefix)
+}
+
+/// Call `spack install <spec>` and parse the result of `spack find --json`.
+///
+/// The installation via `spack install` will be cached using spack's normal caching mechanisms.
+///```
+/// # fn main() -> Result<(), spack::Error> {
+/// # tokio_test::block_on(async {
+/// // Locate all the executables.
+/// let spack = spack::Invocation::summon().await?;
+///
+/// // Let's look for an `m4` installation.
+/// let m4_spec = spack::ensure_installed(spack, "m4".into()).await?;
+/// assert!(&m4_spec.name == "m4");
+/// # Ok(())
+/// # }) // async
+/// # }
+///```
+pub async fn ensure_installed(
+  spack: Invocation,
+  spec: commands::CLISpec,
+) -> Result<find::FoundSpec, crate::Error> {
+  let install = install::Install {
+    spack: spack.clone(),
+    spec,
+  };
+  let found_spec = install
+    .clone()
+    .install_find()
+    .await
+    .map_err(|e| commands::CommandError::Install(install, e))?;
+  Ok(found_spec)
 }
