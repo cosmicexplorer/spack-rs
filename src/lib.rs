@@ -10,7 +10,7 @@
 /* Turn all warnings into errors! */
 /* #![deny(warnings)] */
 /* Warn for missing docs in general, and hard require crate-level docs. */
-#![warn(missing_docs)]
+/* #![warn(missing_docs)] */
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
@@ -43,13 +43,12 @@
 #![allow(clippy::mutex_atomic)]
 
 pub mod commands;
-pub mod invocation;
+pub mod subprocess;
 pub mod summoning;
 pub mod utils;
 pub mod wasm;
 
-pub use invocation::{command, spack::Invocation};
-pub use utils::{ensure_installed, ensure_prefix};
+pub use subprocess::spack::SpackInvocation;
 
 use displaydoc::Display;
 use hex_literal::hex;
@@ -65,10 +64,10 @@ const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.1-emcc";
 #[derive(Debug, Display, Error)]
 #[ignore_extra_doc_attributes]
 pub enum Error {
-  /// invocation summoning error: {0}
+  /// spack summoning error: {0}
   ///
   /// This will occur if spack itself cannot be set up.
-  Summoning(#[from] invocation::spack::InvocationSummoningError),
+  Summoning(#[from] subprocess::spack::InvocationSummoningError),
   /// spack command failed: {0}
   SpackCommand(#[from] commands::CommandError),
 }
