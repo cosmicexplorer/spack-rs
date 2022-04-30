@@ -208,6 +208,40 @@ pub mod config {
   }
 
   impl GetCompilers {
+    /// Execute `spack config get compilers` and parse the YAML output.
+    ///```
+    /// # fn main() -> Result<(), spack::Error> {
+    /// # tokio_test::block_on(async {
+    /// use spack::{
+    ///   Invocation,
+    ///   commands::{*, config::*},
+    ///   invocation::command::{Command, sync::SyncInvocable},
+    /// };
+    ///
+    /// // Locate all the executables.
+    /// let spack = Invocation::summon().await?;
+    ///
+    /// // .get_compilers() will return an array of compiler specs.
+    /// let get_compilers = GetCompilers { spack, scope: None };
+    /// let found_compilers = get_compilers.clone().get_compilers().await
+    ///   .map_err(|e| CommandError::ConfigGetCompilers(get_compilers, e))?;
+    /// assert!(!found_compilers.is_empty());
+    ///
+    /// // Get the path to a working C compiler and check that it can executed.
+    /// let first_cc = found_compilers[0].paths.cc
+    ///   .as_ref()
+    ///   .expect("cc should have been defined")
+    ///   .clone();
+    /// let command = Command {
+    ///   exe: first_cc, argv: ["--version"].as_ref().into(),
+    ///   ..Default::default()
+    /// };
+    /// let output = command.invoke().await.expect("cc --version should have succeeded");
+    /// assert!(!output.stdout.is_empty());
+    /// # Ok(())
+    /// # }) // async
+    /// # }
+    ///```
     pub async fn get_compilers(self) -> Result<Vec<CompilerSpec>, ConfigError> {
       let command = self.hydrate_command(command::Argv::empty())?;
       let Output { stdout } = command.invoke().await?;
