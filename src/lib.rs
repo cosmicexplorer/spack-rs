@@ -46,7 +46,6 @@ pub mod commands;
 pub mod subprocess;
 pub mod summoning;
 pub mod utils;
-pub mod wasm;
 
 pub use subprocess::spack::SpackInvocation;
 

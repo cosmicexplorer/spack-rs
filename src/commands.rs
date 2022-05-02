@@ -308,6 +308,7 @@ pub mod find {
       exe,
       sync::SyncInvocable,
     },
+    utils::prefix,
     SpackInvocation,
   };
 
@@ -508,13 +509,13 @@ pub mod find {
     ///   .unwrap();
     ///
     /// // Verify that this prefix contains the python3 executable.
-    /// let python3_exe = python_prefix.join("bin").join("python3");
+    /// let python3_exe = python_prefix.path.join("bin").join("python3");
     /// assert!(fs::File::open(python3_exe).is_ok());
     /// # Ok(())
     /// # }) // async
     /// # }
     ///```
-    pub async fn find_prefix(self) -> Result<Option<PathBuf>, FindError> {
+    pub async fn find_prefix(self) -> Result<Option<prefix::Prefix>, FindError> {
       let spec = self.spec.clone();
       let command = self
         .setup_command()
@@ -535,7 +536,7 @@ pub mod find {
           /* FIXME: this method should be using a custom `spack python` script!! */
           assert!(spec.0.starts_with(name));
           let prefix: PathBuf = m.get(3).unwrap().as_str().into();
-          Ok(Some(prefix))
+          Ok(Some(prefix::Prefix { path: prefix }))
         }
         Err(exe::CommandErrorWrapper {
           context,

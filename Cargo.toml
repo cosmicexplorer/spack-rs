@@ -1,5 +1,5 @@
 [package]
-name       = "spack"
+name = "spack"
 description = "Summon spack from rust build scripts!"
 version = "0.1.0"
 edition = "2021"
@@ -12,15 +12,18 @@ authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 [profile.release]
 # This makes the compiled code faster and smaller, but it makes compiling slower,
 # so it's only enabled in release mode.
-lto                     = true
+lto = true
 
 [dependencies]
 async-process = "1.3.0"
+async-stream = "0.3.3"
 async-trait = "0.1.41"
+cc = "1"
 displaydoc = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 flate2 = "1.0"
 futures-core = "0.3.15"
 futures-lite = "1"
+futures-util = "0.3.15"
 hex = "0.4.3"
 hex-literal = "0.3.4"
 indexmap = "1.8.1"
@@ -36,6 +39,8 @@ signal-hook = "0.3.13"
 tar = "0.4"
 tempfile = "3.3.0"
 thiserror = "1.0.30"
+uuid = { version = "1.0.0", features = ["v4"] }
+walkdir = "2"
 
 [dev-dependencies]
 tempdir = "0.3.7"
