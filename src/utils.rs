@@ -111,11 +111,6 @@ pub async fn ensure_prefix(
 pub mod wasm {
   use crate::commands::find;
 
-  use cc;
-  use uuid::Uuid;
-
-  use std::path::PathBuf;
-
   const LLVM_FOR_WASM: &str = "llvm@14:\
 +lld+clang+multiple-definitions\
 ~compiler-rt~tools-extra-clang~libcxx~gold~openmp~internal_unwind~polly \
@@ -154,32 +149,9 @@ targets=webassembly";
     let llvm_found_spec = super::ensure_installed(spack, LLVM_FOR_WASM.into()).await?;
     Ok(llvm_found_spec)
   }
-
-  /// `emcc`-compiled shared libs are equivalent to object files, as wasm has no concept of
-  /// dynamic linking. The shared lib output mechanism is intended purely for compatibility with
-  /// existing build tools, as the tool itself warns you over stderr whenever you use it this
-  /// way. For some reason, while `cargo:rustc-link-lib` fails mysteriously, using the `cc` crate
-  /// with `.object()` calls to the builder works to include wasm code in the resulting rust
-  /// binary (callable by other rust code which uses `wasm-bindgen`). See [this github comment]
-  /// for an example which still works today.
-  ///
-  /// [this github comment]: https://github.com/rustwasm/team/issues/291#issuecomment-645492619
-  pub(crate) fn link_libraries_wasm(library_paths: Vec<PathBuf>) {
-    let mut cc = cc::Build::new();
-    cc.shared_flag(true).static_flag(false);
-
-    for lib_path in library_paths.into_iter() {
-      cc.object(lib_path);
-    }
-
-    let generated_libname = Uuid::new_v4();
-    cc.compile(&generated_libname.to_string());
-  }
 }
 
 pub mod prefix {
-  use super::wasm;
-
   use async_stream::try_stream;
   use displaydoc::Display;
   use futures_core::stream::Stream;
@@ -335,43 +307,15 @@ pub mod prefix {
     pub found_libraries: Vec<SharedLibrary>,
   }
 
-  #[derive(Debug, Clone, Copy)]
-  pub enum LinkMode {
-    Linux,
-    Wasm,
-  }
-
   impl SharedLibCollection {
-    fn mark_all_changed(&self) {
+    pub fn link_libraries(self) {
       for lib in self.found_libraries.iter() {
         println!("cargo:rerun-if-changed={}", lib.path.display());
-      }
-    }
-
-    fn link_libraries_linux(&self) {
-      for lib in self.found_libraries.iter() {
         println!("cargo:rustc-link-lib=dylib={}", &lib.name);
         println!(
           "cargo:rustc-link-search=native={}",
           lib.containing_directory().display()
         );
-      }
-    }
-
-    pub fn link_libraries(self, mode: LinkMode) {
-      self.mark_all_changed();
-      match mode {
-        LinkMode::Linux => {
-          self.link_libraries_linux();
-        }
-        LinkMode::Wasm => {
-          let lib_paths: Vec<PathBuf> = self
-            .found_libraries
-            .iter()
-            .map(|lib| lib.path.clone())
-            .collect();
-          wasm::link_libraries_wasm(lib_paths);
-        }
       }
     }
   }
