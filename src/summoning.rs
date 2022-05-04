@@ -71,6 +71,9 @@ impl CacheDir {
   }
 
   /// The path to the root of the spack repo, through a symlink.
+  ///
+  /// FIXME: Note that this repeats the [`crate::EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
+  /// used in [`Self::unpacking_path`].
   #[inline]
   pub fn repo_root(&self) -> PathBuf {
     self
@@ -98,6 +101,7 @@ impl SpackTarball {
     SpackRepo::unzip_archive(self.downloaded_path(), &cache_dir.unpacking_path())
   }
 
+  /* FIXME: test the checksum checking!!! */
   pub async fn fetch_spack_tarball(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let tgz_path = cache_dir.tarball_path();
 
