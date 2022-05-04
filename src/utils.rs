@@ -350,7 +350,7 @@ pub mod prefix {
 
     fn link_libraries_linux(&self) {
       for lib in self.found_libraries.iter() {
-        println!("cargo:rustc-link-lib={}", &lib.name);
+        println!("cargo:rustc-link-lib=dylib={}", &lib.name);
         println!(
           "cargo:rustc-link-search=native={}",
           lib.containing_directory().display()
