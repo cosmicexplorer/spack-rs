@@ -174,7 +174,7 @@ pub mod prefix {
     DuplicateLibraryNames(
       IndexSet<LibraryName>,
       Prefix,
-      IndexMap<LibraryName, Vec<SharedLibrary>>,
+      IndexMap<LibraryName, Vec<CABILibrary>>,
     ),
   }
 
@@ -182,16 +182,51 @@ pub mod prefix {
   #[derive(Debug, Display, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
   pub struct LibraryName(pub String);
 
-  #[derive(Debug, Clone)]
-  pub struct SharedLibrary {
-    pub path: PathBuf,
-    pub name: LibraryName,
+  #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+  pub enum LibraryType {
+    Static,
+    Dynamic,
   }
 
-  impl SharedLibrary {
+  impl LibraryType {
+    pub(crate) fn cargo_lib_type(&self) -> &'static str {
+      match self {
+        Self::Static => "static",
+        Self::Dynamic => "dylib",
+      }
+    }
+
+    pub(crate) fn match_filename_suffix(suffix: &str) -> Option<Self> {
+      match suffix {
+        "a" => Some(Self::Static),
+        "so" => Some(Self::Dynamic),
+        _ => None,
+      }
+    }
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct CABILibrary {
+    pub name: LibraryName,
+    pub path: PathBuf,
+    pub kind: LibraryType,
+  }
+
+  impl CABILibrary {
+    pub fn containing_directory(&self) -> &Path {
+      self
+        .path
+        .parent()
+        .expect("library path should have a parent directory!")
+    }
+
+    pub fn minus_l_arg(&self) -> String {
+      format!("{}={}", self.kind.cargo_lib_type(), self.name)
+    }
+
     pub fn parse_file_path(file_path: &Path) -> Option<Self> {
       lazy_static! {
-        static ref LIBNAME_PATTERN: Regex = Regex::new(r"^lib([^/]+)\.so$").unwrap();
+        static ref LIBNAME_PATTERN: Regex = Regex::new(r"^lib([^/]+)\.(a|so)$").unwrap();
       }
       let filename = match file_path.file_name() {
         Some(component) => component.to_string_lossy(),
@@ -203,20 +238,16 @@ pub mod prefix {
       };
       if let Some(m) = LIBNAME_PATTERN.captures(&filename) {
         let name = LibraryName(m.get(1).unwrap().as_str().to_string());
+        let kind = LibraryType::match_filename_suffix(m.get(2).unwrap().as_str())
+          .expect("validated that only .a or .so files can match LIBNAME_PATTERN regex");
         Some(Self {
           path: file_path.to_path_buf(),
           name,
+          kind,
         })
       } else {
         None
       }
-    }
-
-    pub fn containing_directory(&self) -> &Path {
-      self
-        .path
-        .parent()
-        .expect("shared library path should have a parent directory!")
     }
   }
 
@@ -237,33 +268,37 @@ pub mod prefix {
   }
 
   #[derive(Debug, Clone)]
-  pub struct SharedLibsQuery {
+  pub struct LibsQuery {
     pub needed_libraries: Vec<LibraryName>,
+    pub kind: LibraryType,
   }
 
-  impl SharedLibsQuery {
-    pub async fn find_shared_libraries(
-      self,
-      prefix: &Prefix,
-    ) -> Result<SharedLibCollection, PrefixTraversalError> {
-      let Self { needed_libraries } = self;
+  impl LibsQuery {
+    pub async fn find_libs(self, prefix: &Prefix) -> Result<LibCollection, PrefixTraversalError> {
+      let Self {
+        needed_libraries,
+        kind,
+      } = self;
       let needed_libraries: IndexSet<_> = needed_libraries.iter().cloned().collect();
-      let mut shared_libs_by_name: IndexMap<LibraryName, Vec<SharedLibrary>> = IndexMap::new();
+      let mut libs_by_name: IndexMap<LibraryName, Vec<CABILibrary>> = IndexMap::new();
 
       let s = prefix.traverse();
       pin_mut!(s);
 
       while let Some(dir_entry) = s.next().await {
         let lib_path = dir_entry?.into_path();
-        if let Some(shared_lib) = SharedLibrary::parse_file_path(&lib_path) {
-          shared_libs_by_name
-            .entry(shared_lib.name.clone())
-            .or_insert_with(Vec::new)
-            .push(shared_lib);
+        match CABILibrary::parse_file_path(&lib_path) {
+          Some(lib) if lib.kind == kind => {
+            libs_by_name
+              .entry(lib.name.clone())
+              .or_insert_with(Vec::new)
+              .push(lib);
+          }
+          _ => (),
         }
       }
 
-      let found: IndexSet<_> = shared_libs_by_name.keys().cloned().collect();
+      let found: IndexSet<_> = libs_by_name.keys().cloned().collect();
       let needed_not_found: IndexSet<_> = needed_libraries.difference(&found).cloned().collect();
       if !needed_not_found.is_empty() {
         return Err(PrefixTraversalError::NeededLibrariesNotFound(
@@ -272,13 +307,13 @@ pub mod prefix {
           found,
         ));
       }
-      let only_needed_libs: IndexMap<_, _> = shared_libs_by_name
+      let only_needed_libs: IndexMap<_, _> = libs_by_name
         .into_iter()
         .filter(|(name, _)| needed_libraries.contains(name))
         .collect();
 
-      let mut singly_matched_libs: IndexMap<LibraryName, SharedLibrary> = IndexMap::new();
-      let mut duplicated_libs: IndexMap<LibraryName, Vec<SharedLibrary>> = IndexMap::new();
+      let mut singly_matched_libs: IndexMap<LibraryName, CABILibrary> = IndexMap::new();
+      let mut duplicated_libs: IndexMap<LibraryName, Vec<CABILibrary>> = IndexMap::new();
       for (name, mut libs) in only_needed_libs.into_iter() {
         assert!(!libs.is_empty());
         if libs.len() == 1 {
@@ -296,22 +331,22 @@ pub mod prefix {
       }
       assert_eq!(singly_matched_libs.len(), needed_libraries.len());
 
-      Ok(SharedLibCollection {
+      Ok(LibCollection {
         found_libraries: singly_matched_libs.into_values().collect(),
       })
     }
   }
 
   #[derive(Debug, Clone)]
-  pub struct SharedLibCollection {
-    pub found_libraries: Vec<SharedLibrary>,
+  pub struct LibCollection {
+    pub found_libraries: Vec<CABILibrary>,
   }
 
-  impl SharedLibCollection {
+  impl LibCollection {
     pub fn link_libraries(self) {
       for lib in self.found_libraries.iter() {
         println!("cargo:rerun-if-changed={}", lib.path.display());
-        println!("cargo:rustc-link-lib=dylib={}", &lib.name);
+        println!("cargo:rustc-link-lib={}", lib.minus_l_arg());
         println!(
           "cargo:rustc-link-search=native={}",
           lib.containing_directory().display()

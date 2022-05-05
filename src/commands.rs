@@ -1243,8 +1243,9 @@ pub mod compiler_find {
     /// };
     /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
     ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
-    /// // The first compiler on the list is clang!
-    /// assert!(found_compilers[0].compiler.name.starts_with("clang"));
+    /// // The first compiler on the list is gcc or clang!
+    /// let first_name = &found_compilers[0].compiler.name;
+    /// assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
     /// # Ok(())
     /// # }) // async
     /// # }
@@ -1309,8 +1310,9 @@ pub mod compiler_find {
     /// };
     /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
     ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
-    /// // The first compiler on the list is clang!
-    /// assert!(found_compilers[0].compiler.name.starts_with("clang"));
+    /// // The first compiler on the list is gcc or clang!
+    /// let first_name = &found_compilers[0].compiler.name;
+    /// assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
     /// # Ok(())
     /// # }) // async
     /// # }
