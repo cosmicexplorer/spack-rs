@@ -54,10 +54,10 @@ use hex_literal::hex;
 use thiserror::Error;
 
 const EMCC_CAPABLE_SPACK_URL: &str =
-  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.3-emcc.tar.gz";
+  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.2-emcc.tar.gz";
 const EMCC_URL_SHA256SUM: [u8; 32] =
-  hex!("15398ef1ce7a307de79ddc9f6ac40b56783f777c2c99722dfafcf1dde68fcfe5");
-const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.3-emcc";
+  hex!("44198c3f82ae3427c64c03e2fb51d2877cd3860b73e5da2cd073aaba1480eb70");
+const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.2-emcc";
 
 /// Errors that can occur.
 #[derive(Debug, Display, Error)]
