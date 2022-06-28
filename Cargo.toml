@@ -1,45 +1,44 @@
 [package]
-name = "spack"
-description = "Summon spack from rust build scripts!"
-version = "0.0.0"
-edition = "2021"
-license = "(Apache-2.0 OR MIT)"
-repository = "https://github.com/cosmicexplorer/spack-rs"
-authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
+name                    = "spack"
+description             = "Summon spack from rust build scripts!"
+version                 = "0.0.0"
+edition                 = "2021"
+license                 = "(Apache-2.0 OR MIT)"
+repository              = "https://github.com/cosmicexplorer/spack-rs"
+authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.release]
 # This makes the compiled code faster and smaller, but it makes compiling slower,
 # so it's only enabled in release mode.
-lto = true
+lto                     = true
 
 [dependencies]
-async-process = "1.3.0"
-async-stream = "0.3.3"
-async-trait = "0.1.41"
-displaydoc = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
-flate2 = "1.0"
-futures-core = "0.3.15"
-futures-lite = "1"
-futures-util = "0.3.15"
-hex = "0.4.3"
-hex-literal = "0.3.4"
-indexmap = "1.8.1"
-lazy_static = "1.4.0"
-regex = "1"
-reqwest = "0.11.10"
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
-serde_yaml = "0.8.23"
-sha2 = "0.10.2"
-shlex = "1.1.0"
-signal-hook = "0.3.13"
-tar = "0.4"
-tempfile = "3.3.0"
-thiserror = "1.0.30"
-walkdir = "2"
+async-stream            = "0.3.3"
+async-trait             = "0.1.41"
+displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
+flate2                  = "1.0"
+futures-core            = "0.3.15"
+futures-lite            = "1"
+futures-util            = "0.3.15"
+hex                     = "0.4.3"
+hex-literal             = "0.3.4"
+indexmap                = "1.8.1"
+lazy_static             = "1.4.0"
+regex                   = "1"
+reqwest                 = "0.11.10"
+serde                   = { version = "1.0.136", features = ["derive"] }
+serde_json              = "1.0.79"
+serde_yaml              = "0.8.23"
+sha2                    = "0.10.2"
+shlex                   = "1.1.0"
+super-process           = { git = "https://github.com/cosmicexplorer/super-process", rev = "7e7dcd2495ac8b4646608e3d1c8f46e1e311d14d" }
+tar                     = "0.4"
+tempfile                = "3.3.0"
+thiserror               = "1.0.30"
+walkdir                 = "2"
 
 [dev-dependencies]
-tempdir = "0.3.7"
-tokio-test = "0.4.2"
+tempdir                 = "0.3.7"
+tokio-test              = "0.4.2"

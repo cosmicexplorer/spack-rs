@@ -61,13 +61,11 @@ pub enum CommandError {
 
 pub mod config {
   use super::*;
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe,
-      sync::SyncInvocable,
-    },
-    SpackInvocation,
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
   };
 
   use async_trait::async_trait;
@@ -222,11 +220,8 @@ pub mod config {
     ///```
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
-    /// use spack::{
-    ///   SpackInvocation,
-    ///   commands::{CommandError, config::*},
-    ///   subprocess::{exe, sync::SyncInvocable},
-    /// };
+    /// use super_process::{exe, sync::SyncInvocable};
+    /// use spack::{SpackInvocation, commands::{CommandError, config::*}};
     ///
     /// // Locate all the executables.
     /// let spack = SpackInvocation::summon().await?;
@@ -302,14 +297,11 @@ pub mod config {
 /// Find command.
 pub mod find {
   use super::*;
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe,
-      sync::SyncInvocable,
-    },
-    utils::prefix,
-    SpackInvocation,
+  use crate::{utils::prefix, SpackInvocation};
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
   };
 
   use async_trait::async_trait;
@@ -552,13 +544,11 @@ pub mod find {
 /// Load command.
 pub mod load {
   use super::*;
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe, sh,
-      sync::SyncInvocable,
-    },
-    SpackInvocation,
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe, sh,
+    sync::SyncInvocable,
   };
 
   use async_trait::async_trait;
@@ -617,7 +607,8 @@ pub mod load {
     /// # fn main() -> Result<(), spack::Error> {
     /// # tokio_test::block_on(async {
     /// use std::ffi::OsStr;
-    /// use spack::{subprocess::exe, commands::{*, install::*, load::*}, SpackInvocation};
+    /// use super_process::exe;
+    /// use spack::{commands::{*, install::*, load::*}, SpackInvocation};
     ///
     /// // Locate all the executables.
     /// let spack = SpackInvocation::summon().await?;
@@ -663,13 +654,11 @@ pub mod load {
 /// Install command.
 pub mod install {
   use super::{find::*, *};
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe,
-      stream::Streamable,
-    },
-    SpackInvocation,
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    stream::Streamable,
   };
 
   use async_trait::async_trait;
@@ -866,13 +855,11 @@ pub mod install {
 /// Build-env command.
 pub mod build_env {
   use super::*;
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe,
-      sync::{self, SyncInvocable},
-    },
-    SpackInvocation,
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::{self, SyncInvocable},
   };
 
   use async_trait::async_trait;
@@ -1042,9 +1029,10 @@ pub mod build_env {
 /// spack python command.
 pub mod python {
   use super::*;
-  use crate::subprocess::{
+  use crate::subprocess::spack;
+  use super_process::{
     base::{self, CommandBase},
-    exe, spack,
+    exe,
   };
 
   use async_trait::async_trait;
@@ -1057,11 +1045,8 @@ pub mod python {
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
   /// use futures_lite::io::AsyncReadExt;
-  /// use spack::{
-  ///   SpackInvocation,
-  ///   commands::python,
-  ///   subprocess::{base::CommandBase, sync::SyncInvocable, stream::Streamable},
-  /// };
+  /// use super_process::{base::CommandBase, sync::SyncInvocable, stream::Streamable};
+  /// use spack::{SpackInvocation, commands::python};
   ///
   /// // Locate all the executables.
   /// let spack = SpackInvocation::summon().await.unwrap();
@@ -1160,13 +1145,11 @@ pub mod python {
 /// Compiler-find command.
 pub mod compiler_find {
   use super::*;
-  use crate::{
-    subprocess::{
-      base::{self, CommandBase},
-      exe,
-      sync::SyncInvocable,
-    },
-    SpackInvocation,
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
   };
 
   use async_trait::async_trait;

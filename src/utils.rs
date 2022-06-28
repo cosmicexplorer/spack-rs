@@ -65,7 +65,8 @@ pub async fn ensure_installed(
 ///```
 /// # fn main() -> Result<(), spack::Error> {
 /// # tokio_test::block_on(async {
-/// use spack::{SpackInvocation, subprocess::{exe, fs, sync::SyncInvocable}, utils};
+/// use super_process::{exe, fs, sync::SyncInvocable};
+/// use spack::{SpackInvocation, utils};
 ///
 /// // Locate all the executables.
 /// let spack = SpackInvocation::summon().await?;
@@ -120,7 +121,8 @@ targets=webassembly";
   ///```
   /// # fn main() -> Result<(), spack::Error> {
   /// # tokio_test::block_on(async {
-  /// use spack::{SpackInvocation, subprocess::{exe, fs, sync::SyncInvocable}, utils};
+  /// use super_process::{exe, fs, sync::SyncInvocable};
+  /// use spack::{SpackInvocation, utils};
   ///
   /// // Locate all the executables.
   /// let spack = SpackInvocation::summon().await?;
