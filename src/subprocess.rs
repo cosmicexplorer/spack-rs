@@ -1,4 +1,4 @@
-/* Copyright 2022 Danny McClanahan */
+/* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 /* use super_process::{base, exe, fs, stream, sync}; */
@@ -67,15 +67,6 @@ pub mod python {
     }
 
     /// Check for a valid python installation by parsing the output of `--version`.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// # #[allow(unused_variables)]
-    /// let python = spack::subprocess::python::FoundPython::detect().await.unwrap();
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn detect() -> Result<Self, PythonError> {
       let py = Self::determine_python_exename();
       let command = PythonInvocation {
@@ -110,6 +101,22 @@ pub mod python {
     pub(crate) fn with_python_exe(self, inner: exe::Command) -> PythonInvocation {
       let Self { exe, .. } = self;
       PythonInvocation { exe, inner }
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use super::*;
+
+    use tokio;
+
+    #[tokio::test]
+    async fn test_detect_python() -> Result<(), crate::Error> {
+      #[allow(unused_variables)]
+      let python = FoundPython::detect()
+        .await
+        .unwrap();
+      Ok(())
     }
   }
 }
@@ -160,23 +167,6 @@ pub mod spack {
     ///
     /// You should prefer to call [`Self::clone`] on the first instance you construct instead of
     /// repeatedly calling this method when executing multiple spack subprocesss in a row.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{subprocess::{python::*, spack::*}, summoning::*};
-    ///
-    /// // Access a few of the relevant files and directories.
-    /// let python = FoundPython::detect().await.unwrap();
-    /// let cache_dir = CacheDir::get_or_create().unwrap();
-    /// let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
-    /// let spack = SpackInvocation::create(python, spack_exe).await?;
-    ///
-    /// // This is the current version number for the spack installation.
-    /// assert!(spack.version == "0.18.0.dev0".to_string());
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn create(
       python: python::FoundPython,
       repo: summoning::SpackRepo,
@@ -213,17 +203,6 @@ pub mod spack {
     }
 
     /// Create an instance via [`Self::create`], with good defaults.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::subprocess::spack::SpackInvocation;
-    ///
-    /// let spack = SpackInvocation::summon().await?;
-    /// // This is the current version number for the spack installation.
-    /// assert!(spack.version == "0.18.0.dev0".to_string());
-    /// # Ok(())
-    /// # }) // async
-    /// # }
     pub async fn summon() -> Result<Self, InvocationSummoningError> {
       let python = python::FoundPython::detect().await?;
       let cache_dir = summoning::CacheDir::get_or_create()?;
@@ -240,6 +219,36 @@ pub mod spack {
         repo,
         inner,
       }
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use super::*;
+
+    use crate::{subprocess::python::*, summoning::*};
+
+    use tokio;
+
+    #[tokio::test]
+    async fn test_summon() -> Result<(), crate::Error> {
+      let spack = SpackInvocation::summon().await?;
+      // This is the current version number for the spack installation.
+      assert!(spack.version == "0.20.0.dev0".to_string());
+      Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_invocation() -> Result<(), crate::Error> {
+      // Access a few of the relevant files and directories.
+      let python = FoundPython::detect().await.unwrap();
+      let cache_dir = CacheDir::get_or_create().unwrap();
+      let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
+      let spack = SpackInvocation::create(python, spack_exe).await?;
+
+      // This is the current version number for the spack installation.
+      assert!(spack.version == "0.20.0.dev0".to_string());
+      Ok(())
     }
   }
 

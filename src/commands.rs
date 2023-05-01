@@ -1,4 +1,4 @@
-/* Copyright 2022 Danny McClanahan */
+/* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 //! Invoking specific spack commands.
@@ -217,36 +217,6 @@ pub mod config {
 
   impl GetCompilers {
     /// Execute `spack config get compilers` and parse the YAML output.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use super_process::{exe, sync::SyncInvocable};
-    /// use spack::{SpackInvocation, commands::{CommandError, config::*}};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // .get_compilers() will return an array of compiler specs.
-    /// let get_compilers = GetCompilers { spack, scope: None };
-    /// let found_compilers = get_compilers.clone().get_compilers().await
-    ///   .map_err(|e| CommandError::Config(get_compilers.into_base_config(), e))?;
-    /// assert!(!found_compilers.is_empty());
-    ///
-    /// // Get the path to a working C compiler and check that it can executed.
-    /// let first_cc: exe::Exe = found_compilers[0].paths.cc
-    ///   .as_ref()
-    ///   .expect("cc should have been defined")
-    ///   .into();
-    /// let command = exe::Command {
-    ///   exe: first_cc, argv: ["--version"].into(),
-    ///   ..Default::default()
-    /// };
-    /// let output = command.invoke().await.expect("cc --version should have succeeded");
-    /// assert!(!output.stdout.is_empty());
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn get_compilers(self) -> Result<Vec<CompilerSpec>, ConfigError> {
       let config_request = self.into_base_config();
       let command = config_request
@@ -292,6 +262,51 @@ pub mod config {
       Ok(compiler_specs)
     }
   }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_get_compilers() -> Result<(), crate::Error> {
+      use crate::{
+        commands::{config::*, CommandError},
+        SpackInvocation,
+      };
+      use super_process::{exe, sync::SyncInvocable};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // .get_compilers() will return an array of compiler specs.
+      let get_compilers = GetCompilers { spack, scope: None };
+      let found_compilers = get_compilers
+        .clone()
+        .get_compilers()
+        .await
+        .map_err(|e| CommandError::Config(get_compilers.into_base_config(), e))?;
+      assert!(!found_compilers.is_empty());
+
+      // Get the path to a working C compiler and check that it can executed.
+      let first_cc: exe::Exe = found_compilers[0]
+        .paths
+        .cc
+        .as_ref()
+        .expect("cc should have been defined")
+        .into();
+      let command = exe::Command {
+        exe: first_cc,
+        argv: ["--version"].into(),
+        ..Default::default()
+      };
+      let output = command
+        .invoke()
+        .await
+        .expect("cc --version should have succeeded");
+      assert!(!output.stdout.is_empty());
+      Ok(())
+    }
+  }
 }
 
 /// Find command.
@@ -326,7 +341,6 @@ pub mod find {
     dependencies: Option<serde_json::Value>,
     /// 32-character hash uniquely identifying this spec: {0}
     pub hash: String,
-    full_hash: String,
   }
 
   impl FoundSpec {
@@ -386,40 +400,6 @@ pub mod find {
 
   impl Find {
     /// Execute `spack find "$self.spec"`.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*, find::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Ensure a python is installed that is at least version 3.
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("python@3:"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await.unwrap();
-    ///
-    /// // Look for a python spec with that exact hash.
-    /// let find = Find { spack, spec: found_spec.hashed_spec() };
-    ///
-    /// // .find() will return an array of values, which may have any length.
-    /// let found_specs = find.clone().find().await
-    ///   .map_err(|e| spack::commands::CommandError::Find(find, e))?;
-    ///
-    /// // Here, we just check the first of the found specs.
-    /// assert!(&found_specs[0].name == "python");
-    /// // Verify that this is the same spec as before.
-    /// assert!(&found_specs[0].hash == &found_spec.hash);
-    /// // The fields of the '--json' output of 'find'
-    /// // are deserialized into FoundSpec instances.
-    /// assert!(&found_specs[0].version.0[..2] == "3.");
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn find(self) -> Result<Vec<FoundSpec>, FindError> {
       let command = self
         .setup_command()
@@ -474,39 +454,6 @@ pub mod find {
 
   impl FindPrefix {
     /// Execute `spack find -p "$self.spec"`.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use std::fs;
-    /// use spack::{commands::{*, install::*, find::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Ensure a python is installed that is at least version 3.
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("python@3:"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await
-    ///   .map_err(|e| spack::commands::CommandError::Install(install, e))?;
-    ///
-    /// // Look for a python spec with that exact hash.
-    /// let find_prefix = FindPrefix { spack, spec: found_spec.hashed_spec() };
-    ///
-    /// // .find_prefix() will return the spec's prefix root wrapped in an Option.
-    /// let python_prefix = find_prefix.clone().find_prefix().await
-    ///   .map_err(|e| spack::commands::CommandError::FindPrefix(find_prefix, e))?
-    ///   .unwrap();
-    ///
-    /// // Verify that this prefix contains the python3 executable.
-    /// let python3_exe = python_prefix.path.join("bin").join("python3");
-    /// assert!(fs::File::open(python3_exe).is_ok());
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn find_prefix(self) -> Result<Option<prefix::Prefix>, FindError> {
       let spec = self.spec.clone();
       let command = self
@@ -537,6 +484,95 @@ pub mod find {
         }) if context.contains("==> No package matches") => Ok(None),
         Err(e) => Err(e.into()),
       }
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_find() -> Result<(), crate::Error> {
+      use crate::{
+        commands::{find::*, install::*},
+        SpackInvocation,
+      };
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Ensure a python is installed that is at least version 3.
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("python@3:"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install.clone().install_find().await.unwrap();
+
+      // Look for a python spec with that exact hash.
+      let find = Find {
+        spack,
+        spec: found_spec.hashed_spec(),
+      };
+
+      // .find() will return an array of values, which may have any length.
+      let found_specs = find
+        .clone()
+        .find()
+        .await
+        .map_err(|e| crate::commands::CommandError::Find(find, e))?;
+
+      // Here, we just check the first of the found specs.
+      assert!(&found_specs[0].name == "python");
+      // Verify that this is the same spec as before.
+      assert!(&found_specs[0].hash == &found_spec.hash);
+      // The fields of the '--json' output of 'find'
+      // are deserialized into FoundSpec instances.
+      assert!(&found_specs[0].version.0[..2] == "3.");
+      Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_find_prefix() -> Result<(), crate::Error> {
+      use crate::{
+        commands::{find::*, install::*},
+        SpackInvocation,
+      };
+      use std::fs;
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Ensure a python is installed that is at least version 3.
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("python@3:"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install
+        .clone()
+        .install_find()
+        .await
+        .map_err(|e| crate::commands::CommandError::Install(install, e))?;
+
+      // Look for a python spec with that exact hash.
+      let find_prefix = FindPrefix {
+        spack,
+        spec: found_spec.hashed_spec(),
+      };
+
+      // .find_prefix() will return the spec's prefix root wrapped in an Option.
+      let python_prefix = find_prefix
+        .clone()
+        .find_prefix()
+        .await
+        .map_err(|e| crate::commands::CommandError::FindPrefix(find_prefix, e))?
+        .unwrap();
+
+      // Verify that this prefix contains the python3 executable.
+      let python3_exe = python_prefix.path.join("bin").join("python3");
+      assert!(fs::File::open(python3_exe).is_ok());
+      Ok(())
     }
   }
 }
@@ -603,34 +639,6 @@ pub mod load {
 
   impl Load {
     /// Execute `spack load --sh "$self.spec"`.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use std::ffi::OsStr;
-    /// use super_process::exe;
-    /// use spack::{commands::{*, install::*, load::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Ensure a python is installed that is at least version 3.
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("python@3:"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await.unwrap();
-    ///
-    /// // Look for a python spec with that exact hash.
-    /// let load = Load { spack, specs: vec![found_spec.hashed_spec()] };
-    /// let exe::EnvModifications(python_env) = load.clone().load().await
-    ///   .map_err(|e| spack::commands::CommandError::Load(load, e))?;
-    /// // This is the contents of a source-able environment script.
-    /// assert!(python_env.contains_key(OsStr::new("ACLOCAL_PATH")));
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn load(self) -> Result<exe::EnvModifications, LoadError> {
       let command = self
         .setup_command()
@@ -647,6 +655,46 @@ pub mod load {
       .await?;
 
       Ok(env)
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_load() -> Result<(), crate::Error> {
+      use crate::{
+        commands::{install::*, load::*},
+        SpackInvocation,
+      };
+      use std::ffi::OsStr;
+      use super_process::exe;
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Ensure a python is installed that is at least version 3.
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("python@3:"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install.clone().install_find().await.unwrap();
+
+      // Look for a python spec with that exact hash.
+      let load = Load {
+        spack,
+        specs: vec![found_spec.hashed_spec()],
+      };
+      let exe::EnvModifications(python_env) = load
+        .clone()
+        .load()
+        .await
+        .map_err(|e| crate::commands::CommandError::Load(load, e))?;
+      // This is the contents of a source-able environment script.
+      assert!(python_env.contains_key(OsStr::new("ACLOCAL_PATH")));
+      Ok(())
     }
   }
 }
@@ -740,31 +788,21 @@ pub mod install {
   }
 
   impl Install {
+    /// Execute `spack install "$self.spec"`, piping stdout and stderr to the terminal.
+    pub async fn install(self) -> Result<(), InstallError> {
+      let command = self
+        .setup_command()
+        .await
+        .map_err(|e| e.with_context(format!("in Install::install()")))?;
+
+      /* Kick off the child process, reading its streams asynchronously. */
+      let streaming = command.invoke_streaming()?;
+      streaming.wait().await?;
+
+      Ok(())
+    }
+
     /// Execute [`Self::install`], then execute [`Find::find`].
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Install libiberty, if we don't have it already!
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("libiberty@2.37"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await
-    ///   .map_err(|e| spack::commands::CommandError::Install(install, e))?;
-    ///
-    /// // The result matches our query!
-    /// assert!(&found_spec.name == "libiberty");
-    /// assert!(&found_spec.version.0 == "2.37");
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn install_find(self) -> Result<FoundSpec, InstallError> {
       let Self { spack, spec, .. } = self.clone();
 
@@ -793,44 +831,6 @@ pub mod install {
       Ok(found_specs[0].clone())
     }
 
-    /// Execute `spack install "$self.spec"`, piping stdout and stderr to the terminal.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, install::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Install libiberty, if we don't have it already!
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("libiberty@2.37"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await
-    ///   .map_err(|e| spack::commands::CommandError::Install(install, e))?;
-    ///
-    /// // The result matches our query!
-    /// assert!(&found_spec.name == "libiberty");
-    /// assert!(&found_spec.version.0 == "2.37");
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
-    pub async fn install(self) -> Result<(), InstallError> {
-      let command = self
-        .setup_command()
-        .await
-        .map_err(|e| e.with_context(format!("in Install::install()")))?;
-
-      /* Kick off the child process, reading its streams asynchronously. */
-      let streaming = command.invoke_streaming()?;
-      streaming.wait().await?;
-
-      Ok(())
-    }
-
     /// Do [`Self::install`], but after sourcing the contents of `load_env`.
     ///
     /// FIXME: DOCUMENT AND TEST!!
@@ -847,6 +847,61 @@ pub mod install {
       let streaming = command.invoke_streaming()?;
       streaming.wait().await?;
 
+      Ok(())
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_install() -> Result<(), crate::Error> {
+      use crate::{commands::install::*, SpackInvocation};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Install libiberty, if we don't have it already!
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("libiberty@2.37"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install
+        .clone()
+        .install_find()
+        .await
+        .map_err(|e| crate::commands::CommandError::Install(install, e))?;
+
+      // The result matches our query!
+      assert!(&found_spec.name == "libiberty");
+      assert!(&found_spec.version.0 == "2.37");
+      Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_install_find() -> Result<(), crate::Error> {
+      use crate::{commands::install::*, SpackInvocation};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Install libiberty, if we don't have it already!
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("libiberty@2.37"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install
+        .clone()
+        .install_find()
+        .await
+        .map_err(|e| crate::commands::CommandError::Install(install, e))?;
+
+      // The result matches our query!
+      assert!(&found_spec.name == "libiberty");
+      assert!(&found_spec.version.0 == "2.37");
       Ok(())
     }
   }
@@ -936,85 +991,6 @@ pub mod build_env {
 
   impl BuildEnv {
     /// Execute `spack build-env "$self.spec" -- $self.argv`.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// let td = tempdir::TempDir::new("spack-summon-test").unwrap();
-    /// use std::{fs, io::BufRead};
-    /// use spack::{
-    ///   SpackInvocation,
-    ///   commands::{*, build_env::*, install::*},
-    /// };
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await?;
-    ///
-    /// // Let's get a python 3 or later installed!
-    /// let install = Install {
-    ///   spack: spack.clone(),
-    ///   spec: CLISpec::new("python@3:"),
-    ///   verbosity: Default::default(),
-    /// };
-    /// let found_spec = install.clone().install_find().await
-    ///   .map_err(|e| spack::commands::CommandError::Install(install, e))?;
-    ///
-    /// // Now let's activate the build environment for it!
-    /// let build_env = BuildEnv {
-    ///   spack: spack.clone(),
-    ///   // Use the precise spec we just ensured was installed.
-    ///   spec: found_spec.hashed_spec(),
-    ///   dump: None,
-    ///   argv: Default::default(),
-    /// };
-    /// // Execute build-env to get an env printed to stdout.
-    /// let output = build_env.clone().build_env().await
-    ///   .map_err(|e| spack::commands::CommandError::BuildEnv(build_env, e))?;
-    ///
-    /// // Example ad-hoc parsing of environment source files.
-    /// let mut spec_was_found: bool = false;
-    /// for line in output.stdout.lines() {
-    ///   let line = line.unwrap();
-    ///   if line.starts_with("SPACK_SHORT_SPEC") {
-    ///     spec_was_found = true;
-    ///     assert!("python" == &line[17..23]);
-    ///   }
-    /// }
-    /// assert!(spec_was_found);
-    ///
-    /// // Now let's write out the environment to a file using --dump!
-    /// let dump = td.path().join(".env-dump");
-    /// let build_env = BuildEnv {
-    ///   spack: spack.clone(),
-    ///   spec: found_spec.hashed_spec(),
-    ///   dump: Some(dump.clone()),
-    ///   argv: Default::default(),
-    /// };
-    /// // We will have written to ./.env-dump!
-    /// let _ = build_env.clone().build_env().await
-    ///   .map_err(|e| spack::commands::CommandError::BuildEnv(build_env, e))?;
-    /// spec_was_found = false;
-    /// for line in fs::read_to_string(&dump).expect(".env-dump was created").lines() {
-    ///   if line.starts_with("SPACK_SHORT_SPEC") {
-    ///     spec_was_found = true;
-    ///     assert!("python" == &line[18..24]);
-    ///   }
-    /// }
-    /// assert!(spec_was_found);
-    ///
-    /// // Now let's try running a command line in a build-env!
-    /// let build_env = BuildEnv {
-    ///   spack,
-    ///   spec: found_spec.hashed_spec(),
-    ///   dump: None,
-    ///   argv: ["sh", "-c", "echo $SPACK_SHORT_SPEC"].as_ref().into(),
-    /// };
-    /// let output = build_env.clone().build_env().await
-    ///   .map_err(|e| spack::commands::CommandError::BuildEnv(build_env, e))?;
-    /// assert!(&output.stdout[..6] == b"python");
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn build_env(self) -> Result<sync::RawOutput, BuildEnvError> {
       let command = self
         .setup_command()
@@ -1022,6 +998,103 @@ pub mod build_env {
         .map_err(|e| e.with_context(format!("in BuildEnv::build_env()")))?;
       let output = command.invoke().await?;
       Ok(output)
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_build_env() -> Result<(), crate::Error> {
+      let td = tempdir::TempDir::new("spack-summon-test").unwrap();
+      use crate::{
+        commands::{build_env::*, install::*},
+        SpackInvocation,
+      };
+      use std::{fs, io::BufRead};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      // Let's get a python 3 or later installed!
+      let install = Install {
+        spack: spack.clone(),
+        spec: CLISpec::new("python@3:"),
+        verbosity: Default::default(),
+      };
+      let found_spec = install
+        .clone()
+        .install_find()
+        .await
+        .map_err(|e| crate::commands::CommandError::Install(install, e))?;
+
+      // Now let's activate the build environment for it!
+      let build_env = BuildEnv {
+        spack: spack.clone(),
+        // Use the precise spec we just ensured was installed.
+        spec: found_spec.hashed_spec(),
+        dump: None,
+        argv: Default::default(),
+      };
+      // Execute build-env to get an env printed to stdout.
+      let output = build_env
+        .clone()
+        .build_env()
+        .await
+        .map_err(|e| crate::commands::CommandError::BuildEnv(build_env, e))?;
+
+      // Example ad-hoc parsing of environment source files.
+      let mut spec_was_found: bool = false;
+      for line in output.stdout.lines() {
+        let line = line.unwrap();
+        if line.starts_with("SPACK_SHORT_SPEC") {
+          spec_was_found = true;
+          assert!("python" == &line[17..23]);
+        }
+      }
+      assert!(spec_was_found);
+
+      // Now let's write out the environment to a file using --dump!
+      let dump = td.path().join(".env-dump");
+      let build_env = BuildEnv {
+        spack: spack.clone(),
+        spec: found_spec.hashed_spec(),
+        dump: Some(dump.clone()),
+        argv: Default::default(),
+      };
+      // We will have written to ./.env-dump!
+      let _ = build_env
+        .clone()
+        .build_env()
+        .await
+        .map_err(|e| crate::commands::CommandError::BuildEnv(build_env, e))?;
+      spec_was_found = false;
+      for line in fs::read_to_string(&dump)
+        .expect(".env-dump was created")
+        .lines()
+      {
+        if line.starts_with("SPACK_SHORT_SPEC") {
+          spec_was_found = true;
+          assert!("python" == &line[18..24]);
+        }
+      }
+      assert!(spec_was_found);
+
+      // Now let's try running a command line in a build-env!
+      let build_env = BuildEnv {
+        spack,
+        spec: found_spec.hashed_spec(),
+        dump: None,
+        argv: ["sh", "-c", "echo $SPACK_SHORT_SPEC"].as_ref().into(),
+      };
+      let output = build_env
+        .clone()
+        .build_env()
+        .await
+        .map_err(|e| crate::commands::CommandError::BuildEnv(build_env, e))?;
+      assert!(&output.stdout[..6] == b"python");
+      Ok(())
     }
   }
 }
@@ -1041,48 +1114,6 @@ pub mod python {
   use std::ffi::OsStr;
 
   /// spack python command request.
-  ///```
-  /// # fn main() -> Result<(), spack::Error> {
-  /// # tokio_test::block_on(async {
-  /// use futures_lite::io::AsyncReadExt;
-  /// use super_process::{base::CommandBase, sync::SyncInvocable, stream::Streamable};
-  /// use spack::{SpackInvocation, commands::python};
-  ///
-  /// // Locate all the executables.
-  /// let spack = SpackInvocation::summon().await.unwrap();
-  ///
-  /// // Create python execution request.
-  /// let spack_python = python::SpackPython {
-  ///   spack: spack.clone(),
-  ///   script: "import spack; print(spack.__version__)".to_string(),
-  ///   passthrough: Default::default(),
-  /// };
-  /// let command = spack_python.setup_command().await.expect("hydration failed");
-  ///
-  /// // Spawn the child process and wait for it to complete.
-  /// let output = command.clone().invoke().await.expect("sync command failed");
-  /// // Parse output into UTF-8...
-  /// let decoded = output.decode(command.clone()).expect("decoding failed");
-  /// // ...and verify the version matches `spack.version`.
-  /// let version = decoded.stdout.strip_suffix("\n").unwrap();
-  /// assert!(version == &spack.version);
-  ///
-  /// // Spawn the child process and wait for it to end.
-  /// let mut streaming = command.invoke_streaming().expect("streaming command subprocess failed");
-  ///
-  /// // Slurp stdout all at once into a string.
-  /// let mut version: String = "".to_string();
-  /// streaming.stdout.read_to_string(&mut version).await.unwrap();
-  /// // Parse the spack version from stdout, and verify it matches `spack.version`.
-  /// let version = version.strip_suffix("\n").unwrap();
-  /// assert!(version == &spack.version);
-  ///
-  /// // Now verify the process exited successfully.
-  /// streaming.wait().await.expect("streaming command should have succeeded");
-  /// # Ok(())
-  /// # }) // async
-  /// # }
-  ///```
   #[derive(Debug, Clone)]
   pub struct SpackPython {
     #[allow(missing_docs)]
@@ -1138,6 +1169,59 @@ pub mod python {
         .await?;
 
       Ok(command)
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_python() -> Result<(), crate::Error> {
+      use crate::{commands::python, SpackInvocation};
+      use futures_lite::io::AsyncReadExt;
+      use super_process::{base::CommandBase, stream::Streamable, sync::SyncInvocable};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await.unwrap();
+
+      // Create python execution request.
+      let spack_python = python::SpackPython {
+        spack: spack.clone(),
+        script: "import spack; print(spack.__version__)".to_string(),
+        passthrough: Default::default(),
+      };
+      let command = spack_python
+        .setup_command()
+        .await
+        .expect("hydration failed");
+
+      // Spawn the child process and wait for it to complete.
+      let output = command.clone().invoke().await.expect("sync command failed");
+      // Parse output into UTF-8...
+      let decoded = output.decode(command.clone()).expect("decoding failed");
+      // ...and verify the version matches `spack.version`.
+      let version = decoded.stdout.strip_suffix("\n").unwrap();
+      assert!(version == &spack.version);
+
+      // Spawn the child process and wait for it to end.
+      let mut streaming = command
+        .invoke_streaming()
+        .expect("streaming command subprocess failed");
+
+      // Slurp stdout all at once into a string.
+      let mut version: String = "".to_string();
+      streaming.stdout.read_to_string(&mut version).await.unwrap();
+      // Parse the spack version from stdout, and verify it matches `spack.version`.
+      let version = version.strip_suffix("\n").unwrap();
+      assert!(version == &spack.version);
+
+      // Now verify the process exited successfully.
+      streaming
+        .wait()
+        .await
+        .expect("streaming command should have succeeded");
+      Ok(())
     }
   }
 }
@@ -1211,28 +1295,6 @@ pub mod compiler_find {
     ///
     /// Use [`FindCompilerSpecs::find_compiler_specs`] to get information about the compilers spack
     /// can find.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, compiler_find::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await.unwrap();
-    ///
-    /// // Create compiler-find execution request.
-    /// let find_compiler_specs = FindCompilerSpecs {
-    ///   spack: spack.clone(),
-    ///   paths: vec![],
-    /// };
-    /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
-    ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
-    /// // The first compiler on the list is gcc or clang!
-    /// let first_name = &found_compilers[0].compiler.name;
-    /// assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn compiler_find(self) -> Result<(), CompilerFindError> {
       let command = self
         .setup_command()
@@ -1278,28 +1340,6 @@ pub mod compiler_find {
     /// Run a custom `spack python` script to print out compiler specs located in the given paths.
     ///
     /// If the given set of [`Self::paths`] is empty, use the defaults from config.
-    ///```
-    /// # fn main() -> Result<(), spack::Error> {
-    /// # tokio_test::block_on(async {
-    /// use spack::{commands::{*, compiler_find::*}, SpackInvocation};
-    ///
-    /// // Locate all the executables.
-    /// let spack = SpackInvocation::summon().await.unwrap();
-    ///
-    /// // Create compiler-find execution request.
-    /// let find_compiler_specs = FindCompilerSpecs {
-    ///   spack: spack.clone(),
-    ///   paths: vec![],
-    /// };
-    /// let found_compilers = find_compiler_specs.clone().find_compiler_specs().await
-    ///   .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
-    /// // The first compiler on the list is gcc or clang!
-    /// let first_name = &found_compilers[0].compiler.name;
-    /// assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
-    /// # Ok(())
-    /// # }) // async
-    /// # }
-    ///```
     pub async fn find_compiler_specs(self) -> Result<Vec<FoundCompiler>, CompilerFindError> {
       let command = self
         .setup_command()
@@ -1341,6 +1381,57 @@ pub mod compiler_find {
         passthrough: argv,
       };
       Ok(python.setup_command().await?)
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use tokio;
+
+    #[tokio::test]
+    async fn test_compiler_find() -> Result<(), crate::Error> {
+      use crate::{commands::compiler_find::*, SpackInvocation};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await.unwrap();
+
+      // Create compiler-find execution request.
+      let find_compiler_specs = FindCompilerSpecs {
+        spack: spack.clone(),
+        paths: vec![],
+      };
+      let found_compilers = find_compiler_specs
+        .clone()
+        .find_compiler_specs()
+        .await
+        .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
+      // The first compiler on the list is gcc or clang!
+      let first_name = &found_compilers[0].compiler.name;
+      assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
+      Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_find_compiler_specs() -> Result<(), crate::Error> {
+      use crate::{commands::compiler_find::*, SpackInvocation};
+
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await.unwrap();
+
+      // Create compiler-find execution request.
+      let find_compiler_specs = FindCompilerSpecs {
+        spack: spack.clone(),
+        paths: vec![],
+      };
+      let found_compilers = find_compiler_specs
+        .clone()
+        .find_compiler_specs()
+        .await
+        .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
+      // The first compiler on the list is gcc or clang!
+      let first_name = &found_compilers[0].compiler.name;
+      assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
+      Ok(())
     }
   }
 }

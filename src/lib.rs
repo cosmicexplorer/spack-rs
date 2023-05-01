@@ -1,4 +1,4 @@
-/* Copyright 2022 Danny McClanahan */
+/* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 //! Rust wrappers for [`spack`]. For use in [build scripts].
@@ -54,10 +54,10 @@ use hex_literal::hex;
 use thiserror::Error;
 
 const EMCC_CAPABLE_SPACK_URL: &str =
-  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.17.2.2-emcc.tar.gz";
+  "https://github.com/cosmicexplorer/spack/archive/refs/tags/v0.20.0.dev0-emcc.tar.gz";
 const EMCC_URL_SHA256SUM: [u8; 32] =
-  hex!("44198c3f82ae3427c64c03e2fb51d2877cd3860b73e5da2cd073aaba1480eb70");
-const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.17.2.2-emcc";
+  hex!("fc45a31f0f98f9a781eae8a58e38c13980addd20302c0a7f32dc084e55ba7f2f");
+const EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.20.0.dev0-emcc";
 
 /// Errors that can occur.
 #[derive(Debug, Display, Error)]

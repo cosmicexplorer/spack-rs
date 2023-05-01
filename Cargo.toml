@@ -42,3 +42,4 @@ walkdir                 = "2"
 [dev-dependencies]
 tempdir                 = "0.3.7"
 tokio-test              = "0.4.2"
+tokio                   = { version = "1", features = ["full"] }

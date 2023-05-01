@@ -1,4 +1,4 @@
-/* Copyright 2022 Danny McClanahan */
+/* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 //! Get a copy of spack.
@@ -193,20 +193,6 @@ impl SpackRepo {
   ///
   /// If necessary, download the release tarball, validate its checksum, then expand the
   /// tarball. Return the path to the spack root directory.
-  ///```
-  /// use spack::summoning::*;
-  /// use std::fs::File;
-  /// # fn main() -> Result<(), spack::Error> {
-  /// # tokio_test::block_on(async {
-  /// # let td = tempdir::TempDir::new("spack-summon-test").unwrap();
-  /// # std::env::set_var("HOME", td.path());
-  /// let cache_dir = CacheDir::get_or_create().unwrap();
-  /// let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
-  /// let _ = File::open(&spack_exe.script_path).expect("spack script should exist");
-  /// # Ok(())
-  /// # }) // async
-  /// # }
-  ///```
   pub async fn summon(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let current_link_path = cache_dir.unpacking_path();
 
@@ -231,5 +217,23 @@ impl SpackRepo {
     }?;
 
     Ok(Self::get_spack_script(cache_dir)?)
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use tokio;
+
+  #[tokio::test]
+  async fn test_summon() -> Result<(), super::SummoningError> {
+    use crate::summoning::*;
+    use std::fs::File;
+
+    let td = tempdir::TempDir::new("spack-summon-test").unwrap();
+    std::env::set_var("HOME", td.path());
+    let cache_dir = CacheDir::get_or_create()?;
+    let spack_exe = SpackRepo::summon(cache_dir).await?;
+    let _ = File::open(&spack_exe.script_path).expect("spack script should exist");
+    Ok(())
   }
 }

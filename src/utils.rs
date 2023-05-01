@@ -1,4 +1,4 @@
-/* Copyright 2022 Danny McClanahan */
+/* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 use crate::{
@@ -31,19 +31,6 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
 /// Call `spack install <spec>` and parse the result of `spack find --json`.
 ///
 /// The installation via `spack install` will be cached using spack's normal caching mechanisms.
-///```
-/// # fn main() -> Result<(), spack::Error> {
-/// # tokio_test::block_on(async {
-/// // Locate all the executables.
-/// let spack = spack::SpackInvocation::summon().await?;
-///
-/// // Let's look for an `m4` installation.
-/// let m4_spec = spack::utils::ensure_installed(spack, "m4".into()).await?;
-/// assert!(&m4_spec.name == "m4");
-/// # Ok(())
-/// # }) // async
-/// # }
-///```
 pub async fn ensure_installed(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -62,31 +49,6 @@ pub async fn ensure_installed(
 }
 
 /// Call [`ensure_installed`], then return its installation root prefix from within `opt/spack/...`.
-///```
-/// # fn main() -> Result<(), spack::Error> {
-/// # tokio_test::block_on(async {
-/// use super_process::{exe, fs, sync::SyncInvocable};
-/// use spack::{SpackInvocation, utils};
-///
-/// // Locate all the executables.
-/// let spack = SpackInvocation::summon().await?;
-///
-/// // Let's look for an `m4` installation, and find the `m4` executable.
-/// let m4_prefix = utils::ensure_prefix(spack, "m4".into()).await?;
-/// let m4_bin_path = m4_prefix.path.join("bin").join("m4");
-///
-/// // Let's make sure the executable can be executed successfully!
-/// let command = exe::Command {
-///   exe: exe::Exe(fs::File(m4_bin_path)),
-///   argv: ["--version"].as_ref().into(),
-///   ..Default::default()
-/// };
-/// let output = command.invoke().await.expect("expected m4 command to succeed");
-/// assert!(output.stdout.starts_with(b"m4 "));
-/// # Ok(())
-/// # }) // async
-/// # }
-///```
 pub async fn ensure_prefix(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -118,38 +80,81 @@ pub mod wasm {
 targets=webassembly";
 
   /// Ensure that a version of llvm is installed that is able to support emscripten.
-  ///```
-  /// # fn main() -> Result<(), spack::Error> {
-  /// # tokio_test::block_on(async {
-  /// use super_process::{exe, fs, sync::SyncInvocable};
-  /// use spack::{SpackInvocation, utils};
-  ///
-  /// // Locate all the executables.
-  /// let spack = SpackInvocation::summon().await?;
-  ///
-  /// // Let's look for an `llvm` installation, and find the `llvm-config` executable.
-  /// let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?;
-  /// let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?;
-  /// let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config");
-  ///
-  /// // Let's make sure the executable can be executed successfully!
-  /// let command = exe::Command {
-  ///   exe: exe::Exe(fs::File(llvm_config_path)),
-  ///   argv: ["--targets-built"].as_ref().into(),
-  ///   ..Default::default()
-  /// };
-  /// let output = command.invoke().await.expect("expected llvm-config command to succeed");
-  /// let stdout = std::str::from_utf8(&output.stdout).unwrap();
-  /// assert!(stdout.contains("WebAssembly"));
-  /// # Ok(())
-  /// # }) // async
-  /// # }
-  ///```
   pub async fn ensure_wasm_ready_llvm(
     spack: crate::SpackInvocation,
   ) -> Result<find::FoundSpec, crate::Error> {
     let llvm_found_spec = super::ensure_installed(spack, LLVM_FOR_WASM.into()).await?;
     Ok(llvm_found_spec)
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use tokio;
+
+  #[tokio::test]
+  async fn test_ensure_wasm_ready_llvm() -> Result<(), crate::Error> {
+    use crate::{utils, SpackInvocation};
+    use super_process::{exe, fs, sync::SyncInvocable};
+
+    // Locate all the executables.
+    let spack = SpackInvocation::summon().await?;
+
+    // Let's look for an `llvm` installation, and find the `llvm-config` executable.
+    let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?;
+    let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?;
+    let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config");
+
+    // Let's make sure the executable can be executed successfully!
+    let command = exe::Command {
+      exe: exe::Exe(fs::File(llvm_config_path)),
+      argv: ["--targets-built"].as_ref().into(),
+      ..Default::default()
+    };
+    let output = command
+      .invoke()
+      .await
+      .expect("expected llvm-config command to succeed");
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    assert!(stdout.contains("WebAssembly"));
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_ensure_prefix() -> Result<(), crate::Error> {
+    use crate::{utils, SpackInvocation};
+    use super_process::{exe, fs, sync::SyncInvocable};
+
+    // Locate all the executables.
+    let spack = SpackInvocation::summon().await?;
+
+    // Let's look for an `m4` installation, and find the `m4` executable.
+    let m4_prefix = utils::ensure_prefix(spack, "m4".into()).await?;
+    let m4_bin_path = m4_prefix.path.join("bin").join("m4");
+
+    // Let's make sure the executable can be executed successfully!
+    let command = exe::Command {
+      exe: exe::Exe(fs::File(m4_bin_path)),
+      argv: ["--version"].as_ref().into(),
+      ..Default::default()
+    };
+    let output = command
+      .invoke()
+      .await
+      .expect("expected m4 command to succeed");
+    assert!(output.stdout.starts_with(b"m4 "));
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_ensure_installed() -> Result<(), crate::Error> {
+    // Locate all the executables.
+    let spack = crate::SpackInvocation::summon().await?;
+
+    // Let's look for an `m4` installation.
+    let m4_spec = crate::utils::ensure_installed(spack, "m4".into()).await?;
+    assert!(&m4_spec.name == "m4");
+    Ok(())
   }
 }
 
