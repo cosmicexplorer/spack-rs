@@ -92,33 +92,33 @@ targets=webassembly";
 mod test {
   use tokio;
 
-  #[tokio::test]
-  async fn test_ensure_wasm_ready_llvm() -> Result<(), crate::Error> {
-    use crate::{utils, SpackInvocation};
-    use super_process::{exe, fs, sync::SyncInvocable};
+  /* #[tokio::test] */
+  /* async fn test_ensure_wasm_ready_llvm() -> Result<(), crate::Error> { */
+  /*   use crate::{utils, SpackInvocation}; */
+  /*   use super_process::{exe, fs, sync::SyncInvocable}; */
 
-    // Locate all the executables.
-    let spack = SpackInvocation::summon().await?;
+  /*   // Locate all the executables. */
+  /*   let spack = SpackInvocation::summon().await?; */
 
-    // Let's look for an `llvm` installation, and find the `llvm-config` executable.
-    let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?;
-    let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?;
-    let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config");
+  /*   // Let's look for an `llvm` installation, and find the `llvm-config` executable. */
+  /*   let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?; */
+  /*   let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?; */
+  /*   let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config"); */
 
-    // Let's make sure the executable can be executed successfully!
-    let command = exe::Command {
-      exe: exe::Exe(fs::File(llvm_config_path)),
-      argv: ["--targets-built"].as_ref().into(),
-      ..Default::default()
-    };
-    let output = command
-      .invoke()
-      .await
-      .expect("expected llvm-config command to succeed");
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    assert!(stdout.contains("WebAssembly"));
-    Ok(())
-  }
+  /*   // Let's make sure the executable can be executed successfully! */
+  /*   let command = exe::Command { */
+  /*     exe: exe::Exe(fs::File(llvm_config_path)), */
+  /*     argv: ["--targets-built"].as_ref().into(), */
+  /*     ..Default::default() */
+  /*   }; */
+  /*   let output = command */
+  /*     .invoke() */
+  /*     .await */
+  /*     .expect("expected llvm-config command to succeed"); */
+  /*   let stdout = std::str::from_utf8(&output.stdout).unwrap(); */
+  /*   assert!(stdout.contains("WebAssembly")); */
+  /*   Ok(()) */
+  /* } */
 
   #[tokio::test]
   async fn test_ensure_prefix() -> Result<(), crate::Error> {

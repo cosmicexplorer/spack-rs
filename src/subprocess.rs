@@ -56,7 +56,8 @@ pub mod python {
 
   lazy_static! {
     /// Pattern we match against when executing [`Python::detect`].
-    static ref PYTHON_VERSION_REGEX: Regex = Regex::new(r"^Python (3\.[0-9]+\.[0-9]+)\n$").unwrap();
+    static ref PYTHON_VERSION_REGEX: Regex =
+      Regex::new(r"^Python (3\.[0-9]+\.[0-9]+).*\n$").unwrap();
   }
 
   impl FoundPython {
@@ -113,9 +114,7 @@ pub mod python {
     #[tokio::test]
     async fn test_detect_python() -> Result<(), crate::Error> {
       #[allow(unused_variables)]
-      let python = FoundPython::detect()
-        .await
-        .unwrap();
+      let python = FoundPython::detect().await.unwrap();
       Ok(())
     }
   }
@@ -234,7 +233,7 @@ pub mod spack {
     async fn test_summon() -> Result<(), crate::Error> {
       let spack = SpackInvocation::summon().await?;
       // This is the current version number for the spack installation.
-      assert!(spack.version == "0.20.0.dev0".to_string());
+      assert!(spack.version == "0.20.3".to_string());
       Ok(())
     }
 
@@ -247,7 +246,7 @@ pub mod spack {
       let spack = SpackInvocation::create(python, spack_exe).await?;
 
       // This is the current version number for the spack installation.
-      assert!(spack.version == "0.20.0.dev0".to_string());
+      assert!(spack.version == "0.20.3".to_string());
       Ok(())
     }
   }

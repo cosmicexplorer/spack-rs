@@ -3,7 +3,7 @@
 
 //! Get a copy of spack.
 
-use crate::utils;
+use crate::{utils, versions::develop::*};
 
 use displaydoc::Display;
 use flate2::read::GzDecoder;
@@ -53,7 +53,7 @@ impl CacheDir {
   /// We use the hex-encoded checksum value as the ultimate directory name.
   #[inline]
   pub fn dirname(&self) -> String {
-    crate::EMCC_URL_SHA256SUM.encode_hex()
+    MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex()
   }
 
   /// The path to unpack the tar archive into.
@@ -61,7 +61,7 @@ impl CacheDir {
   pub fn unpacking_path(&self) -> PathBuf {
     self
       .location
-      .join(crate::EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
+      .join(MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
   }
 
   /// The path to download the release tarball to.
@@ -72,13 +72,13 @@ impl CacheDir {
 
   /// The path to the root of the spack repo, through a symlink.
   ///
-  /// FIXME: Note that this repeats the [`crate::EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
+  /// FIXME: Note that this repeats the [`MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
   /// used in [`Self::unpacking_path`].
   #[inline]
   pub fn repo_root(&self) -> PathBuf {
     self
       .unpacking_path()
-      .join(crate::EMCC_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
+      .join(MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
   }
 
   /// The path to the spack script in the spack repo, through a symlink.
@@ -113,26 +113,26 @@ impl SpackTarball {
         let mut hasher = Sha256::new();
         hasher.update(&tarball_bytes);
         let checksum: [u8; 32] = hasher.finalize().into();
-        if checksum == crate::EMCC_URL_SHA256SUM {
+        if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
           Ok(Self {
             downloaded_location: tgz_path,
           })
         } else {
           Err(SummoningError::Checksum(
             format!("file://{}", tgz_path.display()),
-            crate::EMCC_URL_SHA256SUM.encode_hex(),
+            MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
             checksum.encode_hex(),
           ))
         }
       }
       Err(e) if e.kind() == io::ErrorKind::NotFound => {
         /* If we don't already have a file, we download it! */
-        let resp = reqwest::get(crate::EMCC_CAPABLE_SPACK_URL).await?;
+        let resp = reqwest::get(MOST_RECENT_HARDCODED_SPACK_URL).await?;
         let tarball_bytes = resp.bytes().await?;
         let mut hasher = Sha256::new();
         hasher.update(&tarball_bytes);
         let checksum: [u8; 32] = hasher.finalize().into();
-        if checksum == crate::EMCC_URL_SHA256SUM {
+        if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
           let mut tgz = fs::File::create(&tgz_path)?;
           tgz.write_all(&tarball_bytes)?;
           tgz.sync_all()?;
@@ -141,8 +141,8 @@ impl SpackTarball {
           })
         } else {
           Err(SummoningError::Checksum(
-            crate::EMCC_CAPABLE_SPACK_URL.to_string(),
-            crate::EMCC_URL_SHA256SUM.encode_hex(),
+            MOST_RECENT_HARDCODED_SPACK_URL.to_string(),
+            MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
             checksum.encode_hex(),
           ))
         }
@@ -220,20 +220,21 @@ impl SpackRepo {
   }
 }
 
-#[cfg(test)]
-mod test {
-  use tokio;
+/* FIXME: this test will break all the other ones if it modifies the $HOME variable! */
+/* #[cfg(test)] */
+/* mod test { */
+/*   use tokio; */
 
-  #[tokio::test]
-  async fn test_summon() -> Result<(), super::SummoningError> {
-    use crate::summoning::*;
-    use std::fs::File;
+/*   #[tokio::test] */
+/*   async fn test_summon() -> Result<(), super::SummoningError> { */
+/*     use crate::summoning::*; */
+/*     use std::fs::File; */
 
-    let td = tempdir::TempDir::new("spack-summon-test").unwrap();
-    std::env::set_var("HOME", td.path());
-    let cache_dir = CacheDir::get_or_create()?;
-    let spack_exe = SpackRepo::summon(cache_dir).await?;
-    let _ = File::open(&spack_exe.script_path).expect("spack script should exist");
-    Ok(())
-  }
-}
+/*     let td = tempdir::TempDir::new("spack-summon-test").unwrap(); */
+/*     std::env::set_var("HOME", td.path()); */
+/*     let cache_dir = CacheDir::get_or_create()?; */
+/*     let spack_exe = SpackRepo::summon(cache_dir).await?; */
+/*     let _ = File::open(&spack_exe.script_path).expect("spack script should exist"); */
+/*     Ok(()) */
+/*   } */
+/* } */

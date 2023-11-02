@@ -645,6 +645,7 @@ pub mod load {
         .await
         .map_err(|e| e.with_context(format!("in Load::load()")))?;
       let load_output = command.invoke().await?;
+      /* dbg!(std::str::from_utf8(&load_output.stdout).unwrap()); */
 
       let env = sh::EnvAfterScript {
         source: sh::ShellSource {
