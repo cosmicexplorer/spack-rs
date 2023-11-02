@@ -124,7 +124,7 @@ pub mod python {
 
 pub mod spack {
   use super::python;
-  use crate::summoning;
+  use crate::{commands, summoning};
   use super_process::{
     base::{self, CommandBase},
     exe, fs,
@@ -135,7 +135,7 @@ pub mod spack {
   use displaydoc::Display;
   use thiserror::Error;
 
-  use std::{io, str};
+  use std::{io, path::PathBuf, str};
 
   #[derive(Debug, Display, Error)]
   pub enum InvocationSummoningError {
@@ -145,6 +145,8 @@ pub mod spack {
     Command(#[from] exe::CommandErrorWrapper),
     /// error summoning: {0}
     Summon(#[from] summoning::SummoningError),
+    /// error bootstrapping: {0}
+    Bootstrap(#[from] commands::install::InstallError),
     /// error location python: {0}
     Python(#[from] python::PythonError),
     /// io error: {0}
@@ -162,6 +164,9 @@ pub mod spack {
     #[allow(dead_code)]
     pub version: String,
   }
+
+  pub(crate) static SUMMON_CUR_PROCESS_LOCK: once_cell::sync::Lazy<parking_lot::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(()));
 
   impl SpackInvocation {
     /// Create an instance.
@@ -204,12 +209,74 @@ pub mod spack {
       })
     }
 
+    async fn bootstrap(
+      &self,
+      cache_dir: summoning::CacheDir,
+    ) -> Result<(), InvocationSummoningError> {
+      let bootstrap_proof_name: PathBuf = format!("{}.bootstrap_proof", cache_dir.dirname()).into();
+      let bootstrap_proof_path = cache_dir.location().join(bootstrap_proof_name);
+
+      match tokio::fs::File::open(&bootstrap_proof_path).await {
+        Ok(_) => return Ok(()),
+        /* If not found, continue. */
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+        Err(e) => return Err(e.into()),
+      }
+
+      let bootstrap_lock_name: PathBuf = format!("{}.bootstrap_lock", cache_dir.dirname()).into();
+      let bootstrap_lock_path = cache_dir.location().join(bootstrap_lock_name);
+      let mut lockfile =
+        tokio::task::spawn_blocking(move || fslock::LockFile::open(&bootstrap_lock_path))
+          .await
+          .unwrap()?;
+      /* This unlocks the lockfile upon drop! */
+      let _lockfile = tokio::task::spawn_blocking(move || {
+        lockfile.lock_with_pid()?;
+        Ok::<_, io::Error>(lockfile)
+      })
+      .await
+      .unwrap()?;
+
+      /* See if the target file was created since we locked the lockfile. */
+      match tokio::fs::File::open(&bootstrap_proof_path).await {
+        /* If so, return early! */
+        Ok(_) => return Ok(()),
+        Err(_) => (),
+      }
+
+      eprintln!(
+        "bootstrapping spack {}",
+        crate::versions::develop::MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT
+      );
+
+      let bootstrap_install = commands::install::Install {
+        spack: self.clone(),
+        spec: commands::CLISpec::new("m4"),
+        verbosity: Default::default(),
+      };
+      let installed_spec = bootstrap_install.install_find().await?;
+
+      use tokio::io::AsyncWriteExt;
+      let mut proof = tokio::fs::File::create(bootstrap_proof_path).await?;
+      proof
+        .write_all(format!("{}", installed_spec.hashed_spec()).as_bytes())
+        .await?;
+
+      Ok(())
+    }
+
     /// Create an instance via [`Self::create`], with good defaults.
     pub async fn summon() -> Result<Self, InvocationSummoningError> {
+      /* Our use of file locking within the summoning process does not
+       * differentiate between different threads within the same process, so
+       * we additionally lock in-process here. */
+      let _lock = SUMMON_CUR_PROCESS_LOCK.lock();
+
       let python = python::FoundPython::detect().await?;
       let cache_dir = summoning::CacheDir::get_or_create().await?;
-      let spack_repo = summoning::SpackRepo::summon(cache_dir).await?;
+      let spack_repo = summoning::SpackRepo::summon(cache_dir.clone()).await?;
       let spack = Self::create(python, spack_repo).await?;
+      spack.bootstrap(cache_dir).await?;
       Ok(spack)
     }
 
@@ -242,6 +309,8 @@ pub mod spack {
 
     #[tokio::test]
     async fn test_create_invocation() -> Result<(), crate::Error> {
+      let _lock = SUMMON_CUR_PROCESS_LOCK.lock();
+
       // Access a few of the relevant files and directories.
       let python = FoundPython::detect().await.unwrap();
       let cache_dir = CacheDir::get_or_create().await.unwrap();

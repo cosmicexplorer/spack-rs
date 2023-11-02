@@ -59,6 +59,9 @@ impl CacheDir {
     Ok(Self { location: path })
   }
 
+  #[inline]
+  pub fn location(&self) -> &Path { &self.location }
+
   /// We use the hex-encoded checksum value as the ultimate directory name.
   #[inline]
   pub fn dirname(&self) -> String { MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex() }
@@ -131,7 +134,8 @@ impl SpackTarball {
       Ok(mut tgz) => Self::check_tarball_digest(&tgz_path, &mut tgz).await,
       Err(e) if e.kind() == io::ErrorKind::NotFound => {
         /* If we don't already have a file, we download it! */
-        let lockfile_path: PathBuf = format!("{}.tgz.lock", cache_dir.dirname()).into();
+        let lockfile_name: PathBuf = format!("{}.tgz.lock", cache_dir.dirname()).into();
+        let lockfile_path = cache_dir.location().join(lockfile_name);
         let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
           .await
           .unwrap()?;
@@ -209,7 +213,7 @@ impl SpackRepo {
       .unwrap()
   }
 
-  async fn get_spack_script(cache_dir: CacheDir) -> Result<Self, SummoningError> {
+  pub(crate) async fn get_spack_script(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let path = cache_dir.spack_script();
     let _ = fs::File::open(&path).await?;
     Ok(Self {
@@ -228,7 +232,8 @@ impl SpackRepo {
         /* (2) If the spack repo wasn't found on disk, try finding an adjacent
          * tarball. */
 
-        let lockfile_path: PathBuf = format!("{}.lock", cache_dir.dirname()).into();
+        let lockfile_name: PathBuf = format!("{}.lock", cache_dir.dirname()).into();
+        let lockfile_path = cache_dir.location().join(lockfile_name);
         let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
           .await
           .unwrap()?;
@@ -264,11 +269,10 @@ impl SpackRepo {
   /// If necessary, download the release tarball, validate its checksum, then
   /// expand the tarball. Return the path to the spack root directory.
   pub async fn summon(cache_dir: CacheDir) -> Result<Self, SummoningError> {
-    let current_link_path = cache_dir.unpacking_path();
-
     let spack_tarball = SpackTarball::fetch_spack_tarball(cache_dir.clone()).await?;
     dbg!(spack_tarball.downloaded_path());
 
+    let current_link_path = cache_dir.unpacking_path();
     Self::ensure_unpacked(current_link_path, &cache_dir).await?;
 
     Ok(Self::get_spack_script(cache_dir).await?)
