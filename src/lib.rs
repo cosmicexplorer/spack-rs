@@ -8,15 +8,15 @@
 
 #![deny(unsafe_code)]
 /* Turn all warnings into errors! */
-/* #![deny(warnings)] */
-/* Warn for missing docs in general, and hard require crate-level docs. */
-/* #![warn(missing_docs)] */
+ * #![deny(warnings)] */
+ * Warn for missing docs in general, and hard require crate-level docs. */
+ * #![warn(missing_docs)] */
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 /* Enable all clippy lints except for many of the pedantic ones. It's a shame this needs to be
- * copied and pasted across crates, but there doesn't appear to be a way to include inner attributes
- * from a common source. */
+ * copied and pasted across crates, but there doesn't appear to be a way to include inner
+ * attributes from a common source. */
 #![deny(
   clippy::all,
   clippy::default_trait_access,
@@ -54,16 +54,18 @@ use thiserror::Error;
 
 /// Constants defining available versions of spack.
 ///
-/// Currently, this crate avoids maintaining a git repository (the typical way spack is distributed)
-/// in favor of a checksummed directory corresponding to a precise spack release. The main reason
-/// for this is to enable experimental support for wasm compilation via emscripten (see the
-/// [`wasm`](crate::utils::wasm) module). Until upstream support for emscripten is merged, the
-/// cached build output in `opt/` may refer to packages which are unavailable in spack proper,
-/// causing an exception when spack is invoked.
+/// Currently, this crate avoids maintaining a git repository (the typical way
+/// spack is distributed) in favor of a checksummed directory corresponding to a
+/// precise spack release. The main reason for this is to enable experimental
+/// support for wasm compilation via emscripten (see the
+/// [`wasm`](crate::utils::wasm) module). Until upstream support for emscripten
+/// is merged, the cached build output in `opt/` may refer to packages which are
+/// unavailable in spack proper, causing an exception when spack is invoked.
 ///
-/// Figuring out a nicer way to select a compatible spack version (which also works across the
-/// entire cargo build graph, which may invoke this crate multiple times) is on the horizon, but
-/// until now hardcoding this information is slightly easier to work with.
+/// Figuring out a nicer way to select a compatible spack version (which also
+/// works across the entire cargo build graph, which may invoke this crate
+/// multiple times) is on the horizon, but until now hardcoding this information
+/// is slightly easier to work with.
 pub mod versions {
   use hex_literal::hex;
 
@@ -78,7 +80,8 @@ pub mod versions {
     pub const MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.20.3";
   }
 
-  /// A spack branch with support for emscripten as a compiler, enabling compilation to wasm.
+  /// A spack branch with support for emscripten as a compiler, enabling
+  /// compilation to wasm.
   pub mod emcc {
     use super::hex;
 

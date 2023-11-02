@@ -14,7 +14,7 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
   match fs::create_dir(path) {
     Ok(()) => return Ok(()),
     Err(ref e) if e.kind() == io::ErrorKind::AlreadyExists => return Ok(()),
-    Err(ref e) if e.kind() == io::ErrorKind::NotFound => {}
+    Err(ref e) if e.kind() == io::ErrorKind::NotFound => {},
     Err(e) => return Err(e),
   }
   match path.parent() {
@@ -30,7 +30,8 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
 
 /// Call `spack install <spec>` and parse the result of `spack find --json`.
 ///
-/// The installation via `spack install` will be cached using spack's normal caching mechanisms.
+/// The installation via `spack install` will be cached using spack's normal
+/// caching mechanisms.
 pub async fn ensure_installed(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -48,7 +49,8 @@ pub async fn ensure_installed(
   Ok(found_spec)
 }
 
-/// Call [`ensure_installed`], then return its installation root prefix from within `opt/spack/...`.
+/// Call [`ensure_installed`], then return its installation root prefix from
+/// within `opt/spack/...`.
 pub async fn ensure_prefix(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -79,7 +81,8 @@ pub mod wasm {
 ~compiler-rt~tools-extra-clang~libcxx~gold~openmp~internal_unwind~polly \
 targets=webassembly";
 
-  /// Ensure that a version of llvm is installed that is able to support emscripten.
+  /// Ensure that a version of llvm is installed that is able to support
+  /// emscripten.
   pub async fn ensure_wasm_ready_llvm(
     spack: crate::SpackInvocation,
   ) -> Result<find::FoundSpec, crate::Error> {
@@ -94,30 +97,31 @@ mod test {
 
   /* #[tokio::test] */
   /* async fn test_ensure_wasm_ready_llvm() -> Result<(), crate::Error> { */
-  /*   use crate::{utils, SpackInvocation}; */
-  /*   use super_process::{exe, fs, sync::SyncInvocable}; */
+  /* use crate::{utils, SpackInvocation}; */
+  /* use super_process::{exe, fs, sync::SyncInvocable}; */
 
-  /*   // Locate all the executables. */
-  /*   let spack = SpackInvocation::summon().await?; */
+  /* // Locate all the executables. */
+  /* let spack = SpackInvocation::summon().await?; */
 
-  /*   // Let's look for an `llvm` installation, and find the `llvm-config` executable. */
-  /*   let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?; */
-  /*   let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?; */
-  /*   let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config"); */
+  /* // Let's look for an `llvm` installation, and find the `llvm-config`
+   * executable. */
+  /* let llvm = utils::wasm::ensure_wasm_ready_llvm(spack.clone()).await?; */
+  /* let llvm_prefix = utils::ensure_prefix(spack, llvm.hashed_spec()).await?; */
+  /* let llvm_config_path = llvm_prefix.path.join("bin").join("llvm-config"); */
 
-  /*   // Let's make sure the executable can be executed successfully! */
-  /*   let command = exe::Command { */
-  /*     exe: exe::Exe(fs::File(llvm_config_path)), */
-  /*     argv: ["--targets-built"].as_ref().into(), */
-  /*     ..Default::default() */
-  /*   }; */
-  /*   let output = command */
-  /*     .invoke() */
-  /*     .await */
-  /*     .expect("expected llvm-config command to succeed"); */
-  /*   let stdout = std::str::from_utf8(&output.stdout).unwrap(); */
-  /*   assert!(stdout.contains("WebAssembly")); */
-  /*   Ok(()) */
+  /* // Let's make sure the executable can be executed successfully! */
+  /* let command = exe::Command { */
+  /* exe: exe::Exe(fs::File(llvm_config_path)), */
+  /* argv: ["--targets-built"].as_ref().into(), */
+  /* ..Default::default() */
+  /* }; */
+  /* let output = command */
+  /* .invoke() */
+  /* .await */
+  /* .expect("expected llvm-config command to succeed"); */
+  /* let stdout = std::str::from_utf8(&output.stdout).unwrap(); */
+  /* assert!(stdout.contains("WebAssembly")); */
+  /* Ok(()) */
   /* } */
 
   #[tokio::test]
@@ -175,9 +179,11 @@ pub mod prefix {
   pub enum PrefixTraversalError {
     /// walkdir error: {0}
     Walkdir(#[from] walkdir::Error),
-    /// needed libraries {0:?} were not found at prefix {1:?}: found library names were {2:?}
+    /// needed libraries {0:?} were not found at prefix {1:?}: found library
+    /// names were {2:?}
     NeededLibrariesNotFound(IndexSet<LibraryName>, Prefix, IndexSet<LibraryName>),
-    /// duplicated libraries {0:?} were found at multiple paths from prefix {1:?}:\n{2:?}
+    /// duplicated libraries {0:?} were found at multiple paths from prefix
+    /// {1:?}:\n{2:?}
     DuplicateLibraryNames(
       IndexSet<LibraryName>,
       Prefix,
@@ -227,9 +233,7 @@ pub mod prefix {
         .expect("library path should have a parent directory!")
     }
 
-    pub fn minus_l_arg(&self) -> String {
-      format!("{}={}", self.kind.cargo_lib_type(), self.name)
-    }
+    pub fn minus_l_arg(&self) -> String { format!("{}={}", self.kind.cargo_lib_type(), self.name) }
 
     pub fn parse_file_path(file_path: &Path) -> Option<Self> {
       lazy_static! {
@@ -241,7 +245,7 @@ pub mod prefix {
          * which don't have a name. */
         None => {
           return None;
-        }
+        },
       };
       if let Some(m) = LIBNAME_PATTERN.captures(&filename) {
         let name = LibraryName(m.get(1).unwrap().as_str().to_string());
@@ -264,7 +268,7 @@ pub mod prefix {
   }
 
   impl Prefix {
-    pub fn traverse(&self) -> impl Stream<Item = Result<walkdir::DirEntry, walkdir::Error>> {
+    pub fn traverse(&self) -> impl Stream<Item=Result<walkdir::DirEntry, walkdir::Error>> {
       let path = self.path.clone();
       try_stream! {
         for file in walkdir::WalkDir::new(path) {
@@ -300,7 +304,7 @@ pub mod prefix {
               .entry(lib.name.clone())
               .or_insert_with(Vec::new)
               .push(lib);
-          }
+          },
           _ => (),
         }
       }

@@ -41,7 +41,8 @@ pub struct CacheDir {
 impl CacheDir {
   /// Goes to `~/.spack/summonings`.
   ///
-  /// Name intentionally chosen to be overridden later after upstreaming to spack (?).
+  /// Name intentionally chosen to be overridden later after upstreaming to
+  /// spack (?).
   pub fn get_or_create() -> Result<Self, SummoningError> {
     let path = PathBuf::from(env::var("HOME").expect("$HOME should always be defined!"))
       .join(".spack")
@@ -52,9 +53,7 @@ impl CacheDir {
 
   /// We use the hex-encoded checksum value as the ultimate directory name.
   #[inline]
-  pub fn dirname(&self) -> String {
-    MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex()
-  }
+  pub fn dirname(&self) -> String { MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex() }
 
   /// The path to unpack the tar archive into.
   #[inline]
@@ -66,13 +65,12 @@ impl CacheDir {
 
   /// The path to download the release tarball to.
   #[inline]
-  pub fn tarball_path(&self) -> PathBuf {
-    self.location.join(format!("{}.tar.gz", self.dirname()))
-  }
+  pub fn tarball_path(&self) -> PathBuf { self.location.join(format!("{}.tar.gz", self.dirname())) }
 
   /// The path to the root of the spack repo, through a symlink.
   ///
-  /// FIXME: Note that this repeats the [`MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
+  /// FIXME: Note that this repeats the
+  /// [`MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
   /// used in [`Self::unpacking_path`].
   #[inline]
   pub fn repo_root(&self) -> PathBuf {
@@ -83,9 +81,7 @@ impl CacheDir {
 
   /// The path to the spack script in the spack repo, through a symlink.
   #[inline]
-  pub fn spack_script(&self) -> PathBuf {
-    self.repo_root().join("bin").join("spack")
-  }
+  pub fn spack_script(&self) -> PathBuf { self.repo_root().join("bin").join("spack") }
 }
 
 struct SpackTarball {
@@ -93,9 +89,7 @@ struct SpackTarball {
 }
 
 impl SpackTarball {
-  pub fn downloaded_path(&self) -> &Path {
-    self.downloaded_location.as_ref()
-  }
+  pub fn downloaded_path(&self) -> &Path { self.downloaded_location.as_ref() }
 
   pub fn unzip(self, cache_dir: CacheDir) -> Result<Option<()>, SummoningError> {
     SpackRepo::unzip_archive(self.downloaded_path(), &cache_dir.unpacking_path())
@@ -124,7 +118,7 @@ impl SpackTarball {
             checksum.encode_hex(),
           ))
         }
-      }
+      },
       Err(e) if e.kind() == io::ErrorKind::NotFound => {
         /* If we don't already have a file, we download it! */
         let resp = reqwest::get(MOST_RECENT_HARDCODED_SPACK_URL).await?;
@@ -146,7 +140,7 @@ impl SpackTarball {
             checksum.encode_hex(),
           ))
         }
-      }
+      },
       Err(e) => Err(e.into()),
     }
   }
@@ -168,7 +162,7 @@ impl SpackRepo {
         let gz_decoded = GzDecoder::new(tgz);
         let mut archive = tar::Archive::new(gz_decoded);
         Ok(Some(archive.unpack(into)?))
-      }
+      },
       Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
       Err(e) => Err(e.into()),
     }
@@ -191,15 +185,16 @@ impl SpackRepo {
 
   /// Get the most up-to-date version of spack with appropriate changes.
   ///
-  /// If necessary, download the release tarball, validate its checksum, then expand the
-  /// tarball. Return the path to the spack root directory.
+  /// If necessary, download the release tarball, validate its checksum, then
+  /// expand the tarball. Return the path to the spack root directory.
   pub async fn summon(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let current_link_path = cache_dir.unpacking_path();
 
     let () = match fs::read_dir(current_link_path) {
       Ok(_) => Ok(()),
       Err(e) if e.kind() == io::ErrorKind::NotFound => {
-        /* (2) If the spack repo wasn't found on disk, try finding an adjacent tarball. */
+        /* (2) If the spack repo wasn't found on disk, try finding an adjacent
+         * tarball. */
         match Self::unzip_spack_archive(cache_dir.clone())? {
           /* (2.1) The untarring worked! */
           Some(()) => Ok(()),
@@ -210,9 +205,9 @@ impl SpackRepo {
             spack_tarball.unzip(cache_dir.clone())?.ok_or_else(|| {
               SummoningError::UnknownError(format!("unzipping archive at {:?} failed!", &cache_dir))
             })
-          }
+          },
         }
-      }
+      },
       Err(e) => Err(e.into()),
     }?;
 
@@ -220,21 +215,23 @@ impl SpackRepo {
   }
 }
 
-/* FIXME: this test will break all the other ones if it modifies the $HOME variable! */
+/* FIXME: this test will break all the other ones if it modifies the $HOME
+ * variable! */
 /* #[cfg(test)] */
 /* mod test { */
-/*   use tokio; */
+/* use tokio; */
 
-/*   #[tokio::test] */
-/*   async fn test_summon() -> Result<(), super::SummoningError> { */
-/*     use crate::summoning::*; */
-/*     use std::fs::File; */
+/* #[tokio::test] */
+/* async fn test_summon() -> Result<(), super::SummoningError> { */
+/* use crate::summoning::*; */
+/* use std::fs::File; */
 
-/*     let td = tempdir::TempDir::new("spack-summon-test").unwrap(); */
-/*     std::env::set_var("HOME", td.path()); */
-/*     let cache_dir = CacheDir::get_or_create()?; */
-/*     let spack_exe = SpackRepo::summon(cache_dir).await?; */
-/*     let _ = File::open(&spack_exe.script_path).expect("spack script should exist"); */
-/*     Ok(()) */
-/*   } */
+/* let td = tempdir::TempDir::new("spack-summon-test").unwrap(); */
+/* std::env::set_var("HOME", td.path()); */
+/* let cache_dir = CacheDir::get_or_create()?; */
+/* let spack_exe = SpackRepo::summon(cache_dir).await?; */
+/* let _ = File::open(&spack_exe.script_path).expect("spack script should
+ * exist"); */
+/* Ok(()) */
+/* } */
 /* } */

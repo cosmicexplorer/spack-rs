@@ -46,7 +46,8 @@ pub mod python {
     }
   }
 
-  /// Refers to a particular python executable [`PYTHON_CMD`] first on the `$PATH`.
+  /// Refers to a particular python executable [`PYTHON_CMD`] first on the
+  /// `$PATH`.
   #[derive(Debug, Clone)]
   pub struct FoundPython {
     pub exe: exe::Exe,
@@ -67,7 +68,8 @@ pub mod python {
       exe::Exe(fs::File(exe_path))
     }
 
-    /// Check for a valid python installation by parsing the output of `--version`.
+    /// Check for a valid python installation by parsing the output of
+    /// `--version`.
     pub async fn detect() -> Result<Self, PythonError> {
       let py = Self::determine_python_exename();
       let command = PythonInvocation {
@@ -164,8 +166,9 @@ pub mod spack {
   impl SpackInvocation {
     /// Create an instance.
     ///
-    /// You should prefer to call [`Self::clone`] on the first instance you construct instead of
-    /// repeatedly calling this method when executing multiple spack subprocesss in a row.
+    /// You should prefer to call [`Self::clone`] on the first instance you
+    /// construct instead of repeatedly calling this method when executing
+    /// multiple spack subprocesss in a row.
     pub async fn create(
       python: python::FoundPython,
       repo: summoning::SpackRepo,

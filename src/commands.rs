@@ -13,23 +13,19 @@ use std::{
 
 /// {0}
 ///
-/// An (abstract *or* concrete) spec string for a command-line argument. This is used in
-/// [`find::Find::find`] to resolve concrete specs from the string.
+/// An (abstract *or* concrete) spec string for a command-line argument. This is
+/// used in [`find::Find::find`] to resolve concrete specs from the string.
 #[derive(Debug, Display, Clone)]
 #[ignore_extra_doc_attributes]
 pub struct CLISpec(pub String);
 
 impl From<&str> for CLISpec {
-  fn from(value: &str) -> Self {
-    Self(value.to_string())
-  }
+  fn from(value: &str) -> Self { Self(value.to_string()) }
 }
 
 impl CLISpec {
   /// Construct a cli spec from a [str].
-  pub fn new<R: AsRef<str>>(r: R) -> Self {
-    Self(r.as_ref().to_string())
-  }
+  pub fn new<R: AsRef<str>>(r: R) -> Self { Self(r.as_ref().to_string()) }
 }
 
 /// Errors executing spack commands.
@@ -140,7 +136,8 @@ pub mod config {
     }
   }
 
-  /// Request to execute `spack config get "$self.section"` and parse the YAML output.
+  /// Request to execute `spack config get "$self.section"` and parse the YAML
+  /// output.
   #[derive(Debug, Clone)]
   struct Get {
     #[allow(missing_docs)]
@@ -182,7 +179,8 @@ pub mod config {
   /// A single compiler's spec from running [`GetCompilers::get_compilers`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
   pub struct CompilerSpec {
-    /// Spec string that can be used to select the given compiler after a `%` in a [`CLISpec`].
+    /// Spec string that can be used to select the given compiler after a `%` in
+    /// a [`CLISpec`].
     pub spec: String,
     /// Paths which could be located for this compiler.
     pub paths: CompilerPaths,
@@ -345,9 +343,7 @@ pub mod find {
 
   impl FoundSpec {
     /// Get a CLI argument matching the exact spec found previously.
-    pub fn hashed_spec(&self) -> CLISpec {
-      CLISpec(format!("{}/{}", &self.name, &self.hash))
-    }
+    pub fn hashed_spec(&self) -> CLISpec { CLISpec(format!("{}/{}", &self.name, &self.hash)) }
   }
 
   /// A concrete version string from [FoundSpec::version].
@@ -414,7 +410,7 @@ pub mod find {
             .map(|v| serde_json::from_value(v))
             .collect::<Result<Vec<FoundSpec>, _>>()?;
           Ok(found_specs)
-        }
+        },
         value => Err(FindError::Unknown(format!(
           "unable to parse find output: {:?}",
           value
@@ -476,7 +472,7 @@ pub mod find {
           assert!(spec.0.starts_with(name));
           let prefix: PathBuf = m.get(3).unwrap().as_str().into();
           Ok(Some(prefix::Prefix { path: prefix }))
-        }
+        },
         Err(exe::CommandErrorWrapper {
           context,
           error: exe::CommandError::NonZeroExit(1),
@@ -734,9 +730,7 @@ pub mod install {
   }
 
   impl Default for InstallVerbosity {
-    fn default() -> Self {
-      Self::Verbose
-    }
+    fn default() -> Self { Self::Verbose }
   }
 
   impl InstallVerbosity {
@@ -789,7 +783,8 @@ pub mod install {
   }
 
   impl Install {
-    /// Execute `spack install "$self.spec"`, piping stdout and stderr to the terminal.
+    /// Execute `spack install "$self.spec"`, piping stdout and stderr to the
+    /// terminal.
     pub async fn install(self) -> Result<(), InstallError> {
       let command = self
         .setup_command()
@@ -820,8 +815,8 @@ pub mod install {
       self.install().await?;
 
       /* Find the first match for the spec we just tried to install. */
-      /* NB: this will probably immediately break if the CLI spec covers more than one concrete
-       * spec! For now we just take the first result!! */
+      /* NB: this will probably immediately break if the CLI spec covers more than
+       * one concrete spec! For now we just take the first result!! */
       let find = Find { spack, spec };
       let found_specs = find
         .clone()
@@ -946,7 +941,8 @@ pub mod build_env {
     pub dump: Option<PathBuf>,
     /// Optional command line to evaluate within the package environment.
     ///
-    /// If this argv is empty, the contents of the environment are printed to stdout with `env`.
+    /// If this argv is empty, the contents of the environment are printed to
+    /// stdout with `env`.
     pub argv: exe::Argv,
   }
 
@@ -1294,8 +1290,8 @@ pub mod compiler_find {
   impl CompilerFind {
     /// Run `spack compiler find $self.paths`, without parsing the output.
     ///
-    /// Use [`FindCompilerSpecs::find_compiler_specs`] to get information about the compilers spack
-    /// can find.
+    /// Use [`FindCompilerSpecs::find_compiler_specs`] to get information about
+    /// the compilers spack can find.
     pub async fn compiler_find(self) -> Result<(), CompilerFindError> {
       let command = self
         .setup_command()
@@ -1338,9 +1334,11 @@ pub mod compiler_find {
   const COMPILER_SPEC_SOURCE: &str = include_str!("compiler-find.py");
 
   impl FindCompilerSpecs {
-    /// Run a custom `spack python` script to print out compiler specs located in the given paths.
+    /// Run a custom `spack python` script to print out compiler specs located
+    /// in the given paths.
     ///
-    /// If the given set of [`Self::paths`] is empty, use the defaults from config.
+    /// If the given set of [`Self::paths`] is empty, use the defaults from
+    /// config.
     pub async fn find_compiler_specs(self) -> Result<Vec<FoundCompiler>, CompilerFindError> {
       let command = self
         .setup_command()
@@ -1355,7 +1353,7 @@ pub mod compiler_find {
             .map(|v| serde_json::from_value(v))
             .collect::<Result<Vec<FoundCompiler>, _>>()?;
           Ok(compiler_specs)
-        }
+        },
         value => Err(CompilerFindError::Unknown(format!(
           "unable to parse compiler-find.py output: {:?}",
           value
