@@ -207,7 +207,7 @@ pub mod spack {
     /// Create an instance via [`Self::create`], with good defaults.
     pub async fn summon() -> Result<Self, InvocationSummoningError> {
       let python = python::FoundPython::detect().await?;
-      let cache_dir = summoning::CacheDir::get_or_create()?;
+      let cache_dir = summoning::CacheDir::get_or_create().await?;
       let spack_repo = summoning::SpackRepo::summon(cache_dir).await?;
       let spack = Self::create(python, spack_repo).await?;
       Ok(spack)
@@ -244,7 +244,7 @@ pub mod spack {
     async fn test_create_invocation() -> Result<(), crate::Error> {
       // Access a few of the relevant files and directories.
       let python = FoundPython::detect().await.unwrap();
-      let cache_dir = CacheDir::get_or_create().unwrap();
+      let cache_dir = CacheDir::get_or_create().await.unwrap();
       let spack_exe = SpackRepo::summon(cache_dir).await.unwrap();
       let spack = SpackInvocation::create(python, spack_exe).await?;
 

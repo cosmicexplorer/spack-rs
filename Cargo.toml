@@ -37,6 +37,7 @@ super-process           = { git = "https://github.com/cosmicexplorer/super-proce
 tar                     = "0.4"
 tempfile                = "3.3.0"
 thiserror               = "1.0.30"
+tokio                   = { version = "1.33.0", features = [] }
 walkdir                 = "2"
 
 [dev-dependencies]

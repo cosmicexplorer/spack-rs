@@ -179,11 +179,9 @@ pub mod prefix {
   pub enum PrefixTraversalError {
     /// walkdir error: {0}
     Walkdir(#[from] walkdir::Error),
-    /// needed libraries {0:?} were not found at prefix {1:?}: found library
-    /// names were {2:?}
+    /// needed libs {0:?} not found at prefix {1:?}: found libs were {2:?}
     NeededLibrariesNotFound(IndexSet<LibraryName>, Prefix, IndexSet<LibraryName>),
-    /// duplicated libraries {0:?} were found at multiple paths from prefix
-    /// {1:?}:\n{2:?}
+    /// duplicated libs {0:?} found at multiple paths from prefix {1:?}:\n{2:?}
     DuplicateLibraryNames(
       IndexSet<LibraryName>,
       Prefix,
