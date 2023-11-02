@@ -7,6 +7,7 @@ use crate::{utils, versions::develop::*};
 
 use displaydoc::Display;
 use flate2::read::GzDecoder;
+use fslock;
 use hex::ToHex;
 use reqwest;
 use sha2::{Digest, Sha256};
@@ -99,12 +100,27 @@ impl SpackTarball {
   #[inline]
   pub fn downloaded_path(&self) -> &Path { self.downloaded_location.as_ref() }
 
-  pub async fn unzip(self, cache_dir: CacheDir) -> Result<Option<()>, SummoningError> {
-    task::spawn_blocking(move || {
-      SpackRepo::unzip_archive(self.downloaded_path(), &cache_dir.unpacking_path())
-    })
-    .await
-    .unwrap()
+  async fn check_tarball_digest(
+    tgz_path: &Path,
+    tgz: &mut fs::File,
+  ) -> Result<Self, SummoningError> {
+    /* If we have a file already, we just need to check the digest. */
+    let mut tarball_bytes: Vec<u8> = vec![];
+    tgz.read_to_end(&mut tarball_bytes).await?;
+    let mut hasher = Sha256::new();
+    hasher.update(&tarball_bytes);
+    let checksum: [u8; 32] = hasher.finalize().into();
+    if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
+      Ok(Self {
+        downloaded_location: tgz_path.to_path_buf(),
+      })
+    } else {
+      Err(SummoningError::Checksum(
+        format!("file://{}", tgz_path.display()),
+        MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
+        checksum.encode_hex(),
+      ))
+    }
   }
 
   /* FIXME: test the checksum checking!!! */
@@ -112,27 +128,32 @@ impl SpackTarball {
     let tgz_path = cache_dir.tarball_path();
 
     match fs::File::open(&tgz_path).await {
-      Ok(mut tgz) => {
-        /* If we have a file already, we just need to check the digest. */
-        let mut tarball_bytes: Vec<u8> = vec![];
-        tgz.read_to_end(&mut tarball_bytes).await?;
-        let mut hasher = Sha256::new();
-        hasher.update(&tarball_bytes);
-        let checksum: [u8; 32] = hasher.finalize().into();
-        if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
-          Ok(Self {
-            downloaded_location: tgz_path,
-          })
-        } else {
-          Err(SummoningError::Checksum(
-            format!("file://{}", tgz_path.display()),
-            MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
-            checksum.encode_hex(),
-          ))
-        }
-      },
+      Ok(mut tgz) => Self::check_tarball_digest(&tgz_path, &mut tgz).await,
       Err(e) if e.kind() == io::ErrorKind::NotFound => {
         /* If we don't already have a file, we download it! */
+        let lockfile_path: PathBuf = format!("{}.tgz.lock", cache_dir.dirname()).into();
+        let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
+          .await
+          .unwrap()?;
+        /* This unlocks the lockfile upon drop! */
+        let _lockfile = task::spawn_blocking(move || {
+          lockfile.lock_with_pid()?;
+          Ok::<_, io::Error>(lockfile)
+        })
+        .await
+        .unwrap()?;
+
+        /* See if the target file was created since we locked the lockfile. */
+        match fs::File::open(&tgz_path).await {
+          /* If so, return early! */
+          Ok(mut tgz) => return Self::check_tarball_digest(&tgz_path, &mut tgz).await,
+          Err(_) => (),
+        }
+
+        eprintln!(
+          "downloading spack {} from {}...",
+          MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT, MOST_RECENT_HARDCODED_SPACK_URL
+        );
         let resp = reqwest::get(MOST_RECENT_HARDCODED_SPACK_URL).await?;
         let tarball_bytes = resp.bytes().await?;
         let mut hasher = Sha256::new();
@@ -143,7 +164,7 @@ impl SpackTarball {
           tgz.write_all(&tarball_bytes).await?;
           tgz.sync_all().await?;
           Ok(Self {
-            downloaded_location: tgz_path,
+            downloaded_location: tgz_path.to_path_buf(),
           })
         } else {
           Err(SummoningError::Checksum(
@@ -197,6 +218,47 @@ impl SpackRepo {
     })
   }
 
+  async fn ensure_unpacked(
+    current_link_path: PathBuf,
+    cache_dir: &CacheDir,
+  ) -> Result<(), SummoningError> {
+    match fs::read_dir(&current_link_path).await {
+      Ok(_) => Ok(()),
+      Err(e) if e.kind() == io::ErrorKind::NotFound => {
+        /* (2) If the spack repo wasn't found on disk, try finding an adjacent
+         * tarball. */
+
+        let lockfile_path: PathBuf = format!("{}.lock", cache_dir.dirname()).into();
+        let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
+          .await
+          .unwrap()?;
+        /* This unlocks the lockfile upon drop! */
+        let _lockfile = task::spawn_blocking(move || {
+          lockfile.lock_with_pid()?;
+          Ok::<_, io::Error>(lockfile)
+        })
+        .await
+        .unwrap()?;
+
+        /* See if the target dir was created since we locked the lockfile. */
+        match fs::read_dir(&current_link_path).await {
+          /* If so, return early! */
+          Ok(_) => Ok::<_, SummoningError>(()),
+          /* Otherwise, extract it! */
+          Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            eprintln!(
+              "extracting spack {}...",
+              MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT,
+            );
+            Ok(Self::unzip_spack_archive(cache_dir.clone()).await?.unwrap())
+          },
+          Err(e) => Err(e.into()),
+        }
+      },
+      Err(e) => Err(e.into()),
+    }
+  }
+
   /// Get the most up-to-date version of spack with appropriate changes.
   ///
   /// If necessary, download the release tarball, validate its checksum, then
@@ -204,32 +266,10 @@ impl SpackRepo {
   pub async fn summon(cache_dir: CacheDir) -> Result<Self, SummoningError> {
     let current_link_path = cache_dir.unpacking_path();
 
-    let () = match fs::read_dir(current_link_path).await {
-      Ok(_) => Ok(()),
-      Err(e) if e.kind() == io::ErrorKind::NotFound => {
-        /* (2) If the spack repo wasn't found on disk, try finding an adjacent
-         * tarball. */
-        match Self::unzip_spack_archive(cache_dir.clone()).await? {
-          /* (2.1) The untarring worked! */
-          Some(()) => Ok(()),
-          /* (3) If the tarball wasn't there either, try fetching it from the internet. */
-          None => {
-            let spack_tarball = SpackTarball::fetch_spack_tarball(cache_dir.clone()).await?;
-            /* (3.1) After fetching it, we need to try extracting it again. */
-            spack_tarball
-              .unzip(cache_dir.clone())
-              .await?
-              .ok_or_else(|| {
-                SummoningError::UnknownError(format!(
-                  "unzipping archive at {:?} failed!",
-                  &cache_dir
-                ))
-              })
-          },
-        }
-      },
-      Err(e) => Err(e.into()),
-    }?;
+    let spack_tarball = SpackTarball::fetch_spack_tarball(cache_dir.clone()).await?;
+    dbg!(spack_tarball.downloaded_path());
+
+    Self::ensure_unpacked(current_link_path, &cache_dir).await?;
 
     Ok(Self::get_spack_script(cache_dir).await?)
   }

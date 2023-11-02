@@ -19,6 +19,7 @@ async-stream            = "0.3.3"
 async-trait             = "0.1.41"
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 flate2                  = "1.0"
+fslock                  = "0.2.1"
 futures-core            = "0.3.15"
 futures-lite            = "1"
 futures-util            = "0.3.15"
@@ -37,7 +38,7 @@ super-process           = { git = "https://github.com/cosmicexplorer/super-proce
 tar                     = "0.4"
 tempfile                = "3.3.0"
 thiserror               = "1.0.30"
-tokio                   = { version = "1.33.0", features = [] }
+tokio                   = { version = "1.33.0", features = ["fs"] }
 walkdir                 = "2"
 
 [dev-dependencies]
