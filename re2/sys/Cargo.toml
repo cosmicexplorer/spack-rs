@@ -8,5 +8,5 @@ repository.workspace    = true
 authors.workspace       = true
 
 [build-dependencies]
-bindgen = "0.69.1"
-spack = { path = "../.." }
+bindgen                 = "0.69.1"
+spack.workspace         = true
