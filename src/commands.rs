@@ -1446,3 +1446,225 @@ pub mod compiler_find {
     }
   }
 }
+
+/// `checksum` command.
+pub mod checksum {
+  use super::*;
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
+  };
+
+  use async_trait::async_trait;
+  use indexmap::IndexSet;
+  use tokio::task;
+
+  use std::{ffi::OsStr, io, path::PathBuf, str};
+
+
+  #[derive(Debug, Display, Error)]
+  pub enum ChecksumError {
+    /// command line error {0}
+    Command(#[from] exe::CommandErrorWrapper),
+    /// setup error {0}
+    Setup(#[from] base::SetupErrorWrapper),
+    /// utf-8 decoding error {0}
+    Utf8(#[from] str::Utf8Error),
+    /// io error {0}
+    Io(#[from] io::Error),
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct VersionsRequest {
+    #[allow(missing_docs)]
+    pub spack: SpackInvocation,
+    pub package_name: String,
+  }
+
+  #[async_trait]
+  impl CommandBase for VersionsRequest {
+    async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
+      eprintln!("VersionsRequest");
+      dbg!(&self);
+      let Self {
+        spack,
+        package_name,
+      } = self;
+
+      let argv = exe::Argv(
+        ["versions", "--safe", &package_name]
+          .into_iter()
+          .map(|s| OsStr::new(&s).to_os_string())
+          .collect(),
+      );
+
+      Ok(
+        spack
+          .with_spack_exe(exe::Command {
+            argv,
+            ..Default::default()
+          })
+          .setup_command()
+          .await?,
+      )
+    }
+  }
+
+  impl VersionsRequest {
+    pub async fn safe_versions(self) -> Result<Vec<String>, ChecksumError> {
+      let command = self
+        .setup_command()
+        .await
+        .map_err(|e| e.with_context(format!("in VersionsRequest::safe_versions()")))?;
+      let output = command.invoke().await?;
+
+      let versions: Vec<String> = str::from_utf8(&output.stdout)?
+        .split('\n')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.strip_prefix("  ").unwrap().to_string())
+        .collect();
+
+      Ok(versions)
+    }
+  }
+
+  /// Request to add a new version to a package in the summoned spack repo.
+  #[derive(Debug, Clone)]
+  pub struct AddToPackage {
+    #[allow(missing_docs)]
+    pub spack: SpackInvocation,
+    pub package_name: String,
+    pub new_version: String,
+  }
+
+  #[async_trait]
+  impl CommandBase for AddToPackage {
+    async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
+      eprintln!("AddToPackage");
+      dbg!(&self);
+      let Self {
+        spack,
+        package_name,
+        new_version,
+      } = self;
+
+      let argv = exe::Argv(
+        ["checksum", "--add-to-package", &package_name, &new_version]
+          .into_iter()
+          .map(|s| OsStr::new(&s).to_os_string())
+          .collect(),
+      );
+
+      let env: exe::EnvModifications = [("SPACK_EDITOR", "echo")].into();
+
+      Ok(
+        spack
+          .with_spack_exe(exe::Command {
+            argv,
+            env,
+            ..Default::default()
+          })
+          .setup_command()
+          .await?,
+      )
+    }
+  }
+
+  impl AddToPackage {
+    #[inline]
+    async fn version_is_known(
+      req: VersionsRequest,
+      new_version: &str,
+    ) -> Result<bool, ChecksumError> {
+      let versions: IndexSet<String> = req.safe_versions().await?.into_iter().collect();
+
+      Ok(versions.contains(new_version))
+    }
+
+    async fn force_new_version(
+      self,
+      req: VersionsRequest,
+      new_version: &str,
+    ) -> Result<(), ChecksumError> {
+      let command = self
+        .setup_command()
+        .await
+        .map_err(|e| e.with_context(format!("in add_to_package()!")))?;
+
+      /* Execute the command. */
+      let _ = command.invoke().await?;
+
+      /* Confirm that we have created the target version. */
+      assert!(Self::version_is_known(req, new_version).await?);
+
+      Ok(())
+    }
+
+    pub async fn idempotent_ensure_version_for_package(self) -> Result<(), ChecksumError> {
+      let req = VersionsRequest {
+        spack: self.spack.clone(),
+        package_name: self.package_name.clone(),
+      };
+
+      /* If the version is already known, we are done. */
+      if Self::version_is_known(req.clone(), &self.new_version).await? {
+        eprintln!(
+          "we already have the version {} for package {}!",
+          &self.new_version, &self.package_name
+        );
+        return Ok(());
+      }
+
+      let lockfile_name: PathBuf =
+        format!("{}@{}.lock", &self.package_name, &self.new_version).into();
+      let lockfile_path = self.spack.cache_location().join(lockfile_name);
+      let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
+        .await
+        .unwrap()?;
+      /* This unlocks the lockfile upon drop! */
+      let _lockfile = task::spawn_blocking(move || {
+        lockfile.lock_with_pid()?;
+        Ok::<_, io::Error>(lockfile)
+      })
+      .await
+      .unwrap()?;
+
+      /* See if the target version was created since we locked the lockfile. */
+      if Self::version_is_known(req.clone(), &self.new_version).await? {
+        eprintln!(
+          "the version {} for package {} was created while we locked the file handle!",
+          &self.new_version, &self.package_name
+        );
+        return Ok(());
+      }
+
+      /* Otherwise, we will execute a command that modifies the summoned checkout. */
+      let new_version = self.new_version.clone();
+      self.force_new_version(req, &new_version).await?;
+
+      Ok(())
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ensure_re2_2023_09_01() -> eyre::Result<()> {
+      // Locate all the executables.
+      let spack = SpackInvocation::summon().await?;
+
+      let req = AddToPackage {
+        spack,
+        package_name: "re2".to_string(),
+        new_version: "2023-09-1".to_string(),
+      };
+      req.idempotent_ensure_version_for_package().await?;
+
+      Ok(())
+    }
+  }
+}

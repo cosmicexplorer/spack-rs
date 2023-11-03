@@ -189,9 +189,13 @@ pub struct SpackRepo {
   pub script_path: PathBuf,
   /// This directory *must* exist when returned by [Self::summon].
   pub repo_path: PathBuf,
+  cache_dir: CacheDir,
 }
 
 impl SpackRepo {
+  #[inline]
+  pub(crate) fn cache_location(&self) -> &Path { self.cache_dir.location() }
+
   pub(crate) fn unzip_archive(from: &Path, into: &Path) -> Result<Option<()>, SummoningError> {
     match std::fs::File::open(from) {
       Ok(tgz) => {
@@ -218,6 +222,7 @@ impl SpackRepo {
     Ok(Self {
       script_path: path,
       repo_path: cache_dir.repo_root(),
+      cache_dir,
     })
   }
 

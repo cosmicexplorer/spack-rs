@@ -135,7 +135,11 @@ pub mod spack {
   use displaydoc::Display;
   use thiserror::Error;
 
-  use std::{io, path::PathBuf, str};
+  use std::{
+    io,
+    path::{Path, PathBuf},
+    str,
+  };
 
   #[derive(Debug, Display, Error)]
   pub enum InvocationSummoningError {
@@ -171,6 +175,9 @@ pub mod spack {
     once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
   impl SpackInvocation {
+    #[inline]
+    pub(crate) fn cache_location(&self) -> &Path { self.repo.cache_location() }
+
     /// Create an instance.
     ///
     /// You should prefer to call [`Self::clone`] on the first instance you
