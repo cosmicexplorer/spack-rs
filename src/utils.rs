@@ -166,7 +166,7 @@ pub mod prefix {
   use async_stream::try_stream;
   use displaydoc::Display;
   use futures_core::stream::Stream;
-  use futures_util::{pin_mut, stream::StreamExt};
+  use futures_util::{pin_mut, stream::TryStreamExt};
   use indexmap::{IndexMap, IndexSet};
   use lazy_static::lazy_static;
   use regex::Regex;
@@ -304,8 +304,8 @@ pub mod prefix {
       let s = prefix.traverse();
       pin_mut!(s);
 
-      while let Some(dir_entry) = s.next().await {
-        let lib_path = dir_entry?.into_path();
+      while let Some(dir_entry) = s.try_next().await? {
+        let lib_path = dir_entry.into_path();
         match CABILibrary::parse_file_path(&lib_path) {
           Some(lib) if lib.kind == kind => {
             libs_by_name

@@ -37,9 +37,18 @@ jobs:
       env:
         cache-name: cache-spack-dir
       with:
-        path: ~/.spack
+        path: ~/.spack/summonings
         # No need to split cache by os, as spack already ensures this separation!
-        key: spack-unversioned-${{ env.cache-name }}
+        key: spack-summonings-${{ env.cache-name }}
+
+    - id: cache-cargo-build-output
+      name: cache cargo build output
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-cargo-target-dir
+      with:
+        path: target/
+        key: cargo-target-dir-${{ runner.os }}-${{ env.cache-name }}
 
     - name: test rust
-      run: cargo test -vv
+      run: cargo test
