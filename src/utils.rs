@@ -193,9 +193,10 @@ pub mod prefix {
   #[derive(Debug, Display, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
   pub struct LibraryName(pub String);
 
-  #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+  #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
   pub enum LibraryType {
     Static,
+    #[default]
     Dynamic,
   }
 
@@ -276,10 +277,18 @@ pub mod prefix {
     }
   }
 
-  #[derive(Debug, Clone)]
+  #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
+  pub enum SearchBehavior {
+    #[default]
+    ErrorOnDuplicateLibraryName,
+    SelectFirstForEachLibraryName,
+  }
+
+  #[derive(Debug, Clone, Default)]
   pub struct LibsQuery {
     pub needed_libraries: Vec<LibraryName>,
     pub kind: LibraryType,
+    pub search_behavior: SearchBehavior,
   }
 
   impl LibsQuery {
@@ -287,8 +296,9 @@ pub mod prefix {
       let Self {
         needed_libraries,
         kind,
+        search_behavior,
       } = self;
-      let needed_libraries: IndexSet<_> = needed_libraries.iter().cloned().collect();
+      let needed_libraries: IndexSet<LibraryName> = needed_libraries.iter().cloned().collect();
       let mut libs_by_name: IndexMap<LibraryName, Vec<CABILibrary>> = IndexMap::new();
 
       let s = prefix.traverse();
@@ -307,8 +317,9 @@ pub mod prefix {
         }
       }
 
-      let found: IndexSet<_> = libs_by_name.keys().cloned().collect();
-      let needed_not_found: IndexSet<_> = needed_libraries.difference(&found).cloned().collect();
+      let found: IndexSet<LibraryName> = libs_by_name.keys().cloned().collect();
+      let needed_not_found: IndexSet<LibraryName> =
+        needed_libraries.difference(&found).cloned().collect();
       if !needed_not_found.is_empty() {
         return Err(PrefixTraversalError::NeededLibrariesNotFound(
           needed_not_found,
@@ -316,7 +327,7 @@ pub mod prefix {
           found,
         ));
       }
-      let only_needed_libs: IndexMap<_, _> = libs_by_name
+      let only_needed_libs: IndexMap<LibraryName, Vec<CABILibrary>> = libs_by_name
         .into_iter()
         .filter(|(name, _)| needed_libraries.contains(name))
         .collect();
@@ -331,12 +342,24 @@ pub mod prefix {
           duplicated_libs.insert(name, libs);
         }
       }
-      if !duplicated_libs.is_empty() {
-        return Err(PrefixTraversalError::DuplicateLibraryNames(
-          duplicated_libs.keys().cloned().collect(),
-          prefix.clone(),
-          duplicated_libs,
-        ));
+
+      match search_behavior {
+        SearchBehavior::ErrorOnDuplicateLibraryName => {
+          if !duplicated_libs.is_empty() {
+            return Err(PrefixTraversalError::DuplicateLibraryNames(
+              duplicated_libs.keys().cloned().collect(),
+              prefix.clone(),
+              duplicated_libs,
+            ));
+          }
+        },
+        SearchBehavior::SelectFirstForEachLibraryName => {
+          for (name, mut libs) in duplicated_libs.into_iter() {
+            assert!(!singly_matched_libs.contains_key(&name));
+            assert!(!libs.is_empty());
+            singly_matched_libs.insert(name, libs.pop().unwrap());
+          }
+        },
       }
       assert_eq!(singly_matched_libs.len(), needed_libraries.len());
 

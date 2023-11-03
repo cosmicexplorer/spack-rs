@@ -53,6 +53,7 @@ async fn link_libraries(prefix: prefix::Prefix) -> Result<(), prefix::PrefixTrav
   let query = prefix::LibsQuery {
     needed_libraries: vec![prefix::LibraryName("re2".to_string())],
     kind: prefix::LibraryType::Static,
+    search_behavior: prefix::SearchBehavior::ErrorOnDuplicateLibraryName,
   };
   let libs = query.find_libs(&prefix).await?;
 
@@ -99,11 +100,12 @@ async fn main() {
 
   let libstdcpp_prefix = prefix::Prefix {
     /* FIXME: this only works on ubuntu! */
-    path: PathBuf::from("/usr/lib/gcc/x86_64-linux-gnu/12"),
+    path: PathBuf::from("/usr/lib/gcc/x86_64-linux-gnu"),
   };
   let query = prefix::LibsQuery {
     needed_libraries: vec![prefix::LibraryName("stdc++".to_string())],
     kind: prefix::LibraryType::Dynamic,
+    search_behavior: prefix::SearchBehavior::SelectFirstForEachLibraryName,
   };
   let libs = query.find_libs(&libstdcpp_prefix).await.unwrap();
   libs.link_libraries();
