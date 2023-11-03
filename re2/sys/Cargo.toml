@@ -10,3 +10,4 @@ authors.workspace       = true
 [build-dependencies]
 bindgen                 = "0.69.1"
 spack.workspace         = true
+tokio                   = { workspace = true, features = ["macros"] }

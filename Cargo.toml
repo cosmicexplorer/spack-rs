@@ -25,6 +25,7 @@ super-process           = { path = "super-process" }
 
 displaydoc              = "0.2.4"
 thiserror               = "1.0.30"
+tokio                   = "1.33.0"
 
 [package]
 name                    = "spack"
@@ -61,7 +62,7 @@ super-process.workspace = true
 tar                     = "0.4"
 tempfile                = "3.3.0"
 thiserror.workspace     = true
-tokio                   = { version = "1.33.0", features = ["fs"] }
+tokio                   = { workspace = true, features = ["fs"] }
 walkdir                 = "2"
 
 [dev-dependencies]
