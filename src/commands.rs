@@ -762,7 +762,7 @@ pub mod install {
       /* Generate spack argv. */
       let argv = exe::Argv(
         /* FIXME: determine appropriate amount of build parallelism! */
-        ["install", "--fail-fast", "-j16"]
+        ["install", "--fail-fast", "-j12"]
           .into_iter()
           .map(|s| s.to_string())
           .chain(verbosity.verbosity_args().into_iter())

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '**'
+  pull_request: {}
+
+jobs:
+  test-rust:
+    name: test against ${{ matrix.rust-toolchain }} rust
+    strategy:
+      fail-fast: true
+      matrix:
+        rust-toolchain: ['stable', 'nightly']
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: install rust ${{ matrix.rust-toolchain }}
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
+
+    - id: cache-rust-tests
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - name: test rust
+      run: cargo test -vv
