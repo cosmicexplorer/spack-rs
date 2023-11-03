@@ -8,4 +8,6 @@ repository.workspace    = true
 authors.workspace       = true
 
 [build-dependencies]
-re2-sys = { path = "sys/" }
+bindgen                 = "0.69.1"
+spack.workspace         = true
+tokio                   = { workspace = true, features = ["macros"] }

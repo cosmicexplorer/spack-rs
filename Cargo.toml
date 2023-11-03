@@ -2,13 +2,11 @@
 members                 = [
     ".",
     "re2",
-    "re2/sys",
     "super-process",
 ]
 default-members         = [
     ".",
     "re2",
-    "re2/sys",
     "super-process",
 ]
 resolver                = "2"
