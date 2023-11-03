@@ -7,9 +7,9 @@
 //! [build scripts]: https://doc.rust-lang.org/cargo/reference/build-scripts.html
 
 #![deny(unsafe_code)]
-/* Turn all warnings into errors! */
+// Turn all warnings into errors!
 // #![deny(warnings)]
-/* Warn for missing docs in general, and hard require crate-level docs. */
+// Warn for missing docs in general, and hard require crate-level docs.
 // #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
