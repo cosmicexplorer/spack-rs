@@ -25,11 +25,16 @@ jobs:
       with:
         toolchain: ${{ matrix.rust-toolchain }}
 
-    - id: cache-rust-tests
-      name: cache rust
+    - name: cache rust
       uses: Swatinem/rust-cache@v2
       with:
         key: v1
+
+    - name: cache spack
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.spack
 
     - name: test rust
       run: cargo test -vv
