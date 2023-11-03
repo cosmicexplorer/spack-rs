@@ -38,18 +38,18 @@
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
 /* Arc<Mutex> can be more clear than needing to grok Orderings: */
 #![allow(clippy::mutex_atomic)]
+#![allow(clippy::collapsible_if)]
 
 use bindgen;
-use eyre::{Report, WrapErr};
 use futures_util::{pin_mut, stream::TryStreamExt};
 use spack::{
   self,
   utils::{self, prefix},
   SpackInvocation,
 };
-use tokio::{fs, task};
+use tokio::fs;
 
-use std::{ffi::OsStr, io, path::PathBuf};
+use std::{ffi::OsStr, path::PathBuf};
 
 async fn link_libraries(prefix: prefix::Prefix) -> eyre::Result<()> {
   let query = prefix::LibsQuery {
@@ -109,11 +109,8 @@ async fn locate_stl_includes() -> eyre::Result<Vec<PathBuf>> {
         {
           continue;
         }
-        match fs::File::open(&inc_file_path).await {
-          Ok(_) => {
-            let _ = algorithm_header_path.insert(inc_file_path);
-          },
-          Err(_) => (),
+        if fs::File::open(&inc_file_path).await.is_ok() {
+          let _ = algorithm_header_path.insert(inc_file_path);
         }
         continue;
       }
@@ -126,11 +123,8 @@ async fn locate_stl_includes() -> eyre::Result<Vec<PathBuf>> {
         .unwrap_or(false)
       {
         assert!(inc_file_path.ends_with("bits/basic_string.h"));
-        match fs::File::open(&inc_file_path).await {
-          Ok(_) => {
-            let _ = basic_string_header_path.insert(inc_file_path);
-          },
-          Err(_) => (),
+        if fs::File::open(&inc_file_path).await.is_ok() {
+          let _ = basic_string_header_path.insert(inc_file_path);
         }
         continue;
       }
@@ -176,11 +170,8 @@ async fn locate_plat_includes() -> eyre::Result<Vec<PathBuf>> {
         .unwrap_or(false)
       {
         assert!(inc_file_path.ends_with("bits/c++config.h"));
-        match fs::File::open(&inc_file_path).await {
-          Ok(_) => {
-            let _ = cppconfig_header_path.insert(inc_file_path);
-          },
-          Err(_) => (),
+        if fs::File::open(&inc_file_path).await.is_ok() {
+          let _ = cppconfig_header_path.insert(inc_file_path);
         }
         continue;
       }

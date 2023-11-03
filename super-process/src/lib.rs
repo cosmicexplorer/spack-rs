@@ -1,5 +1,6 @@
 /*
- * Description: An async process creation framework. More of a utility library.
+ * Description: An async process creation framework. More of a utility
+ * library.
  *
  * Copyright (C) 2022 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: Apache-2.0
@@ -8,9 +9,12 @@
 //! An async process creation framework. More of a utility library.
 //!
 //! - *TODO: [`fs`] doesn't do much yet.*
-//! - [`exe::Command`] covers all the configuration for a single process invocation.
-//! - [`base::CommandBase`] abstracts a process invocation which requires setup work.
-//! - [`sync`] and [`stream`] invoke processes "synchronously" or "asynchronously".
+//! - [`exe::Command`] covers all the configuration for a single process
+//!   invocation.
+//! - [`base::CommandBase`] abstracts a process invocation which requires setup
+//!   work.
+//! - [`sync`] and [`stream`] invoke processes "synchronously" or
+//!   "asynchronously".
 //! - [`sh`] wraps a shell script invocation.
 
 #![deny(rustdoc::missing_crate_level_docs)]
@@ -18,6 +22,8 @@
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 #![deny(clippy::all)]
+#![allow(clippy::collapsible_else_if)]
+#![allow(clippy::result_large_err)]
 
 /// Representations of filesystem locations on the local host.
 ///
@@ -62,7 +68,8 @@ pub mod fs {
   }
 }
 
-/// Representations of executable files and methods to invoke them as async processes.
+/// Representations of executable files and methods to invoke them as async
+/// processes.
 pub mod exe {
   use super::fs::{self, PathWrapper};
 
@@ -119,8 +126,9 @@ pub mod exe {
 
   /// [{0:?}]
   ///
-  /// The command line to provide to the executable. Note that the complete "argv" used by
-  /// [`Command`] contains the executable path prefixed to these arguments.
+  /// The command line to provide to the executable. Note that the complete
+  /// "argv" used by [`Command`] contains the executable path prefixed to
+  /// these arguments.
   #[derive(Debug, Display, Clone, Default)]
   #[ignore_extra_doc_attributes]
   pub struct Argv(pub VecDeque<OsString>);
@@ -179,20 +187,21 @@ pub mod exe {
 
   /// <exe={exe}, wd={wd:?}, argv={argv}, env={env}>
   ///
-  /// Request to execute a subprocess. See [`crate::sync`] and [`crate::stream`] for examples
-  /// of invocation.
+  /// Request to execute a subprocess. See [`crate::sync`] and [`crate::stream`]
+  /// for examples of invocation.
   #[derive(Debug, Display, Clone, Default)]
   #[ignore_extra_doc_attributes]
   pub struct Command {
     /// Executable name, which may be absolute or relative to `$PATH` entries.
     pub exe: Exe,
-    /// The working directory for the child process; otherwise, the working directory is inherited
-    /// from the parent process.
+    /// The working directory for the child process; otherwise, the working
+    /// directory is inherited from the parent process.
     pub wd: Option<fs::Directory>,
-    /// Arguments to pass to the executable. These should *not* be quoted at all.
+    /// Arguments to pass to the executable. These should *not* be quoted at
+    /// all.
     pub argv: Argv,
-    /// Any new environment variables to set within the child process. The environment is
-    /// otherwise inherited from the parent.
+    /// Any new environment variables to set within the child process. The
+    /// environment is otherwise inherited from the parent.
     pub env: EnvModifications,
   }
 
@@ -221,7 +230,8 @@ pub mod exe {
       command
     }
 
-    /// Make this command execute the `new_exe` binary instead, shifting all args one to the right.
+    /// Make this command execute the `new_exe` binary instead, shifting all
+    /// args one to the right.
     pub fn unshift_new_exe(&mut self, new_exe: Exe) {
       if new_exe.is_empty() {
         unreachable!("new_exe is an empty string!! self was: {:?}", self);
@@ -328,7 +338,8 @@ pub mod base {
 
   use std::io;
 
-  /// Errors which may occur during the execution of [`CommandBase::setup_command`].
+  /// Errors which may occur during the execution of
+  /// [`CommandBase::setup_command`].
   #[derive(Debug, Display, Error)]
   pub enum SetupError {
     /// inner error: {0}
@@ -357,7 +368,8 @@ pub mod base {
     pub error: SetupError,
   }
 
-  /// Declare higher-level operations which desugar to command lines by implementing this trait.
+  /// Declare higher-level operations which desugar to command lines by
+  /// implementing this trait.
   #[async_trait]
   pub trait CommandBase {
     /// Generate a command line from the given object.
@@ -365,7 +377,8 @@ pub mod base {
   }
 }
 
-/// Methods to execute a process "synchronously", i.e. waiting until it has exited.
+/// Methods to execute a process "synchronously", i.e. waiting until it has
+/// exited.
 ///
 ///```
 /// # tokio_test::block_on(async {
@@ -387,7 +400,7 @@ pub mod base {
 ///   .expect("trailing newline not found");
 /// assert_eq!(hey, "hey");
 /// # }) // async
-///```
+/// ```
 pub mod sync {
   use super::exe;
 
@@ -404,7 +417,8 @@ pub mod sync {
   }
 
   impl RawOutput {
-    /// Parse the process's exit status with [`exe::CommandError::analyze_exit_status`].
+    /// Parse the process's exit status with
+    /// [`exe::CommandError::analyze_exit_status`].
     pub fn extract(
       command: exe::Command,
       output: process::Output,
@@ -430,8 +444,8 @@ pub mod sync {
       Ok(output)
     }
 
-    /// Decode the output streams of this process, with the invoking `command` provided for
-    /// error context.
+    /// Decode the output streams of this process, with the invoking `command`
+    /// provided for error context.
     pub fn decode(self, command: exe::Command) -> Result<DecodedOutput, exe::CommandErrorWrapper> {
       let Self { stdout, stderr } = &self;
       let stdout = str::from_utf8(stdout)
@@ -453,7 +467,8 @@ pub mod sync {
     }
   }
 
-  /// The slurped streams for a synchronously-invoked process, after UTF-8 decoding.
+  /// The slurped streams for a synchronously-invoked process, after UTF-8
+  /// decoding.
   #[derive(Debug, Clone)]
   #[allow(missing_docs)]
   pub struct DecodedOutput {
@@ -464,7 +479,8 @@ pub mod sync {
   /// Trait that defines "synchronously" invokable processes.
   #[async_trait]
   pub trait SyncInvocable {
-    /// Invoke a child process and wait on it to complete while slurping its output.
+    /// Invoke a child process and wait on it to complete while slurping its
+    /// output.
     async fn invoke(self) -> Result<RawOutput, exe::CommandErrorWrapper>;
   }
 
@@ -488,11 +504,12 @@ pub mod sync {
 
 /// Methods to execute a process in an "asynchronous" or "streaming" fashion.
 ///
-/// **TODO: define a generic stream type like the `Emission` trait in `learning-progress-bar`, then
-/// express the stdio lines stream in terms of the stdio byte chunks stream!** We avoid doing that
-/// here because we expect using a [`BufReader`](futures_lite::io::BufReader) to produce
-/// [`StdioLine`](stream::StdioLine)s will be more efficient and cleaner than manually
-/// implementing a `BufReader` with `async-channel` or something.
+/// **TODO: define a generic stream type like the `Emission` trait in
+/// `learning-progress-bar`, then express the stdio lines stream in terms of the
+/// stdio byte chunks stream!** We avoid doing that here because we expect using
+/// a [`BufReader`](futures_lite::io::BufReader) to produce
+/// [`StdioLine`](stream::StdioLine)s will be more efficient and cleaner than
+/// manually implementing a `BufReader` with `async-channel` or something.
 ///
 ///```
 /// # tokio_test::block_on(async {
@@ -519,7 +536,7 @@ pub mod sync {
 /// let hey = out.strip_suffix("\n").unwrap();
 /// assert!(hey == "hey");
 /// # }) // async
-///```
+/// ```
 pub mod stream {
   use super::exe;
 
@@ -530,7 +547,8 @@ pub mod stream {
 
   /// A handle to the result an asynchronous invocation.
   pub struct Streaming {
-    /// The handle to the live child process (live until [`Child::output`] is called).
+    /// The handle to the live child process (live until [`Child::output`] is
+    /// called).
     pub child: Child,
     /// The stdout stream, separated from the process handle.
     pub stdout: ChildStdout,
@@ -541,7 +559,8 @@ pub mod stream {
   }
 
   impl Streaming {
-    /// Stream the output of this process through `act`, then analyze the exit status.
+    /// Stream the output of this process through `act`, then analyze the exit
+    /// status.
     pub async fn exhaust_byte_streams_and_wait<F, A>(
       self,
       act: A,
@@ -621,7 +640,8 @@ pub mod stream {
       Ok(())
     }
 
-    /// Stream the output of this process through `act`, then analyze the exit status.
+    /// Stream the output of this process through `act`, then analyze the exit
+    /// status.
     pub async fn exhaust_string_streams_and_wait<F, A>(
       self,
       act: A,
@@ -664,7 +684,8 @@ pub mod stream {
       Ok(())
     }
 
-    /// Copy over all stderr lines to our stderr, and stdout lines to our stdout.
+    /// Copy over all stderr lines to our stderr, and stdout lines to our
+    /// stdout.
     async fn stdio_streams_callback(line: StdioLine) -> Result<(), exe::CommandError> {
       match line {
         StdioLine::Err(err) => {
@@ -679,7 +700,8 @@ pub mod stream {
       Ok(())
     }
 
-    /// Wait for the process to exit, printing lines of stdout and stderr to the terminal.
+    /// Wait for the process to exit, printing lines of stdout and stderr to the
+    /// terminal.
     pub async fn wait(self) -> Result<(), exe::CommandErrorWrapper> {
       self
         .exhaust_string_streams_and_wait(Self::stdio_streams_callback)
@@ -790,21 +812,21 @@ pub mod sh {
 
   /// Generate a shell script to execute via [`ShellScript`].
   ///
-  /// This script is generated by writing [`Self::contents`] to a temporary file.
-  ///```
+  /// This script is generated by writing [`Self::contents`] to a temporary
+  /// file. ```
   /// # tokio_test::block_on(async {
   /// use super_process::{sh, exe, base::CommandBase, sync::SyncInvocable};
   ///
   /// let contents = "echo hey".as_bytes().to_vec();
   /// let source = sh::ShellSource { contents };
-  /// let script = source.into_script().await.expect("generating shell script failed");
-  /// let command = script.with_command(exe::Command::default())
+  /// let script = source.into_script().await.expect("generating shell script
+  /// failed"); let command = script.with_command(exe::Command::default())
   ///   .setup_command().await.unwrap();
   ///
   /// let output = command.invoke().await.expect("shell script should succeed");
   /// assert!(b"hey\n".as_ref() == &output.stdout);
   /// # }) // async
-  ///```
+  /// ```
   #[derive(Debug, Clone)]
   pub struct ShellSource {
     /// The bytes of a shell script to be written to file.
@@ -824,7 +846,8 @@ pub mod sh {
 
     /// Create a handle to a shell script backed by a temp file.
     ///
-    /// *FIXME: we don't ever delete the temp file! Use lifetimes to avoid this!*
+    /// *FIXME: we don't ever delete the temp file! Use lifetimes to avoid
+    /// this!*
     pub async fn into_script(self) -> Result<ShellScript, ShellError> {
       let script_path = self.write_to_temp_path()?;
 
@@ -839,8 +862,8 @@ pub mod sh {
     }
   }
 
-  /// Request for dumping the components of the environment after evaluating a shell script.
-  ///```
+  /// Request for dumping the components of the environment after evaluating a
+  /// shell script. ```
   /// # tokio_test::block_on(async {
   /// use std::ffi::OsStr;
   /// use super_process::{sh, exe};
@@ -850,11 +873,11 @@ pub mod sh {
   ///     contents: b"export A=3".to_vec(),
   ///   },
   /// };
-  /// let exe::EnvModifications(env) = env.extract_env_bindings().await.unwrap();
-  /// let env_val = env.get(OsStr::new("A")).unwrap().to_str().unwrap();
-  /// assert_eq!(3, env_val.parse::<usize>().unwrap());
-  /// # }) // async
-  ///```
+  /// let exe::EnvModifications(env) =
+  /// env.extract_env_bindings().await.unwrap(); let env_val =
+  /// env.get(OsStr::new("A")).unwrap().to_str().unwrap(); assert_eq!(3,
+  /// env_val.parse::<usize>().unwrap()); # }) // async
+  /// ```
   #[derive(Debug, Clone)]
   pub struct EnvAfterScript {
     /// Script to run before extracting the environment.
@@ -906,7 +929,8 @@ pub mod sh {
       Ok(output.stdout)
     }
 
-    /// Execute the wrapped script and parse the output of the `env` command executed afterwards!
+    /// Execute the wrapped script and parse the output of the `env` command
+    /// executed afterwards!
     pub async fn extract_env_bindings(self) -> Result<exe::EnvModifications, ShellErrorWrapper> {
       let stdout = self.extract_stdout().await?;
 
@@ -951,7 +975,7 @@ pub mod sh {
   /// let output = command.invoke().await.expect("script should succeed");
   /// assert!(b"hey\n".as_ref() == &output.stdout);
   /// # }) // async
-  ///```
+  /// ```
   #[derive(Debug, Clone)]
   pub struct ShellScript {
     /// The script to execute.

@@ -407,7 +407,7 @@ pub mod find {
         serde_json::Value::Array(values) => {
           let found_specs: Vec<FoundSpec> = values
             .into_iter()
-            .map(|v| serde_json::from_value(v))
+            .map(serde_json::from_value)
             .collect::<Result<Vec<FoundSpec>, _>>()?;
           Ok(found_specs)
         },
@@ -466,7 +466,7 @@ pub mod find {
           let stdout = str::from_utf8(&output.stdout).map_err(|e| {
             FindError::Unknown(format!("failed to parse utf8 ({}): got {:?}", e, &output))
           })?;
-          let m = FIND_PREFIX_REGEX.captures(&stdout).unwrap();
+          let m = FIND_PREFIX_REGEX.captures(stdout).unwrap();
           let name = m.get(1).unwrap().as_str();
           /* FIXME: this method should be using a custom `spack python` script!! */
           assert!(spec.0.starts_with(name));
@@ -1350,7 +1350,7 @@ pub mod compiler_find {
         serde_json::Value::Array(values) => {
           let compiler_specs: Vec<FoundCompiler> = values
             .into_iter()
-            .map(|v| serde_json::from_value(v))
+            .map(serde_json::from_value)
             .collect::<Result<Vec<FoundCompiler>, _>>()?;
           Ok(compiler_specs)
         },

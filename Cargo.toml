@@ -61,7 +61,7 @@ super-process.workspace = true
 tar                     = "0.4"
 tempfile                = "3.3.0"
 thiserror.workspace     = true
-tokio                   = { workspace = true, features = ["fs"] }
+tokio                   = { workspace = true, features = ["fs", "sync"] }
 walkdir                 = "2"
 
 [dev-dependencies]

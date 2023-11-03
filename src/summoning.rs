@@ -148,10 +148,9 @@ impl SpackTarball {
         .unwrap()?;
 
         /* See if the target file was created since we locked the lockfile. */
-        match fs::File::open(&tgz_path).await {
-          /* If so, return early! */
-          Ok(mut tgz) => return Self::check_tarball_digest(&tgz_path, &mut tgz).await,
-          Err(_) => (),
+        if let Ok(mut tgz) = fs::File::open(&tgz_path).await {
+          /* If so, check the digest! */
+          return Self::check_tarball_digest(&tgz_path, &mut tgz).await;
         }
 
         eprintln!(
@@ -255,7 +254,10 @@ impl SpackRepo {
               "extracting spack {}...",
               MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT,
             );
-            Ok(Self::unzip_spack_archive(cache_dir.clone()).await?.unwrap())
+            assert!(Self::unzip_spack_archive(cache_dir.clone())
+              .await?
+              .is_some());
+            Ok(())
           },
           Err(e) => Err(e.into()),
         }
@@ -275,7 +277,7 @@ impl SpackRepo {
     let current_link_path = cache_dir.unpacking_path();
     Self::ensure_unpacked(current_link_path, &cache_dir).await?;
 
-    Ok(Self::get_spack_script(cache_dir).await?)
+    Self::get_spack_script(cache_dir).await
   }
 }
 

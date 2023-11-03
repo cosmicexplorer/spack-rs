@@ -89,7 +89,7 @@ pub mod python {
           &py, &e, &output.stdout
         ))
       })?;
-      match PYTHON_VERSION_REGEX.captures(&stdout) {
+      match PYTHON_VERSION_REGEX.captures(stdout) {
         Some(m) => Ok(Self {
           exe: py,
           version: m.get(1).unwrap().as_str().to_string(),
@@ -165,8 +165,8 @@ pub mod spack {
     pub version: String,
   }
 
-  pub(crate) static SUMMON_CUR_PROCESS_LOCK: once_cell::sync::Lazy<parking_lot::Mutex<()>> =
-    once_cell::sync::Lazy::new(|| parking_lot::Mutex::new(()));
+  pub(crate) static SUMMON_CUR_PROCESS_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
   impl SpackInvocation {
     /// Create an instance.
@@ -192,7 +192,7 @@ pub mod spack {
       let version = str::from_utf8(&output.stdout)
         .map_err(|e| format!("utf8 decoding error {}: from {:?}", e, &output.stdout))
         .and_then(|s| {
-          s.strip_suffix("\n")
+          s.strip_suffix('\n')
             .ok_or_else(|| format!("failed to strip final newline from output: '{}'", s))
         })
         .map_err(|e: String| {
@@ -238,10 +238,9 @@ pub mod spack {
       .unwrap()?;
 
       /* See if the target file was created since we locked the lockfile. */
-      match tokio::fs::File::open(&bootstrap_proof_path).await {
+      if tokio::fs::File::open(&bootstrap_proof_path).await.is_ok() {
         /* If so, return early! */
-        Ok(_) => return Ok(()),
-        Err(_) => (),
+        return Ok(());
       }
 
       eprintln!(
@@ -270,7 +269,7 @@ pub mod spack {
       /* Our use of file locking within the summoning process does not
        * differentiate between different threads within the same process, so
        * we additionally lock in-process here. */
-      let _lock = SUMMON_CUR_PROCESS_LOCK.lock();
+      let _lock = SUMMON_CUR_PROCESS_LOCK.lock().await;
 
       let python = python::FoundPython::detect().await?;
       let cache_dir = summoning::CacheDir::get_or_create().await?;
@@ -309,7 +308,7 @@ pub mod spack {
 
     #[tokio::test]
     async fn test_create_invocation() -> Result<(), crate::Error> {
-      let _lock = SUMMON_CUR_PROCESS_LOCK.lock();
+      let _lock = SUMMON_CUR_PROCESS_LOCK.lock().await;
 
       // Access a few of the relevant files and directories.
       let python = FoundPython::detect().await.unwrap();

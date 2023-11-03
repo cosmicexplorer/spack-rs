@@ -19,7 +19,6 @@
  * attributes from a common source. */
 #![deny(
   clippy::all,
-  clippy::default_trait_access,
   clippy::expl_impl_clone_on_copy,
   clippy::if_not_else,
   clippy::needless_continue,
