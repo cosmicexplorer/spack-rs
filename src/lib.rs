@@ -68,6 +68,16 @@ use thiserror::Error;
 pub mod versions {
   use hex_literal::hex;
 
+  pub mod re2_patches {
+    use super::hex;
+
+    pub const RE2_PATCHES_SPACK_URL: &str =
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/re2-package-update.tar.gz";
+    pub const RE2_PATCHES_SHA256SUM: [u8; 32] =
+      hex!("06db77e5142dfae8ad08cb057f628298f3f37d082a593fcfcd1598d58e707dd2");
+    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-re2-package-update";
+  }
+
   /// The most recently released version of spack.
   pub mod develop {
     use super::hex;

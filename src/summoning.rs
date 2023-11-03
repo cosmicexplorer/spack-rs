@@ -3,7 +3,7 @@
 
 //! Get a copy of spack.
 
-use crate::{utils, versions::develop::*};
+use crate::{utils, versions::re2_patches::*};
 
 use displaydoc::Display;
 use flate2::read::GzDecoder;
@@ -64,15 +64,11 @@ impl CacheDir {
 
   /// We use the hex-encoded checksum value as the ultimate directory name.
   #[inline]
-  pub fn dirname(&self) -> String { MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex() }
+  pub fn dirname(&self) -> String { RE2_PATCHES_SHA256SUM.encode_hex() }
 
   /// The path to unpack the tar archive into.
   #[inline]
-  pub fn unpacking_path(&self) -> PathBuf {
-    self
-      .location
-      .join(MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
-  }
+  pub fn unpacking_path(&self) -> PathBuf { self.location.join(RE2_PATCHES_TOPLEVEL_COMPONENT) }
 
   /// The path to download the release tarball to.
   #[inline]
@@ -81,14 +77,10 @@ impl CacheDir {
   /// The path to the root of the spack repo, through a symlink.
   ///
   /// FIXME: Note that this repeats the
-  /// [`MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT`] component
+  /// [`RE2_PATCHES_TOPLEVEL_COMPONENT`] component
   /// used in [`Self::unpacking_path`].
   #[inline]
-  pub fn repo_root(&self) -> PathBuf {
-    self
-      .unpacking_path()
-      .join(MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT)
-  }
+  pub fn repo_root(&self) -> PathBuf { self.unpacking_path().join(RE2_PATCHES_TOPLEVEL_COMPONENT) }
 
   /// The path to the spack script in the spack repo, through a symlink.
   #[inline]
@@ -113,14 +105,14 @@ impl SpackTarball {
     let mut hasher = Sha256::new();
     hasher.update(&tarball_bytes);
     let checksum: [u8; 32] = hasher.finalize().into();
-    if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
+    if checksum == RE2_PATCHES_SHA256SUM {
       Ok(Self {
         downloaded_location: tgz_path.to_path_buf(),
       })
     } else {
       Err(SummoningError::Checksum(
         format!("file://{}", tgz_path.display()),
-        MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
+        RE2_PATCHES_SHA256SUM.encode_hex(),
         checksum.encode_hex(),
       ))
     }
@@ -155,14 +147,14 @@ impl SpackTarball {
 
         eprintln!(
           "downloading spack {} from {}...",
-          MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT, MOST_RECENT_HARDCODED_SPACK_URL
+          RE2_PATCHES_TOPLEVEL_COMPONENT, RE2_PATCHES_SPACK_URL,
         );
-        let resp = reqwest::get(MOST_RECENT_HARDCODED_SPACK_URL).await?;
+        let resp = reqwest::get(RE2_PATCHES_SPACK_URL).await?;
         let tarball_bytes = resp.bytes().await?;
         let mut hasher = Sha256::new();
         hasher.update(&tarball_bytes);
         let checksum: [u8; 32] = hasher.finalize().into();
-        if checksum == MOST_RECENT_HARDCODED_URL_SHA256SUM {
+        if checksum == RE2_PATCHES_SHA256SUM {
           let mut tgz = fs::File::create(&tgz_path).await?;
           tgz.write_all(&tarball_bytes).await?;
           tgz.sync_all().await?;
@@ -171,8 +163,8 @@ impl SpackTarball {
           })
         } else {
           Err(SummoningError::Checksum(
-            MOST_RECENT_HARDCODED_SPACK_URL.to_string(),
-            MOST_RECENT_HARDCODED_URL_SHA256SUM.encode_hex(),
+            RE2_PATCHES_SPACK_URL.to_string(),
+            RE2_PATCHES_SHA256SUM.encode_hex(),
             checksum.encode_hex(),
           ))
         }
@@ -255,10 +247,7 @@ impl SpackRepo {
           Ok(_) => Ok::<_, SummoningError>(()),
           /* Otherwise, extract it! */
           Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            eprintln!(
-              "extracting spack {}...",
-              MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT,
-            );
+            eprintln!("extracting spack {}...", RE2_PATCHES_TOPLEVEL_COMPONENT,);
             assert!(Self::unzip_spack_archive(cache_dir.clone())
               .await?
               .is_some());

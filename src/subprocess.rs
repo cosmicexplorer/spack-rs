@@ -264,7 +264,7 @@ pub mod spack {
 
       eprintln!(
         "bootstrapping spack {}",
-        crate::versions::develop::MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT
+        crate::versions::re2_patches::RE2_PATCHES_TOPLEVEL_COMPONENT,
       );
 
       self.ensure_compilers_found().await?;
@@ -323,7 +323,7 @@ pub mod spack {
     async fn test_summon() -> Result<(), crate::Error> {
       let spack = SpackInvocation::summon().await?;
       // This is the current version number for the spack installation.
-      assert!(spack.version == "0.20.3".to_string());
+      assert_eq!(spack.version, "0.21.0.dev0");
       Ok(())
     }
 
@@ -338,7 +338,7 @@ pub mod spack {
       let spack = SpackInvocation::create(python, spack_exe).await?;
 
       // This is the current version number for the spack installation.
-      assert!(spack.version == "0.20.3".to_string());
+      assert_eq!(spack.version, "0.21.0.dev0");
       Ok(())
     }
   }

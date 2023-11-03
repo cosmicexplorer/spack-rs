@@ -44,6 +44,7 @@ use bindgen;
 use futures_util::{pin_mut, stream::TryStreamExt};
 use spack::{
   self,
+  commands::checksum,
   utils::{self, prefix},
   SpackInvocation,
 };
@@ -51,15 +52,37 @@ use tokio::fs;
 
 use std::{ffi::OsStr, path::PathBuf};
 
-async fn link_libraries(prefix: prefix::Prefix) -> eyre::Result<()> {
+async fn link_re2_libraries(re2_prefix: prefix::Prefix) -> eyre::Result<()> {
   let query = prefix::LibsQuery {
     needed_libraries: vec![prefix::LibraryName("re2".to_string())],
     kind: prefix::LibraryType::Static,
     search_behavior: prefix::SearchBehavior::ErrorOnDuplicateLibraryName,
   };
-  let libs = query.find_libs(&prefix).await?;
+  let libs = query.find_libs(&re2_prefix).await?;
 
-  libs.link_libraries();
+  libs.link_libraries(prefix::RpathBehavior::default());
+
+  Ok(())
+}
+
+async fn link_absl_libraries(absl_prefix: prefix::Prefix) -> eyre::Result<()> {
+  let query = prefix::LibsQuery {
+    needed_libraries: vec![
+      prefix::LibraryName("absl_hash".to_string()),
+      prefix::LibraryName("absl_low_level_hash".to_string()),
+      prefix::LibraryName("absl_raw_hash_set".to_string()),
+      prefix::LibraryName("absl_spinlock_wait".to_string()),
+      prefix::LibraryName("absl_str_format_internal".to_string()),
+      prefix::LibraryName("absl_strings".to_string()),
+      prefix::LibraryName("absl_strings_internal".to_string()),
+      prefix::LibraryName("absl_synchronization".to_string()),
+    ],
+    kind: prefix::LibraryType::Dynamic,
+    search_behavior: prefix::SearchBehavior::ErrorOnDuplicateLibraryName,
+  };
+  let libs = query.find_libs(&absl_prefix).await?;
+
+  libs.link_libraries(prefix::RpathBehavior::SetRpathForContainingDirs);
 
   Ok(())
 }
@@ -75,7 +98,7 @@ async fn explicitly_link_cxx_stdlib() -> eyre::Result<()> {
   };
   let libs = query.find_libs(&libstdcpp_prefix).await?;
 
-  libs.link_libraries();
+  libs.link_libraries(prefix::RpathBehavior::default());
 
   Ok(())
 }
@@ -198,19 +221,23 @@ async fn locate_cxx_stdlib_system_includes() -> eyre::Result<Vec<PathBuf>> {
 
 async fn generate_bindings(
   re2_prefix: PathBuf,
+  absl_prefix: PathBuf,
   header_path: PathBuf,
   output_path: PathBuf,
 ) -> eyre::Result<()> {
   let re2_header_root = re2_prefix.join("include");
+  let absl_header_root = absl_prefix.join("include");
 
   let bindings = bindgen::Builder::default()
     /* FIXME: is there really not a more specific method than "clang_arg()" to add an include
      * search dir??? */
     .clang_arg(format!("-I{}", re2_header_root.display()))
+    .clang_arg(format!("-I{}", absl_header_root.display()))
     .header(format!("{}", header_path.display()))
     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
     .enable_cxx_namespaces()
-    .allowlist_item(".*RE2.*");
+    .allowlist_item("absl::.*")
+    .allowlist_item("re2::.*");
 
   /* Pull in the c++ stdlib include dirs. */
   let mut bindings = bindings
@@ -232,19 +259,72 @@ async fn generate_bindings(
   Ok(())
 }
 
+async fn ensure_re2_2023_11_01(spack: SpackInvocation) -> eyre::Result<()> {
+  let req = checksum::AddToPackage {
+    spack,
+    package_name: "re2".to_string(),
+    new_version: "2023-11-01".to_string(),
+  };
+  req.idempotent_ensure_version_for_package().await?;
+
+  Ok(())
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
   let spack = SpackInvocation::summon().await?;
 
-  let re2_prefix = utils::ensure_prefix(spack, "re2".into()).await?;
+  ensure_re2_2023_11_01(spack.clone()).await?;
 
-  link_libraries(re2_prefix.clone()).await?;
+  let re2_dep_tree = utils::ensure_installed(
+    spack.clone(),
+    "re2@2023-11-01~shared ^ abseil-cpp+shared".into(),
+  )
+  .await?;
+  assert_eq!(&re2_dep_tree.name, "re2");
+
+  let re2_prefix = utils::ensure_prefix(spack.clone(), re2_dep_tree.hashed_spec()).await?;
+  dbg!(&re2_dep_tree.dependencies);
+  let absl_dep = re2_dep_tree
+    .dependencies
+    .as_ref()
+    .unwrap()
+    .as_array()
+    .unwrap()
+    .into_iter()
+    .find(|o| {
+      o.as_object()
+        .unwrap()
+        .get("name")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        == "abseil-cpp"
+    })
+    .unwrap()
+    .as_object()
+    .unwrap();
+  let absl_hash: &str = absl_dep.get("hash").unwrap().as_str().unwrap();
+  let absl_prefix = utils::ensure_prefix(
+    spack.clone(),
+    format!("abseil-cpp/{}", absl_hash).as_str().into(),
+  )
+  .await?;
+
+  link_re2_libraries(re2_prefix.clone()).await?;
+  link_absl_libraries(absl_prefix.clone()).await?;
 
   explicitly_link_cxx_stdlib().await?;
 
   let header_path = PathBuf::from("src/re2.hpp");
   let bindings_path = PathBuf::from("src/bindings.rs");
-  generate_bindings(re2_prefix.path, header_path, bindings_path).await?;
+  generate_bindings(
+    re2_prefix.path,
+    absl_prefix.path,
+    header_path,
+    bindings_path,
+  )
+  .await?;
 
   Ok(())
 }

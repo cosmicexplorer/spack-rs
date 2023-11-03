@@ -369,20 +369,39 @@ pub mod prefix {
     }
   }
 
+  #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
+  pub enum RpathBehavior {
+    #[default]
+    DoNotSetRpath,
+    SetRpathForContainingDirs,
+  }
+
   #[derive(Debug, Clone)]
   pub struct LibCollection {
     pub found_libraries: Vec<CABILibrary>,
   }
 
   impl LibCollection {
-    pub fn link_libraries(self) {
-      for lib in self.found_libraries.iter() {
+    pub fn link_libraries(self, rpath_behavior: RpathBehavior) {
+      let mut containing_dirs: IndexSet<PathBuf> = IndexSet::new();
+      for lib in self.found_libraries.into_iter() {
         println!("cargo:rerun-if-changed={}", lib.path.display());
         println!("cargo:rustc-link-lib={}", lib.minus_l_arg());
         println!(
           "cargo:rustc-link-search=native={}",
           lib.containing_directory().display()
         );
+        containing_dirs.insert(lib.containing_directory().to_path_buf());
+
+        if rpath_behavior == RpathBehavior::SetRpathForContainingDirs {
+          assert_eq!(lib.kind, LibraryType::Dynamic);
+        }
+      }
+
+      if rpath_behavior == RpathBehavior::SetRpathForContainingDirs {
+        for dir in containing_dirs.into_iter() {
+          println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
+        }
       }
     }
   }

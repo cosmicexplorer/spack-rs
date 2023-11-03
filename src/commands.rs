@@ -332,11 +332,11 @@ pub mod find {
     pub name: String,
     /// concrete package version: {0}
     pub version: ConcreteVersion,
-    arch: serde_json::Value,
-    compiler: serde_json::Value,
-    namespace: String,
-    parameters: serde_json::Value,
-    dependencies: Option<serde_json::Value>,
+    pub arch: serde_json::Value,
+    pub compiler: serde_json::Value,
+    pub namespace: String,
+    pub parameters: serde_json::Value,
+    pub dependencies: Option<serde_json::Value>,
     /// 32-character hash uniquely identifying this spec: {0}
     pub hash: String,
   }
@@ -1572,6 +1572,9 @@ pub mod checksum {
     }
   }
 
+  pub(crate) static ENSURE_PACKAGE_VERSION_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
+
   impl AddToPackage {
     #[inline]
     async fn version_is_known(
@@ -1603,6 +1606,11 @@ pub mod checksum {
     }
 
     pub async fn idempotent_ensure_version_for_package(self) -> Result<(), ChecksumError> {
+      /* Our use of file locking within the summoning process does not
+       * differentiate between different threads within the same process, so
+       * we additionally lock in-process here. */
+      let _lock = ENSURE_PACKAGE_VERSION_LOCK.lock().await;
+
       let req = VersionsRequest {
         spack: self.spack.clone(),
         package_name: self.package_name.clone(),
@@ -1617,6 +1625,7 @@ pub mod checksum {
         return Ok(());
       }
 
+      /* FIXME: in-process mutex too!! generalize this! */
       let lockfile_name: PathBuf =
         format!("{}@{}.lock", &self.package_name, &self.new_version).into();
       let lockfile_path = self.spack.cache_location().join(lockfile_name);
@@ -1653,14 +1662,14 @@ pub mod checksum {
     use super::*;
 
     #[tokio::test]
-    async fn test_ensure_re2_2023_09_01() -> eyre::Result<()> {
+    async fn test_ensure_re2_2022_12_01() -> eyre::Result<()> {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
       let req = AddToPackage {
         spack,
         package_name: "re2".to_string(),
-        new_version: "2023-09-1".to_string(),
+        new_version: "2022-12-01".to_string(),
       };
       req.idempotent_ensure_version_for_package().await?;
 

@@ -51,4 +51,4 @@ jobs:
         key: cargo-target-dir-${{ runner.os }}-${{ env.cache-name }}
 
     - name: test rust
-      run: cargo test -vv
+      run: cargo test
