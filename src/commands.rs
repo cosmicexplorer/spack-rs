@@ -1261,16 +1261,28 @@ pub mod compiler_find {
     pub spack: SpackInvocation,
     /// Paths to search for compilers in.
     pub paths: Vec<PathBuf>,
+    /// The scope to request the config be written into.
+    pub scope: Option<String>,
   }
 
   #[async_trait]
   impl CommandBase for CompilerFind {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
-      let Self { spack, paths } = self;
+      let Self {
+        spack,
+        paths,
+        scope,
+      } = self;
       let args = exe::Argv(
         ["compiler", "find"]
           .map(|s| s.to_string())
           .into_iter()
+          .chain(
+            scope
+              .map(|s| vec!["--scope".to_string(), s])
+              .unwrap_or_else(Vec::new)
+              .into_iter(),
+          )
           .chain(paths.into_iter().map(|p| format!("{}", p.display())))
           .map(|s| OsStr::new(&s).to_os_string())
           .collect(),

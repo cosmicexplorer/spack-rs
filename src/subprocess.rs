@@ -145,6 +145,8 @@ pub mod spack {
     Command(#[from] exe::CommandErrorWrapper),
     /// error summoning: {0}
     Summon(#[from] summoning::SummoningError),
+    /// error finding compilers: {0}
+    CompilerFind(#[from] commands::compiler_find::CompilerFindError),
     /// error bootstrapping: {0}
     Bootstrap(#[from] commands::install::InstallError),
     /// error location python: {0}
@@ -209,6 +211,16 @@ pub mod spack {
       })
     }
 
+    async fn ensure_compilers_found(&self) -> Result<(), InvocationSummoningError> {
+      let find_site_compilers = commands::compiler_find::CompilerFind {
+        spack: self.clone(),
+        paths: vec![PathBuf::from("/usr/bin")],
+        scope: Some("site".to_string()),
+      };
+      find_site_compilers.compiler_find().await?;
+      Ok(())
+    }
+
     async fn bootstrap(
       &self,
       cache_dir: summoning::CacheDir,
@@ -247,6 +259,8 @@ pub mod spack {
         "bootstrapping spack {}",
         crate::versions::develop::MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT
       );
+
+      self.ensure_compilers_found().await?;
 
       let bootstrap_install = commands::install::Install {
         spack: self.clone(),
