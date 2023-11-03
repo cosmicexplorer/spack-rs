@@ -25,16 +25,21 @@ jobs:
       with:
         toolchain: ${{ matrix.rust-toolchain }}
 
-    - name: cache rust
+    - id: cache-rust-tests
+      name: cache rust
       uses: Swatinem/rust-cache@v2
       with:
         key: v1
 
-    - name: cache spack
+    - id: cache-spack
+      name: cache spack
       uses: actions/cache@v3
+      env:
+        cache-name: cache-spack-dir
       with:
-        path: |
-          ~/.spack
+        path: ~/.spack
+        # No need to split cache by os, as spack already ensures this separation!
+        key: spack-unversioned-${{ env.cache-name }}
 
     - name: test rust
       run: cargo test -vv
