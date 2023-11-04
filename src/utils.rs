@@ -505,6 +505,10 @@ pub mod metadata {
         .push(cur_metadata);
     }
 
+    for metadatas_for_label in resolves.values_mut() {
+      metadatas_for_label.sort();
+    }
+
     Ok(spec::DisjointResolves {
       by_label: resolves,
       crate_name_to_label: crate_env_labels,

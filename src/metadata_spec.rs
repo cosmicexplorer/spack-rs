@@ -17,7 +17,18 @@ pub struct EnvLabel(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Spec(pub String);
 
-/// This is deserialized from the output of `cargo metadata --format-version 1`.
+/// This is deserialized from the output of `cargo metadata --format-version 1`
+/// with [`serde_json`].
+///
+/// Cargo packages can declare these attributes in their `Cargo.toml` in the
+/// `[package.metadata.spack]` section as follows:
+///```toml
+/// [package.metadata.spack]
+/// env_label               = "re2-runtime-deps"
+/// spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
+/// static_libs             = ["re2"]
+/// shared_libs             = ["abseil-cpp"]
+///```
 #[derive(Debug, Clone, Deserialize)]
 pub struct LabelledPackageMetadata {
   pub env_label: String,
@@ -34,7 +45,7 @@ pub struct PackageName(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CrateName(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PackageMetadata {
   pub crate_name: CrateName,
   pub spec: Spec,
