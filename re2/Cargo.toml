@@ -12,6 +12,10 @@ env_label               = "re2-runtime-deps"
 spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
 static_libs             = ["re2"]
 shared_libs             = ["abseil-cpp"]
+cxx                     = "c++17"
+bindings_allowlist      = ["absl::*", "re2::.*"]
+header_path             = "src/re2.hpp"
+bindings_output_path    = "src/bindings.rs"
 
 [build-dependencies]
 bindgen                 = "0.69.1"

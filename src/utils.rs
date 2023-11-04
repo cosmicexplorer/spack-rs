@@ -427,6 +427,8 @@ pub mod metadata {
 
   #[derive(Debug, Display, Error)]
   pub enum MetadataError {
+    /// error processing specs {0}
+    Spec(#[from] crate::metadata_spec::spec::SpecError),
     /// command line error {0}
     Command(#[from] exe::CommandErrorWrapper),
     /// io error {0}
@@ -435,8 +437,9 @@ pub mod metadata {
     Json(#[from] serde_json::Error),
   }
 
-  pub async fn get_metadata() -> Result<crate::metadata_spec::DisjointResolves, MetadataError> {
-    use crate::metadata_spec as spec;
+  pub async fn get_metadata() -> Result<crate::metadata_spec::spec::DisjointResolves, MetadataError>
+  {
+    use crate::metadata_spec::spec;
 
     let cargo_exe: exe::Exe = env::var("CARGO").as_ref().unwrap().into();
     let cargo_argv: exe::Argv = ["metadata", "--format-version", "1"].into();
@@ -465,16 +468,16 @@ pub mod metadata {
           .as_object()?
           .get("spack")?
           .clone();
-        let spack_metadata: spec::LabelledPackageMetadata =
-          serde_json::from_value(spack_metadata).ok()?;
+        let spack_metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)
+          .expect("failed to deserialize spack metadata from cargo");
         let name: String = p.get("name")?.as_str()?.to_string();
 
         Some((spec::CrateName(name), spack_metadata))
       })
       .collect();
 
-    let mut resolves: IndexMap<spec::EnvLabel, Vec<spec::PackageMetadata>> = IndexMap::new();
-    let mut crate_env_labels: IndexMap<spec::CrateName, spec::EnvLabel> = IndexMap::new();
+    let mut resolves: IndexMap<spec::EnvLabel, Vec<spec::Spec>> = IndexMap::new();
+    let mut recipes: IndexMap<spec::CrateName, spec::Recipe> = IndexMap::new();
 
     for (crate_name, metadata) in labelled_metadata.into_iter() {
       let spec::LabelledPackageMetadata {
@@ -482,36 +485,38 @@ pub mod metadata {
         spec,
         static_libs,
         shared_libs,
+        cxx,
+        bindings_allowlist,
+        header_path,
+        bindings_output_path,
       } = metadata;
       let env_label = spec::EnvLabel(env_label);
       let spec = spec::Spec(spec);
       let static_libs: Vec<_> = static_libs.into_iter().map(spec::PackageName).collect();
       let shared_libs: Vec<_> = shared_libs.into_iter().map(spec::PackageName).collect();
+      let cxx = spec::CxxSupport::parse(cxx.as_ref().map(|x| x.as_str()))?;
 
-      assert!(crate_env_labels
-        .insert(crate_name.clone(), env_label.clone())
-        .is_none());
-
-      let cur_metadata = spec::PackageMetadata {
-        crate_name,
-        spec,
+      let recipe = spec::Recipe {
+        env_label: env_label.clone(),
         static_libs,
         shared_libs,
+        cxx,
+        bindings_allowlist,
+        header_path,
+        bindings_output_path,
       };
+
+      assert!(recipes.insert(crate_name.clone(), recipe).is_none());
 
       resolves
         .entry(env_label)
         .or_insert_with(Vec::new)
-        .push(cur_metadata);
-    }
-
-    for metadatas_for_label in resolves.values_mut() {
-      metadatas_for_label.sort();
+        .push(spec);
     }
 
     Ok(spec::DisjointResolves {
       by_label: resolves,
-      crate_name_to_label: crate_env_labels,
+      recipes,
     })
   }
 
