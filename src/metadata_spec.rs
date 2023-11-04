@@ -34,12 +34,12 @@ pub struct PackageName(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CrateName(pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PackageMetadata {
   pub crate_name: CrateName,
   pub spec: Spec,
-  pub static_libs: IndexSet<PackageName>,
-  pub shared_libs: IndexSet<PackageName>,
+  pub static_libs: Vec<PackageName>,
+  pub shared_libs: Vec<PackageName>,
 }
 
 #[derive(Debug, Clone)]

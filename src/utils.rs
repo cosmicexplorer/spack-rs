@@ -454,21 +454,20 @@ pub mod metadata {
 
     let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = top_level
       .get("packages")
-      .unwrap()
-      .as_array()
+      .and_then(|p| p.as_array())
       .unwrap()
       .into_iter()
-      .map(|p| p.as_object().unwrap())
+      .filter_map(|p| p.as_object())
       .filter_map(|p| {
         let spack_metadata: serde_json::Value = p
           .get("metadata")
-          .filter(|m| !m.is_null())
-          .and_then(|m| m.as_object())
-          .and_then(|m| m.get("spack"))?
+          .filter(|m| !m.is_null())?
+          .as_object()?
+          .get("spack")?
           .clone();
         let spack_metadata: spec::LabelledPackageMetadata =
           serde_json::from_value(spack_metadata).ok()?;
-        let name: String = p.get("name").unwrap().as_str().unwrap().to_string();
+        let name: String = p.get("name")?.as_str()?.to_string();
 
         Some((spec::CrateName(name), spack_metadata))
       })
@@ -486,8 +485,8 @@ pub mod metadata {
       } = metadata;
       let env_label = spec::EnvLabel(env_label);
       let spec = spec::Spec(spec);
-      let static_libs: IndexSet<_> = static_libs.into_iter().map(spec::PackageName).collect();
-      let shared_libs: IndexSet<_> = shared_libs.into_iter().map(spec::PackageName).collect();
+      let static_libs: Vec<_> = static_libs.into_iter().map(spec::PackageName).collect();
+      let shared_libs: Vec<_> = shared_libs.into_iter().map(spec::PackageName).collect();
 
       assert!(crate_env_labels
         .insert(crate_name.clone(), env_label.clone())
