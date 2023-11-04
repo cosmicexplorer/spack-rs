@@ -48,9 +48,14 @@ use spack::{
   utils::{self, prefix},
   SpackInvocation,
 };
+use super_process::{
+  base::{self, CommandBase},
+  exe,
+  sync::SyncInvocable,
+};
 use tokio::fs;
 
-use std::{ffi::OsStr, path::PathBuf};
+use std::{env, ffi::OsStr, path::PathBuf};
 
 async fn link_re2_libraries(re2_prefix: prefix::Prefix) -> eyre::Result<()> {
   let query = prefix::LibsQuery {
@@ -272,6 +277,12 @@ async fn ensure_re2_2023_11_01(spack: SpackInvocation) -> eyre::Result<()> {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+  let metadata = utils::metadata::get_metadata().await?;
+  dbg!(&metadata);
+  let cur_pkg_name = utils::metadata::get_cur_pkg_name();
+  dbg!(&cur_pkg_name);
+  /* todo!("wow"); */
+
   let spack = SpackInvocation::summon().await?;
 
   ensure_re2_2023_11_01(spack.clone()).await?;

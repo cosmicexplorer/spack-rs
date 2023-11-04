@@ -406,3 +406,114 @@ pub mod prefix {
     }
   }
 }
+
+pub mod metadata {
+  use super::*;
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
+  };
+
+  use async_trait::async_trait;
+  use displaydoc::Display;
+  use indexmap::{IndexMap, IndexSet};
+  use serde_json;
+  use thiserror::Error;
+  use tokio::task;
+
+  use std::{env, ffi::OsStr, io, path::PathBuf, str};
+
+  #[derive(Debug, Display, Error)]
+  pub enum MetadataError {
+    /// command line error {0}
+    Command(#[from] exe::CommandErrorWrapper),
+    /// io error {0}
+    Io(#[from] io::Error),
+    /// json error {0}
+    Json(#[from] serde_json::Error),
+  }
+
+  pub async fn get_metadata() -> Result<crate::metadata_spec::DisjointResolves, MetadataError> {
+    use crate::metadata_spec as spec;
+
+    let cargo_exe: exe::Exe = env::var("CARGO").as_ref().unwrap().into();
+    let cargo_argv: exe::Argv = ["metadata", "--format-version", "1"].into();
+    let cargo_cmd = exe::Command {
+      exe: cargo_exe,
+      argv: cargo_argv,
+      ..Default::default()
+    };
+    let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd).await?;
+
+    let top_level: serde_json::Map<String, serde_json::Value> =
+      task::spawn_blocking(move || serde_json::from_str(&decoded_output.stdout))
+        .await
+        .unwrap()?;
+
+    let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = top_level
+      .get("packages")
+      .unwrap()
+      .as_array()
+      .unwrap()
+      .into_iter()
+      .map(|p| p.as_object().unwrap())
+      .filter_map(|p| {
+        let spack_metadata: serde_json::Value = p
+          .get("metadata")
+          .filter(|m| !m.is_null())
+          .and_then(|m| m.as_object())
+          .and_then(|m| m.get("spack"))?
+          .clone();
+        let spack_metadata: spec::LabelledPackageMetadata =
+          serde_json::from_value(spack_metadata).ok()?;
+        let name: String = p.get("name").unwrap().as_str().unwrap().to_string();
+
+        Some((spec::CrateName(name), spack_metadata))
+      })
+      .collect();
+
+    let mut resolves: IndexMap<spec::EnvLabel, Vec<spec::PackageMetadata>> = IndexMap::new();
+    let mut crate_env_labels: IndexMap<spec::CrateName, spec::EnvLabel> = IndexMap::new();
+
+    for (crate_name, metadata) in labelled_metadata.into_iter() {
+      let spec::LabelledPackageMetadata {
+        env_label,
+        spec,
+        static_libs,
+        shared_libs,
+      } = metadata;
+      let env_label = spec::EnvLabel(env_label);
+      let spec = spec::Spec(spec);
+      let static_libs: IndexSet<_> = static_libs.into_iter().map(spec::PackageName).collect();
+      let shared_libs: IndexSet<_> = shared_libs.into_iter().map(spec::PackageName).collect();
+
+      assert!(crate_env_labels
+        .insert(crate_name.clone(), env_label.clone())
+        .is_none());
+
+      let cur_metadata = spec::PackageMetadata {
+        crate_name,
+        spec,
+        static_libs,
+        shared_libs,
+      };
+
+      resolves
+        .entry(env_label)
+        .or_insert_with(Vec::new)
+        .push(cur_metadata);
+    }
+
+    Ok(spec::DisjointResolves {
+      by_label: resolves,
+      crate_name_to_label: crate_env_labels,
+    })
+  }
+
+  pub fn get_cur_pkg_name() -> String {
+    let cur_pkg: String = env::var("CARGO_PKG_NAME").unwrap().into();
+    cur_pkg
+  }
+}

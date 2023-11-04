@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 //! Invoking specific spack commands.
@@ -1196,7 +1196,10 @@ pub mod python {
       // Spawn the child process and wait for it to complete.
       let output = command.clone().invoke().await.expect("sync command failed");
       // Parse output into UTF-8...
-      let decoded = output.decode(command.clone()).expect("decoding failed");
+      let decoded = output
+        .decode(command.clone())
+        .await
+        .expect("decoding failed");
       // ...and verify the version matches `spack.version`.
       let version = decoded.stdout.strip_suffix("\n").unwrap();
       assert!(version == &spack.version);
@@ -1675,5 +1678,27 @@ pub mod checksum {
 
       Ok(())
     }
+  }
+}
+
+pub mod env {
+  use super::*;
+  use crate::SpackInvocation;
+  use super_process::{
+    base::{self, CommandBase},
+    exe,
+    sync::SyncInvocable,
+  };
+
+  use async_trait::async_trait;
+  use indexmap::IndexSet;
+  use tokio::task;
+
+  use std::{ffi::OsStr, io, path::PathBuf, str};
+
+  #[derive(Debug, Display, Error)]
+  pub enum EnvError {
+    /// io error {0}
+    Io(#[from] io::Error),
   }
 }

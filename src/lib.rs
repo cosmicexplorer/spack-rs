@@ -42,6 +42,7 @@
 #![allow(clippy::mutex_atomic)]
 
 pub mod commands;
+pub mod metadata_spec;
 pub mod subprocess;
 pub mod summoning;
 pub mod utils;

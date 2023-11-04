@@ -7,9 +7,16 @@ license                 = "BSD-3-Clause"
 repository.workspace    = true
 authors.workspace       = true
 
+[package.metadata.spack]
+env_label               = "re2-runtime-deps"
+spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
+static_libs             = ["re2"]
+shared_libs             = ["abseil-cpp"]
+
 [build-dependencies]
 bindgen                 = "0.69.1"
 eyre.workspace          = true
 futures-util.workspace  = true
+super-process.workspace = true
 spack.workspace         = true
 tokio                   = { workspace = true, features = ["macros"] }
