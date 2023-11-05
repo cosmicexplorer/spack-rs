@@ -2,7 +2,7 @@
 name                    = "re2"
 description             = "Wrapper for the re2 C++ regex library."
 version                 = "0.0.0"
-edition.workspace       = true
+edition                 = "2021"
 license                 = "BSD-3-Clause"
 repository.workspace    = true
 authors.workspace       = true

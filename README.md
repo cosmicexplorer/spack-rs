@@ -7,6 +7,6 @@ A rust interface to [spack](https://github.com/spack/spack)! Useful for [build s
 
 # License
 
-`spack-rs` (in order to maximize compatibility with Spack itself) is distributed under the terms of both the [MIT license](./LICENSE-MIT) and the
+`spack-rs` (in order to maximize compatibility with Spack itself) is also distributed under the terms of both the [MIT license](./LICENSE-MIT) and the
 [Apache License (Version 2.0)](./LICENSE-APACHE). Users may choose either license, at their
 option.

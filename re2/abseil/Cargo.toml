@@ -2,7 +2,7 @@
 name                    = "abseil"
 description             = "Wrapper for the abseil C++ library."
 version                 = "0.0.0"
-edition.workspace       = true
+edition                 = "2021"
 license                 = "BSD-3-Clause"
 repository.workspace    = true
 authors.workspace       = true

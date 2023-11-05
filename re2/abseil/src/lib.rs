@@ -29,6 +29,7 @@ use std::{cmp, fmt, hash, mem, slice, str};
 pub struct StringView(pub absl::string_view);
 
 impl StringView {
+  /* FIXME: make this return &Self or something to avoid use-after-free!!! */
   #[inline]
   pub const fn from_str(s: &str) -> Self {
     Self(absl::string_view {
