@@ -336,10 +336,7 @@ pub mod find {
   use serde::{Deserialize, Serialize};
   use serde_json;
 
-  use std::{
-    ffi::{OsStr, OsString},
-    str,
-  };
+  use std::{ffi::OsStr, str};
 
   /// A single package's spec from running [`Find::find`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
@@ -1738,7 +1735,7 @@ pub mod checksum {
 
 pub mod env {
   use super::*;
-  use crate::{commands::*, metadata_spec::spec, SpackInvocation};
+  use crate::{metadata_spec::spec, SpackInvocation};
   use super_process::{
     base::{self, CommandBase},
     exe,
@@ -1749,7 +1746,7 @@ pub mod env {
   use indexmap::IndexSet;
   use tokio::task;
 
-  use std::{borrow::Cow, ffi::OsStr, io, path::PathBuf, str};
+  use std::{borrow::Cow, ffi::OsStr, io, path::PathBuf};
 
   #[derive(Debug, Display, Error)]
   pub enum EnvError {
@@ -1860,9 +1857,9 @@ pub mod env {
       Ok(existing_envs.contains(env_name))
     }
 
-    pub async fn idempotent_env_create<'a>(
+    pub async fn idempotent_env_create(
       self,
-      instructions: Cow<'a, spec::EnvInstructions>,
+      instructions: Cow<'_, spec::EnvInstructions>,
     ) -> Result<EnvName, EnvError> {
       /* Our use of file locking within the summoning process does not
        * differentiate between different threads within the same process, so

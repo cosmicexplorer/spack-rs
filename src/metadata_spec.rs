@@ -4,7 +4,7 @@
 pub mod spec {
   use base64ct::{Base64Url, Encoding};
   use displaydoc::Display;
-  use indexmap::{IndexMap, IndexSet};
+  use indexmap::IndexMap;
   use serde::Deserialize;
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
@@ -167,7 +167,6 @@ pub mod spec {
 pub mod cache {
   use super::spec;
 
-  use std::path::PathBuf;
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ConcreteSpec(pub String);

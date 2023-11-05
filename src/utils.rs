@@ -413,22 +413,18 @@ pub mod prefix {
 }
 
 pub mod metadata {
-  use super::*;
-  use crate::{metadata_spec::spec, SpackInvocation};
-  use super_process::{
-    base::{self, CommandBase},
-    exe,
-    sync::SyncInvocable,
-  };
 
-  use async_trait::async_trait;
+  use crate::metadata_spec::spec;
+  use super_process::{exe, sync::SyncInvocable};
+
+
   use displaydoc::Display;
-  use indexmap::{IndexMap, IndexSet};
+  use indexmap::IndexMap;
   use serde_json;
   use thiserror::Error;
   use tokio::task;
 
-  use std::{env, ffi::OsStr, io, path::PathBuf, str};
+  use std::{env, io};
 
   #[derive(Debug, Display, Error)]
   pub enum MetadataError {
@@ -461,7 +457,7 @@ pub mod metadata {
       .get("packages")
       .and_then(|p| p.as_array())
       .unwrap()
-      .into_iter()
+      .iter()
       .filter_map(|p| p.as_object())
       .filter_map(|p| {
         let spack_metadata: serde_json::Value = p
@@ -492,7 +488,7 @@ pub mod metadata {
       } = metadata;
       let env_label = spec::EnvLabel(env_label);
       let spec = spec::Spec(spec);
-      let cxx = spec::CxxSupport::parse(cxx.as_ref().map(|x| x.as_str()))?;
+      let cxx = spec::CxxSupport::parse(cxx.as_deref())?;
 
       let sub_deps: Vec<spec::SubDep> = {
         let mut deps: Vec<(String, spec::Dep)> = deps.into_iter().collect();
@@ -545,7 +541,7 @@ pub mod metadata {
   }
 
   pub fn get_cur_pkg_name() -> spec::CrateName {
-    let cur_pkg: String = env::var("CARGO_PKG_NAME").unwrap().into();
+    let cur_pkg: String = env::var("CARGO_PKG_NAME").unwrap();
     spec::CrateName(cur_pkg)
   }
 }
@@ -553,14 +549,8 @@ pub mod metadata {
 /// High-level API for build scripts that consumes `[package.metadata.spack]`.
 pub mod declarative {
   pub async fn resolve_dependencies() -> eyre::Result<()> {
-    use crate::{
-      commands::*,
-      metadata_spec::spec,
-      subprocess::spack::SpackInvocation,
-      utils::{self, metadata, prefix},
-    };
+    use crate::{commands::*, subprocess::spack::SpackInvocation, utils::metadata};
 
-    use indexmap::IndexMap;
 
     use std::borrow::Cow;
 
@@ -708,37 +698,35 @@ pub mod declarative {
 
         let inc_file_path = dir_entry.into_path();
 
-        if algorithm_header_path.is_none() {
-          if inc_file_path
+        if algorithm_header_path.is_none()
+          && inc_file_path
             .file_name()
             .map(|s| s == OsStr::new("algorithm"))
             .unwrap_or(false)
+        {
+          if inc_file_path.ends_with("parallel/algorithm")
+            || inc_file_path.ends_with("experimental/algorithm")
+            || inc_file_path.ends_with("ext/algorithm")
           {
-            if inc_file_path.ends_with("parallel/algorithm")
-              || inc_file_path.ends_with("experimental/algorithm")
-              || inc_file_path.ends_with("ext/algorithm")
-            {
-              continue;
-            }
-            if fs::File::open(&inc_file_path).await.is_ok() {
-              let _ = algorithm_header_path.insert(inc_file_path);
-            }
             continue;
           }
+          if fs::File::open(&inc_file_path).await.is_ok() {
+            let _ = algorithm_header_path.insert(inc_file_path);
+          }
+          continue;
         }
 
-        if basic_string_header_path.is_none() {
-          if inc_file_path
+        if basic_string_header_path.is_none()
+          && inc_file_path
             .file_name()
             .map(|s| s == OsStr::new("basic_string.h"))
             .unwrap_or(false)
-          {
-            assert!(inc_file_path.ends_with("bits/basic_string.h"));
-            if fs::File::open(&inc_file_path).await.is_ok() {
-              let _ = basic_string_header_path.insert(inc_file_path);
-            }
-            continue;
+        {
+          assert!(inc_file_path.ends_with("bits/basic_string.h"));
+          if fs::File::open(&inc_file_path).await.is_ok() {
+            let _ = basic_string_header_path.insert(inc_file_path);
           }
+          continue;
         }
       }
 
@@ -774,18 +762,17 @@ pub mod declarative {
 
         let inc_file_path = dir_entry.into_path();
 
-        if cppconfig_header_path.is_none() {
-          if inc_file_path
+        if cppconfig_header_path.is_none()
+          && inc_file_path
             .file_name()
             .map(|s| s == OsStr::new("c++config.h"))
             .unwrap_or(false)
-          {
-            assert!(inc_file_path.ends_with("bits/c++config.h"));
-            if fs::File::open(&inc_file_path).await.is_ok() {
-              let _ = cppconfig_header_path.insert(inc_file_path);
-            }
-            continue;
+        {
+          assert!(inc_file_path.ends_with("bits/c++config.h"));
+          if fs::File::open(&inc_file_path).await.is_ok() {
+            let _ = cppconfig_header_path.insert(inc_file_path);
           }
+          continue;
         }
       }
 

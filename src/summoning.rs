@@ -137,7 +137,7 @@ impl SpackTarball {
           Ok::<_, io::Error>(lockfile)
         })
         .await
-          .unwrap()?;
+        .unwrap()?;
         /* FIXME: delete the lockfile after the proof is written! */
 
         /* See if the target file was created since we locked the lockfile. */
