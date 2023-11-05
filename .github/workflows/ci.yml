@@ -24,6 +24,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust-toolchain }}
+        override: true
         components: rustfmt
 
     - id: cache-rust-tests
@@ -43,4 +44,7 @@ jobs:
         key: spack-summonings-${{ env.cache-name }}-v1
 
     - name: test rust
-      run: cargo test -vv
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -vv
