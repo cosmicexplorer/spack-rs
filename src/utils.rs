@@ -603,9 +603,9 @@ pub mod declarative {
         bindings,
       );
     }
-    /* FIXME: If any of the dependencies require a different version of c++, add
-     * a dynamic dependency on the C++ stdlib again. THIS SHOULD NOT BE
-     * NECESSARY (?) */
+
+    /* NB: put C++ stdlib linking AFTER all dependencies, otherwise linking may
+     * break! */
     cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?;
 
     /* FIXME: put within spawn_blocking??? bindings apparently contain non-Send

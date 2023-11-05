@@ -26,6 +26,7 @@ use std::{ffi::CStr, fmt, mem, ops, ptr, slice, str};
 /// assert_eq!(&format!("{}", &s), "a");
 /// assert_eq!(&format!("{:?}", &s), "\"a\"");
 /// ```
+#[repr(transparent)]
 pub struct StringView(pub absl::string_view);
 
 impl StringView {
