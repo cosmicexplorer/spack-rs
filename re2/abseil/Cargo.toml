@@ -1,6 +1,6 @@
 [package]
-name                    = "re2"
-description             = "Wrapper for the re2 C++ regex library."
+name                    = "abseil"
+description             = "Wrapper for the abseil C++ library."
 version                 = "0.0.0"
 edition.workspace       = true
 license                 = "BSD-3-Clause"
@@ -9,18 +9,16 @@ authors.workspace       = true
 
 [package.metadata.spack]
 env_label               = "re2-runtime-deps"
-spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared cxxstd=14"
+spec                    = "abseil-cpp+shared cxxstd=14"
 cxx                     = "c++14"
 
 [package.metadata.spack.bindgen]
-header_path             = "src/re2.hpp"
+header_path             = "src/abseil.hpp"
 output_path             = "src/bindings.rs"
-
-[package.metadata.spack.deps]
-re2                     = { type = "static", lib_names = ["re2"], allowlist = ["re2::.*"] }
 
 [package.metadata.spack.deps.abseil-cpp]
 type                    = "dynamic"
+# FIXME: this should depend on cargo features!
 lib_names               = [
   "absl_hash",
   "absl_low_level_hash",
@@ -31,12 +29,9 @@ lib_names               = [
   "absl_strings_internal",
   "absl_synchronization",
 ]
-allowlist               = []
+allowlist               = ["absl::.*"]
 
 [build-dependencies]
 eyre.workspace          = true
 spack.workspace         = true
 tokio                   = { workspace = true, features = ["macros"] }
-
-[dependencies]
-abseil.workspace        = true
