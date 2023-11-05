@@ -163,17 +163,3 @@ pub mod spec {
     pub recipes: IndexMap<CrateName, Recipe>,
   }
 }
-
-pub mod cache {
-  use super::spec;
-
-
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct ConcreteSpec(pub String);
-
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct ConcreteResolve {
-    pub env_label: spec::EnvLabel,
-    pub concrete_spec: ConcreteSpec,
-  }
-}
