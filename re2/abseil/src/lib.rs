@@ -3,19 +3,18 @@
 
 //! ???
 
-// Turn all warnings into errors!
-#![allow(warnings)]
 // Warn for missing docs in general, and hard require crate-level docs.
 // #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 
+#[allow(unused)]
 mod bindings;
 
 use bindings::root::absl::lts_20230125 as absl;
 
-use std::{ffi::CStr, fmt, mem, ops, ptr, slice, str};
+use std::{cmp, fmt, hash, mem, slice, str};
 
 ///```
 /// use abseil::StringView;
@@ -52,4 +51,27 @@ impl fmt::Display for StringView {
 
 impl fmt::Debug for StringView {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "\"{}\"", self.as_str()) }
+}
+
+impl cmp::PartialEq for StringView {
+  fn eq(&self, other: &Self) -> bool { self.as_str().eq(other.as_str()) }
+}
+
+impl cmp::Eq for StringView {}
+
+impl cmp::PartialOrd for StringView {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    self.as_str().partial_cmp(other.as_str())
+  }
+}
+
+impl cmp::Ord for StringView {
+  fn cmp(&self, other: &Self) -> cmp::Ordering { self.as_str().cmp(other.as_str()) }
+}
+
+impl hash::Hash for StringView {
+  fn hash<H>(&self, state: &mut H)
+  where H: hash::Hasher {
+    self.as_str().hash(state);
+  }
 }

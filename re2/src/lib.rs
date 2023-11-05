@@ -3,21 +3,20 @@
 
 //! ???
 
-// Turn all warnings into errors!
-#![allow(warnings)]
 // Warn for missing docs in general, and hard require crate-level docs.
 // #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 
+#[allow(unused, improper_ctypes)]
 mod bindings;
 
 use bindings::root::re2;
 
 use abseil::StringView;
 
-use std::{ffi::CStr, fmt, mem, ops, ptr, slice, str};
+use std::{mem, ptr};
 
 ///```
 /// use abseil::StringView;
