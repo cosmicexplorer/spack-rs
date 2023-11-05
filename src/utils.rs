@@ -608,6 +608,10 @@ pub mod declarative {
      * break! */
     cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?;
 
+    bindings = bindings
+      .generate_comments(cur_recipe.bindgen_config.process_comments)
+      .fit_macro_constants(true);
+
     /* FIXME: put within spawn_blocking??? bindings apparently contain non-Send
      * Rc refs (????) */
     bindings

@@ -13,6 +13,7 @@ spec                    = "abseil-cpp cxxstd=14"
 cxx                     = "c++14"
 
 [package.metadata.spack.bindgen]
+process_comments        = true
 header_path             = "src/abseil.hpp"
 output_path             = "src/bindings.rs"
 

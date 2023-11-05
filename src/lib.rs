@@ -74,10 +74,10 @@ pub mod versions {
     use super::hex;
 
     pub const RE2_PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/re2-package-update.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/hyperscan-package-update.tar.gz";
     pub const RE2_PATCHES_SHA256SUM: [u8; 32] =
-      hex!("06db77e5142dfae8ad08cb057f628298f3f37d082a593fcfcd1598d58e707dd2");
-    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-re2-package-update";
+      hex!("5dbbd01d53dc0cd9a32a7a69f18fb68d3209f02f247423e1bbc5d95e966bada7");
+    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-hyperscan-package-update";
   }
 
   /// The most recently released version of spack.

@@ -19,6 +19,7 @@ pub mod spec {
 
   #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
   pub struct BindgenConfig {
+    pub process_comments: bool,
     pub header_path: PathBuf,
     pub output_path: PathBuf,
   }

@@ -1,0 +1,36 @@
+[package]
+name                    = "hyperscan"
+description             = "Wrapper for the hyperscan C++ regex library."
+version                 = "0.0.0"
+edition                 = "2021"
+license                 = "BSD-3-Clause"
+repository.workspace    = true
+authors.workspace       = true
+
+[package.metadata.spack]
+env_label               = "hyperscan-runtime-deps"
+spec                    = "hyperscan@v5.4.2"
+
+[package.metadata.spack.bindgen]
+# TODO: generated doc comments for one of the exported functions get parsed as doctests which
+# don't compile.
+process_comments        = false
+header_path             = "src/hs.h"
+output_path             = "src/bindings.rs"
+
+[package.metadata.spack.deps.hyperscan]
+type                    = "static"
+lib_names               = ["hs"]
+allowlist               = ["hs.*", "HS.*"]
+
+[build-dependencies]
+eyre.workspace          = true
+spack.workspace         = true
+tokio                   = { workspace = true, features = ["macros"] }
+
+[dependencies]
+displaydoc.workspace    = true
+once_cell.workspace     = true
+num_enum.workspace      = true
+static_assertions       = "1.1.0"
+thiserror.workspace     = true

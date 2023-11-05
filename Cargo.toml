@@ -3,12 +3,14 @@ members                 = [
     ".",
     "re2",
     "re2/abseil",
+    "hyperscan",
     "super-process",
 ]
 default-members         = [
     ".",
     "re2",
     "re2/abseil",
+    "hyperscan",
     "super-process",
 ]
 resolver                = "2"
@@ -20,6 +22,7 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 
 [workspace.dependencies]
 abseil                  = { path = "re2/abseil" }
+hyperscan               = { path = "hyperscan" }
 re2                     = { path = "re2" }
 spack                   = { path = "." }
 super-process           = { path = "super-process" }
@@ -30,6 +33,7 @@ eyre                    = "0.6.8"
 futures                 = "0.3.15"
 futures-core            = "0.3.15"
 futures-util            = "0.3.15"
+num_enum                = "0.6.1"
 thiserror               = "1.0.30"
 tokio                   = "1.33.0"
 once_cell               = "1"

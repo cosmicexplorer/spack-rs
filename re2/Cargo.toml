@@ -13,6 +13,7 @@ spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared cxxstd=14"
 cxx                     = "c++14"
 
 [package.metadata.spack.bindgen]
+process_comments        = true
 header_path             = "src/re2.hpp"
 output_path             = "src/bindings.rs"
 
@@ -40,4 +41,4 @@ tokio                   = { workspace = true, features = ["macros"] }
 
 [dependencies]
 abseil.workspace        = true
-num_enum                = "0.6.1"
+num_enum.workspace      = true
