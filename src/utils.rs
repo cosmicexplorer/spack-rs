@@ -40,6 +40,7 @@ pub async fn ensure_installed(
     spack: spack.clone(),
     spec,
     verbosity: Default::default(),
+    env: None,
   };
   let found_spec = install
     .clone()
@@ -59,6 +60,7 @@ pub async fn ensure_prefix(
   let find_prefix = find::FindPrefix {
     spack,
     spec: found_spec.hashed_spec(),
+    env: None,
   };
   let prefix = find_prefix
     .clone()
@@ -308,6 +310,7 @@ pub mod prefix {
         let lib_path = dir_entry.into_path();
         match CABILibrary::parse_file_path(&lib_path) {
           Some(lib) if lib.kind == kind => {
+            dbg!(&lib);
             libs_by_name
               .entry(lib.name.clone())
               .or_insert_with(Vec::new)
@@ -354,10 +357,12 @@ pub mod prefix {
           }
         },
         SearchBehavior::SelectFirstForEachLibraryName => {
-          for (name, mut libs) in duplicated_libs.into_iter() {
+          for (name, libs) in duplicated_libs.into_iter() {
             assert!(!singly_matched_libs.contains_key(&name));
             assert!(!libs.is_empty());
-            singly_matched_libs.insert(name, libs.pop().unwrap());
+            dbg!(&name);
+            dbg!(&libs);
+            singly_matched_libs.insert(name, libs.into_iter().next().unwrap());
           }
         },
       }
@@ -409,7 +414,7 @@ pub mod prefix {
 
 pub mod metadata {
   use super::*;
-  use crate::SpackInvocation;
+  use crate::{metadata_spec::spec, SpackInvocation};
   use super_process::{
     base::{self, CommandBase},
     exe,
@@ -428,7 +433,7 @@ pub mod metadata {
   #[derive(Debug, Display, Error)]
   pub enum MetadataError {
     /// error processing specs {0}
-    Spec(#[from] crate::metadata_spec::spec::SpecError),
+    Spec(#[from] spec::SpecError),
     /// command line error {0}
     Command(#[from] exe::CommandErrorWrapper),
     /// io error {0}
@@ -437,10 +442,7 @@ pub mod metadata {
     Json(#[from] serde_json::Error),
   }
 
-  pub async fn get_metadata() -> Result<crate::metadata_spec::spec::DisjointResolves, MetadataError>
-  {
-    use crate::metadata_spec::spec;
-
+  pub async fn get_metadata() -> Result<spec::DisjointResolves, MetadataError> {
     let cargo_exe: exe::Exe = env::var("CARGO").as_ref().unwrap().into();
     let cargo_argv: exe::Argv = ["metadata", "--format-version", "1"].into();
     let cargo_cmd = exe::Command {
@@ -480,30 +482,49 @@ pub mod metadata {
     let mut recipes: IndexMap<spec::CrateName, spec::Recipe> = IndexMap::new();
 
     for (crate_name, metadata) in labelled_metadata.into_iter() {
+      dbg!(&metadata);
       let spec::LabelledPackageMetadata {
         env_label,
         spec,
-        static_libs,
-        shared_libs,
         cxx,
-        bindings_allowlist,
-        header_path,
-        bindings_output_path,
+        bindgen,
+        deps,
       } = metadata;
       let env_label = spec::EnvLabel(env_label);
       let spec = spec::Spec(spec);
-      let static_libs: Vec<_> = static_libs.into_iter().map(spec::PackageName).collect();
-      let shared_libs: Vec<_> = shared_libs.into_iter().map(spec::PackageName).collect();
       let cxx = spec::CxxSupport::parse(cxx.as_ref().map(|x| x.as_str()))?;
+
+      let sub_deps: Vec<spec::SubDep> = {
+        let mut deps: Vec<(String, spec::Dep)> = deps.into_iter().collect();
+        /* NB: Sort dependencies by name to avoid nondeterministic iteration of
+         * HashMap, which is necessary to deserialize the format from json with
+         * serde. */
+        deps.sort_by_cached_key(|(pkg_name, _)| pkg_name.clone());
+        deps
+          .into_iter()
+          .map(|(pkg_name, dep)| {
+            let pkg_name = spec::PackageName(pkg_name);
+            let spec::Dep {
+              r#type,
+              lib_names,
+              allowlist,
+            } = dep;
+            let r#type = spec::LibraryType::parse(&r#type)?;
+            Ok(spec::SubDep {
+              pkg_name,
+              r#type,
+              lib_names,
+              allowlist,
+            })
+          })
+          .collect::<Result<Vec<_>, spec::SpecError>>()?
+      };
 
       let recipe = spec::Recipe {
         env_label: env_label.clone(),
-        static_libs,
-        shared_libs,
         cxx,
-        bindings_allowlist,
-        header_path,
-        bindings_output_path,
+        sub_deps,
+        bindgen_config: bindgen,
       };
 
       assert!(recipes.insert(crate_name.clone(), recipe).is_none());
@@ -515,13 +536,328 @@ pub mod metadata {
     }
 
     Ok(spec::DisjointResolves {
-      by_label: resolves,
+      by_label: resolves
+        .into_iter()
+        .map(|(label, specs)| (label, spec::EnvInstructions { specs }))
+        .collect(),
       recipes,
     })
   }
 
-  pub fn get_cur_pkg_name() -> String {
+  pub fn get_cur_pkg_name() -> spec::CrateName {
     let cur_pkg: String = env::var("CARGO_PKG_NAME").unwrap().into();
-    cur_pkg
+    spec::CrateName(cur_pkg)
+  }
+}
+
+/// High-level API for build scripts that consumes `[package.metadata.spack]`.
+pub mod declarative {
+  pub async fn resolve_dependencies() -> eyre::Result<()> {
+    use crate::{
+      commands::*,
+      metadata_spec::spec,
+      subprocess::spack::SpackInvocation,
+      utils::{self, metadata, prefix},
+    };
+
+    use indexmap::IndexMap;
+
+    use std::borrow::Cow;
+
+    /* Parse `cargo metadata` for the entire workspace. */
+    let metadata = metadata::get_metadata().await?;
+    /* Get the current package's recipe. */
+    let cur_pkg_name = metadata::get_cur_pkg_name();
+    let cur_recipe = metadata.recipes.get(&cur_pkg_name).unwrap();
+
+    /* Get a hashed name for the current environment to resolve. */
+    let env_instructions = Cow::Borrowed(metadata.by_label.get(&cur_recipe.env_label).unwrap());
+    let env_hash = env_instructions.compute_digest();
+    let env = EnvName(env_hash.hashed_env_name(&cur_recipe.env_label.0));
+
+    /* Ensure spack is available. */
+    let spack = SpackInvocation::summon().await?;
+
+    /* Create the environment and install all specs into it if not already
+     * created. */
+    let env = env::EnvCreate {
+      spack: spack.clone(),
+      env,
+    }
+    .idempotent_env_create(env_instructions)
+    .await?;
+
+    let bindings = bindgen::Builder::default();
+    let mut bindings = cxx::enable_hacky_bindgen_cpp_support(bindings, cur_recipe.cxx).await?;
+    /* cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?; */
+    /* Process each resolved dependency to hook it up into cargo. */
+    for sub_dep in cur_recipe.sub_deps.iter() {
+      let env = env.clone();
+      let spack = spack.clone();
+      let req = find::FindPrefix {
+        spack: spack.clone(),
+        spec: CLISpec::new(&sub_dep.pkg_name.0),
+        env: Some(env.clone()),
+      };
+      let prefix = req.find_prefix().await?.unwrap();
+
+      linker::link_against_dependency(
+        prefix.clone(),
+        sub_dep.r#type,
+        sub_dep.lib_names.iter().map(|s| s.as_str()),
+      )
+      .await?;
+      bindings = bindings::include_dependency_headers(
+        prefix,
+        sub_dep.allowlist.iter().map(|s| s.as_str()),
+        bindings,
+      );
+    }
+    /* FIXME: If any of the dependencies require a different version of c++, add
+     * a dynamic dependency on the C++ stdlib again. THIS SHOULD NOT BE
+     * NECESSARY (?) */
+    cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?;
+
+    /* FIXME: put within spawn_blocking??? bindings apparently contain non-Send
+     * Rc refs (????) */
+    bindings
+      .header(format!(
+        "{}",
+        cur_recipe.bindgen_config.header_path.display()
+      ))
+      .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+      .generate()?
+      .write_to_file(&cur_recipe.bindgen_config.output_path)?;
+
+    Ok(())
+  }
+
+  pub mod bindings {
+    use crate::utils::prefix;
+
+    pub fn include_dependency_headers<'a>(
+      prefix: prefix::Prefix,
+      allowlist: impl Iterator<Item=&'a str>,
+      bindings: bindgen::Builder,
+    ) -> bindgen::Builder {
+      /* FIXME: is there really not a more specific method than "clang_arg()"
+       * to add an include search dir??? */
+      let mut bindings = bindings.clang_arg(format!("-I{}/include", prefix.path.display()));
+      for item in allowlist {
+        bindings = bindings.allowlist_item(item);
+      }
+      bindings
+    }
+  }
+
+  pub mod linker {
+    use crate::{metadata_spec::spec, utils::prefix};
+
+    pub async fn link_against_dependency(
+      prefix: prefix::Prefix,
+      r#type: spec::LibraryType,
+      lib_names: impl Iterator<Item=&str>,
+    ) -> eyre::Result<()> {
+      let needed_libraries: Vec<_> = lib_names
+        .map(|s| prefix::LibraryName(s.to_string()))
+        .collect();
+      let kind = match r#type {
+        spec::LibraryType::Static => prefix::LibraryType::Static,
+        spec::LibraryType::DynamicWithRpath => prefix::LibraryType::Dynamic,
+      };
+      let query = prefix::LibsQuery {
+        needed_libraries,
+        kind,
+        search_behavior: prefix::SearchBehavior::ErrorOnDuplicateLibraryName,
+      };
+      let libs = query.find_libs(&prefix).await?;
+
+      let rpath_behavior = match kind {
+        /* No rpath necessary for static linking. */
+        prefix::LibraryType::Static => prefix::RpathBehavior::DoNotSetRpath,
+        prefix::LibraryType::Dynamic => prefix::RpathBehavior::SetRpathForContainingDirs,
+      };
+      libs.link_libraries(rpath_behavior);
+
+      Ok(())
+    }
+  }
+
+  pub mod cxx {
+    use crate::{metadata_spec::spec, utils::prefix};
+
+    use futures_util::{pin_mut, stream::TryStreamExt};
+    use tokio::fs;
+
+    use std::{ffi::OsStr, path::PathBuf};
+
+    async fn locate_stl_includes() -> eyre::Result<Vec<PathBuf>> {
+      let incstdcpp_prefix = prefix::Prefix {
+        path: PathBuf::from("/usr/include/c++"),
+      };
+      let s = incstdcpp_prefix.traverse();
+      pin_mut!(s);
+
+      let mut algorithm_header_path: Option<PathBuf> = None;
+      let mut basic_string_header_path: Option<PathBuf> = None;
+
+      while let Some(dir_entry) = s.try_next().await? {
+        if algorithm_header_path.is_some() && basic_string_header_path.is_some() {
+          break;
+        }
+
+        let inc_file_path = dir_entry.into_path();
+
+        if algorithm_header_path.is_none() {
+          if inc_file_path
+            .file_name()
+            .map(|s| s == OsStr::new("algorithm"))
+            .unwrap_or(false)
+          {
+            if inc_file_path.ends_with("parallel/algorithm")
+              || inc_file_path.ends_with("experimental/algorithm")
+              || inc_file_path.ends_with("ext/algorithm")
+            {
+              continue;
+            }
+            if fs::File::open(&inc_file_path).await.is_ok() {
+              let _ = algorithm_header_path.insert(inc_file_path);
+            }
+            continue;
+          }
+        }
+
+        if basic_string_header_path.is_none() {
+          if inc_file_path
+            .file_name()
+            .map(|s| s == OsStr::new("basic_string.h"))
+            .unwrap_or(false)
+          {
+            assert!(inc_file_path.ends_with("bits/basic_string.h"));
+            if fs::File::open(&inc_file_path).await.is_ok() {
+              let _ = basic_string_header_path.insert(inc_file_path);
+            }
+            continue;
+          }
+        }
+      }
+
+      let algorithm_inc_dir = algorithm_header_path
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+      let basic_string_inc_dir = basic_string_header_path
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+      Ok(vec![algorithm_inc_dir, basic_string_inc_dir])
+    }
+
+    async fn locate_plat_includes() -> eyre::Result<Vec<PathBuf>> {
+      let plat_inc_prefix = prefix::Prefix {
+        path: PathBuf::from("/usr/include"),
+      };
+      let s = plat_inc_prefix.traverse();
+      pin_mut!(s);
+
+      let mut cppconfig_header_path: Option<PathBuf> = None;
+
+      while let Some(dir_entry) = s.try_next().await? {
+        if cppconfig_header_path.is_some() {
+          break;
+        }
+
+        let inc_file_path = dir_entry.into_path();
+
+        if cppconfig_header_path.is_none() {
+          if inc_file_path
+            .file_name()
+            .map(|s| s == OsStr::new("c++config.h"))
+            .unwrap_or(false)
+          {
+            assert!(inc_file_path.ends_with("bits/c++config.h"));
+            if fs::File::open(&inc_file_path).await.is_ok() {
+              let _ = cppconfig_header_path.insert(inc_file_path);
+            }
+            continue;
+          }
+        }
+      }
+
+      let cppconfig_inc_dir = cppconfig_header_path
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+      Ok(vec![cppconfig_inc_dir])
+    }
+
+    async fn locate_cxx_stdlib_system_includes() -> eyre::Result<Vec<PathBuf>> {
+      let mut all_includes = Vec::new();
+      all_includes.extend(locate_stl_includes().await?.into_iter());
+      all_includes.extend(locate_plat_includes().await?.into_iter());
+      Ok(all_includes)
+    }
+
+    pub async fn enable_hacky_bindgen_cpp_support(
+      bindings: bindgen::Builder,
+      cxx: spec::CxxSupport,
+    ) -> eyre::Result<bindgen::Builder> {
+      dbg!(&cxx);
+      let std_arg: &'static str = match cxx {
+        // If no C++ support needed, exit early.
+        spec::CxxSupport::None => return Ok(bindings),
+        spec::CxxSupport::Std17 => "-std=c++17",
+        spec::CxxSupport::Std14 => "-std=c++14",
+      };
+      let mut bindings = bindings
+        .clang_arg(std_arg)
+        .clang_args(&["-x", "c++"])
+        .enable_cxx_namespaces()
+        .opaque_type("std::.*");
+
+      /* Pull in the c++ stdlib include dirs. */
+      for sys_incdir in locate_cxx_stdlib_system_includes().await?.into_iter() {
+        let incdir_str: String = format!("{}", sys_incdir.display());
+        dbg!(&incdir_str);
+        /* FIXME: why is this necessary??? */
+        bindings = bindings.clang_args(&["-cxx-isystem", &incdir_str]);
+      }
+
+      Ok(bindings)
+    }
+
+    /* FIXME: why is this necessary??? */
+    async fn explicitly_link_cxx_stdlib() -> eyre::Result<()> {
+      let libstdcpp_prefix = prefix::Prefix {
+        path: PathBuf::from("/usr/lib"),
+      };
+      let query = prefix::LibsQuery {
+        needed_libraries: vec![prefix::LibraryName("stdc++".to_string())],
+        kind: prefix::LibraryType::Dynamic,
+        search_behavior: prefix::SearchBehavior::SelectFirstForEachLibraryName,
+      };
+      let libs = query.find_libs(&libstdcpp_prefix).await?;
+
+      /* Do not set rpath and rely on the dynamic linker to resolve the C++ stdlib. */
+      libs.link_libraries(prefix::RpathBehavior::DoNotSetRpath);
+
+      Ok(())
+    }
+
+    pub async fn enable_hacky_linker_cpp_support(cxx: spec::CxxSupport) -> eyre::Result<()> {
+      match cxx {
+        spec::CxxSupport::None => Ok(()),
+        spec::CxxSupport::Std17 | spec::CxxSupport::Std14 => explicitly_link_cxx_stdlib().await,
+      }
+    }
   }
 }

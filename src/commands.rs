@@ -3,10 +3,13 @@
 
 //! Invoking specific spack commands.
 
+use super_process::exe::Argv;
+
 use displaydoc::Display;
 use thiserror::Error;
 
 use std::{
+  ffi::{OsStr, OsString},
   io::{self, Write},
   path::PathBuf,
 };
@@ -26,6 +29,16 @@ impl From<&str> for CLISpec {
 impl CLISpec {
   /// Construct a cli spec from a [str].
   pub fn new<R: AsRef<str>>(r: R) -> Self { Self(r.as_ref().to_string()) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EnvName(pub String);
+
+impl EnvName {
+  pub fn unshift_env_args(self, args: &mut Argv) {
+    args.unshift(OsString::from(self.0));
+    args.unshift(OsStr::new("--env").to_os_string());
+  }
 }
 
 /// Errors executing spack commands.
@@ -323,7 +336,10 @@ pub mod find {
   use serde::{Deserialize, Serialize};
   use serde_json;
 
-  use std::{ffi::OsStr, str};
+  use std::{
+    ffi::{OsStr, OsString},
+    str,
+  };
 
   /// A single package's spec from running [`Find::find`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
@@ -359,10 +375,10 @@ pub mod find {
     Setup(#[from] base::SetupErrorWrapper),
     /// installation error {0}
     Install(#[from] install::InstallError),
+    /// output parse error {0}
+    Parse(String),
     /// json error {0}
     Json(#[from] serde_json::Error),
-    /// unknown error: {0}
-    Unknown(String),
   }
 
   /// Find request.
@@ -411,7 +427,7 @@ pub mod find {
             .collect::<Result<Vec<FoundSpec>, _>>()?;
           Ok(found_specs)
         },
-        value => Err(FindError::Unknown(format!(
+        value => Err(FindError::Parse(format!(
           "unable to parse find output: {:?}",
           value
         ))),
@@ -424,18 +440,24 @@ pub mod find {
   pub struct FindPrefix {
     pub spack: SpackInvocation,
     pub spec: CLISpec,
+    pub env: Option<EnvName>,
   }
 
   #[async_trait]
   impl CommandBase for FindPrefix {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
-      let Self { spack, spec } = self;
-      let args = exe::Argv(
+      let Self { spack, spec, env } = self;
+      let mut args = exe::Argv(
         ["find", "--no-groups", "-p", spec.0.as_ref()]
           .map(|s| OsStr::new(s).to_os_string())
           .into_iter()
           .collect(),
       );
+
+      if let Some(env) = env {
+        env.unshift_env_args(&mut args);
+      }
+
       Ok(
         spack
           .with_spack_exe(exe::Command {
@@ -457,16 +479,28 @@ pub mod find {
         .await
         .map_err(|e| e.with_context(format!("in FindPrefix::find_prefix()")))?;
 
-      match command.invoke().await {
+      match command.clone().invoke().await {
         Ok(output) => {
           lazy_static! {
             static ref FIND_PREFIX_REGEX: Regex =
-              Regex::new(r"^([^@]+)@([^ ]+) +([^ ].*)\n$").unwrap();
+              Regex::new(r"^([^@]+)@([^ ]+) +([^ ].*)$").unwrap();
           }
           let stdout = str::from_utf8(&output.stdout).map_err(|e| {
-            FindError::Unknown(format!("failed to parse utf8 ({}): got {:?}", e, &output))
+            FindError::Parse(format!("failed to parse utf8 ({}): got {:?}", e, &output))
           })?;
-          let m = FIND_PREFIX_REGEX.captures(stdout).unwrap();
+          dbg!(&stdout);
+          let lines: Vec<&str> = stdout.split('\n').collect();
+          let last_line = match lines.iter().filter(|l| !l.is_empty()).last() {
+            None => {
+              return Err(FindError::Parse(format!(
+                "stdout was empty (stderr was {})",
+                str::from_utf8(&output.stderr).unwrap_or("<could not parse utf8>"),
+              )))
+            },
+            Some(line) => line,
+          };
+          dbg!(&last_line);
+          let m = FIND_PREFIX_REGEX.captures(last_line).unwrap();
           let name = m.get(1).unwrap().as_str();
           /* FIXME: this method should be using a custom `spack python` script!! */
           assert!(spec.0.starts_with(name));
@@ -502,6 +536,7 @@ pub mod find {
         spack: spack.clone(),
         spec: CLISpec::new("python@3:"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
@@ -544,6 +579,7 @@ pub mod find {
         spack: spack.clone(),
         spec: CLISpec::new("python@3:"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install
         .clone()
@@ -555,6 +591,7 @@ pub mod find {
       let find_prefix = FindPrefix {
         spack,
         spec: found_spec.hashed_spec(),
+        env: None,
       };
 
       // .find_prefix() will return the spec's prefix root wrapped in an Option.
@@ -676,6 +713,7 @@ pub mod load {
         spack: spack.clone(),
         spec: CLISpec::new("python@3:"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
@@ -748,6 +786,7 @@ pub mod install {
     pub spack: SpackInvocation,
     pub spec: CLISpec,
     pub verbosity: InstallVerbosity,
+    pub env: Option<EnvName>,
   }
 
   #[async_trait]
@@ -757,12 +796,19 @@ pub mod install {
         spack,
         spec,
         verbosity,
+        env,
       } = self;
 
       /* Generate spack argv. */
-      let argv = exe::Argv(
-        /* FIXME: determine appropriate amount of build parallelism! */
-        ["install", "--fail-fast", "-j12"]
+      /* FIXME: determine appropriate amount of build parallelism! */
+      let mut args = vec!["install", "--fail-fast", "-j12"];
+      /* If running this inside an environment, the command will fail without this
+       * argument. */
+      if env.is_some() {
+        args.push("--add");
+      }
+      let mut argv = exe::Argv(
+        args
           .into_iter()
           .map(|s| s.to_string())
           .chain(verbosity.verbosity_args().into_iter())
@@ -770,6 +816,11 @@ pub mod install {
           .map(|s| OsStr::new(&s).to_os_string())
           .collect(),
       );
+
+      if let Some(env) = env {
+        env.unshift_env_args(&mut argv);
+      }
+
       Ok(
         spack
           .with_spack_exe(exe::Command {
@@ -863,6 +914,7 @@ pub mod install {
         spack: spack.clone(),
         spec: CLISpec::new("libiberty@2.37"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install
         .clone()
@@ -888,6 +940,7 @@ pub mod install {
         spack: spack.clone(),
         spec: CLISpec::new("libiberty@2.37"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install
         .clone()
@@ -1019,6 +1072,7 @@ pub mod build_env {
         spack: spack.clone(),
         spec: CLISpec::new("python@3:"),
         verbosity: Default::default(),
+        env: None,
       };
       let found_spec = install
         .clone()
@@ -1560,6 +1614,7 @@ pub mod checksum {
           .collect(),
       );
 
+      /* Accept the changes without user interaction. */
       let env: exe::EnvModifications = [("SPACK_EDITOR", "echo")].into();
 
       Ok(
@@ -1683,7 +1738,7 @@ pub mod checksum {
 
 pub mod env {
   use super::*;
-  use crate::SpackInvocation;
+  use crate::{commands::*, metadata_spec::spec, SpackInvocation};
   use super_process::{
     base::{self, CommandBase},
     exe,
@@ -1694,11 +1749,181 @@ pub mod env {
   use indexmap::IndexSet;
   use tokio::task;
 
-  use std::{ffi::OsStr, io, path::PathBuf, str};
+  use std::{borrow::Cow, ffi::OsStr, io, path::PathBuf, str};
 
   #[derive(Debug, Display, Error)]
   pub enum EnvError {
+    /// install error {0}
+    Install(#[from] install::InstallError),
+    /// command line error {0}
+    Command(#[from] exe::CommandErrorWrapper),
+    /// setup error {0}
+    Setup(#[from] base::SetupErrorWrapper),
     /// io error {0}
     Io(#[from] io::Error),
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct EnvList {
+    #[allow(missing_docs)]
+    pub spack: SpackInvocation,
+  }
+
+  #[async_trait]
+  impl CommandBase for EnvList {
+    async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
+      eprintln!("EnvList");
+      dbg!(&self);
+      let Self { spack } = self;
+
+      let argv = exe::Argv(
+        ["env", "list"]
+          .into_iter()
+          .map(|s| OsStr::new(&s).to_os_string())
+          .collect(),
+      );
+
+      Ok(
+        spack
+          .with_spack_exe(exe::Command {
+            argv,
+            ..Default::default()
+          })
+          .setup_command()
+          .await?,
+      )
+    }
+  }
+
+  impl EnvList {
+    pub async fn env_list(self) -> Result<IndexSet<EnvName>, EnvError> {
+      let command = self
+        .setup_command()
+        .await
+        .map_err(|e| e.with_context(format!("in env_list()!")))?;
+      let output = command.clone().invoke().await?;
+      dbg!(&output);
+      let output = output.decode(command).await?;
+      dbg!(&output);
+      Ok(
+        output
+          .stdout
+          .split('\n')
+          .map(|s| EnvName(s.trim().to_string()))
+          .collect(),
+      )
+    }
+  }
+
+  #[derive(Debug, Clone)]
+  pub struct EnvCreate {
+    #[allow(missing_docs)]
+    pub spack: SpackInvocation,
+    pub env: EnvName,
+  }
+
+  #[async_trait]
+  impl CommandBase for EnvCreate {
+    async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
+      eprintln!("EnvCreate");
+      dbg!(&self);
+      let Self {
+        spack,
+        env: EnvName(env_name),
+      } = self;
+
+      let argv = exe::Argv(
+        ["env", "create", env_name.as_str()]
+          .into_iter()
+          .map(|s| OsStr::new(&s).to_os_string())
+          .collect(),
+      );
+
+      Ok(
+        spack
+          .with_spack_exe(exe::Command {
+            argv,
+            ..Default::default()
+          })
+          .setup_command()
+          .await?,
+      )
+    }
+  }
+
+  pub(crate) static ENSURE_ENV_CREATE_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
+
+  impl EnvCreate {
+    async fn env_exists(env_list: EnvList, env_name: &EnvName) -> Result<bool, EnvError> {
+      let existing_envs = env_list.env_list().await?;
+      Ok(existing_envs.contains(env_name))
+    }
+
+    pub async fn idempotent_env_create<'a>(
+      self,
+      instructions: Cow<'a, spec::EnvInstructions>,
+    ) -> Result<EnvName, EnvError> {
+      /* Our use of file locking within the summoning process does not
+       * differentiate between different threads within the same process, so
+       * we additionally lock in-process here. */
+      let _lock = ENSURE_ENV_CREATE_LOCK.lock().await;
+
+      let req = EnvList {
+        spack: self.spack.clone(),
+      };
+      if Self::env_exists(req.clone(), &self.env).await? {
+        eprintln!("env {:?} already exists!", &self.env);
+        return Ok(self.env);
+      }
+
+      /* FIXME: in-process mutex too!! generalize this! */
+      let lockfile_name: PathBuf = format!("env@{}.lock", &self.env.0).into();
+      let lockfile_path = self.spack.cache_location().join(lockfile_name);
+      dbg!(&lockfile_path);
+      let mut lockfile = task::spawn_blocking(move || fslock::LockFile::open(&lockfile_path))
+        .await
+        .unwrap()?;
+
+      /* This unlocks the lockfile upon drop! */
+      let _lockfile = task::spawn_blocking(move || {
+        lockfile.lock_with_pid()?;
+        Ok::<_, io::Error>(lockfile)
+      })
+      .await
+      .unwrap()?;
+
+      if Self::env_exists(req.clone(), &self.env).await? {
+        eprintln!(
+          "the env {:?} was created while waiting for file lock!",
+          &self.env
+        );
+        return Ok(self.env);
+      }
+
+      let spack = self.spack.clone();
+      let env = self.env.clone();
+      let command = self
+        .setup_command()
+        .await
+        .map_err(|e| e.with_context(format!("in idempotent_env_create()!")))?;
+      let _ = command.invoke().await?;
+      assert!(Self::env_exists(req, &env).await?);
+
+      /* While holding the lock, install all the specs in the order given. */
+      dbg!(&instructions);
+      for spec in instructions.into_owned().specs.into_iter() {
+        let spec = CLISpec::new(spec.0);
+        let install = install::Install {
+          spack: spack.clone(),
+          spec,
+          verbosity: install::InstallVerbosity::Verbose,
+          env: Some(env.clone()),
+        };
+        install.install().await?;
+      }
+
+      Ok(env)
+    }
   }
 }

@@ -142,13 +142,6 @@ pub mod root {
     pub type basic_string_const_reverse_iterator = u8;
     pub type basic_string_reverse_iterator = u8;
     pub type basic_string___const_iterator = u8;
-    pub type basic_string___sv_type = u8;
-    pub type basic_string__If_sv = u8;
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
-    pub struct basic_string___sv_wrapper {
-      pub _address: u8,
-    }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct basic_string__Alloc_hider {
@@ -321,6 +314,11 @@ pub mod root {
     }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
+    pub struct result_of {
+      pub _address: u8,
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
     pub struct pair {
       pub _address: u8,
     }
@@ -343,10 +341,6 @@ pub mod root {
     pub type reverse_iterator_pointer = u8;
     pub type reverse_iterator_difference_type = u8;
     pub type reverse_iterator_reference = u8;
-    pub mod __detail {
-      #[allow(unused_imports)]
-      use self::super::super::super::root;
-    }
     #[repr(C)]
     #[repr(align(8))]
     #[derive(Debug, Copy, Clone)]
@@ -427,8 +421,6 @@ pub mod root {
     pub type map_difference_type = u8;
     pub type map_reverse_iterator = u8;
     pub type map_const_reverse_iterator = u8;
-    pub type map_node_type = u8;
-    pub type map_insert_return_type = u8;
     pub type string = [u64; 4usize];
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
@@ -489,23 +481,366 @@ pub mod root {
     #[allow(unused_imports)]
     use self::super::super::root;
   }
-  pub mod __pstl {
-    #[allow(unused_imports)]
-    use self::super::super::root;
-    pub mod execution {
-      #[allow(unused_imports)]
-      use self::super::super::super::root;
-    }
-  }
   pub mod absl {
     #[allow(unused_imports)]
     use self::super::super::root;
     pub mod lts_20230125 {
       #[allow(unused_imports)]
       use self::super::super::super::root;
+      pub mod type_traits_internal {
+        #[allow(unused_imports)]
+        use self::super::super::super::super::root;
+        #[repr(C)]
+        #[repr(align(1))]
+        pub struct SingleMemberUnion<T> {
+          pub t: root::__BindgenUnionField<T>,
+          pub bindgen_union_field: [u8; 0usize],
+          pub _phantom_0: ::std::marker::PhantomData<::std::cell::UnsafeCell<T>>,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsTriviallyMoveConstructibleObject {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsTriviallyCopyConstructibleObject {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsTriviallyMoveAssignableReference {
+          pub _base: root::std::false_type,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct VoidTImpl {
+          pub _address: u8,
+        }
+        pub type VoidTImpl_type = ::std::os::raw::c_void;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct is_detected_impl {
+          pub _address: u8,
+        }
+        pub type is_detected_impl_type = root::std::false_type;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct is_detected {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct is_detected_convertible_impl {
+          pub _address: u8,
+        }
+        pub type is_detected_convertible_impl_type = root::std::false_type;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct is_detected_convertible {
+          pub _address: u8,
+        }
+        pub type IsCopyAssignableImpl<T> = T;
+        pub type IsMoveAssignableImpl<T> = T;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct is_trivially_copyable {
+          pub _address: u8,
+        }
+        pub type result_of = u8;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsHashable {
+          pub _base: root::std::false_type,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct AssertHashEnabledHelper {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct AssertHashEnabledHelper_NAT {
+          pub _address: u8,
+        }
+        #[test]
+        fn bindgen_test_layout_AssertHashEnabledHelper_NAT() {
+          assert_eq!(
+            ::std::mem::size_of::<AssertHashEnabledHelper_NAT>(),
+            1usize,
+            concat!("Size of: ", stringify!(AssertHashEnabledHelper_NAT))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<AssertHashEnabledHelper_NAT>(),
+            1usize,
+            concat!("Alignment of ", stringify!(AssertHashEnabledHelper_NAT))
+          );
+        }
+        #[test]
+        fn bindgen_test_layout_AssertHashEnabledHelper() {
+          assert_eq!(
+            ::std::mem::size_of::<AssertHashEnabledHelper>(),
+            1usize,
+            concat!("Size of: ", stringify!(AssertHashEnabledHelper))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<AssertHashEnabledHelper>(),
+            1usize,
+            concat!("Alignment of ", stringify!(AssertHashEnabledHelper))
+          );
+        }
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_copy_assignable {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_move_assignable {
+        pub _address: u8,
+      }
+      pub type void_t = root::absl::lts_20230125::type_traits_internal::VoidTImpl;
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct conjunction {
+        pub _base: root::std::true_type,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct disjunction {
+        pub _base: root::std::false_type,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct negation {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_function {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_destructible {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_default_constructible {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_move_constructible {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_copy_constructible {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_move_assignable {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_copy_assignable {
+        pub _address: u8,
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct remove_cvref {
+        pub _address: u8,
+      }
+      pub type remove_cvref_type = u8;
+      pub type remove_cvref_t = root::absl::lts_20230125::remove_cvref;
+      pub type remove_cv_t = u8;
+      pub type remove_const_t = u8;
+      pub type remove_volatile_t = u8;
+      pub type add_cv_t = u8;
+      pub type add_const_t = u8;
+      pub type add_volatile_t = u8;
+      pub type remove_reference_t = u8;
+      pub type add_lvalue_reference_t = u8;
+      pub type add_rvalue_reference_t = u8;
+      pub type remove_pointer_t = u8;
+      pub type add_pointer_t = u8;
+      pub type make_signed_t = u8;
+      pub type make_unsigned_t = u8;
+      pub type remove_extent_t = u8;
+      pub type remove_all_extents_t = u8;
+      pub type aligned_storage_t = u8;
+      pub type decay_t = u8;
+      pub type enable_if_t = u8;
+      pub type conditional_t = u8;
+      pub type common_type_t = u8;
+      pub type underlying_type_t = u8;
+      pub type result_of_t = root::absl::lts_20230125::type_traits_internal::result_of;
+      pub mod swap_internal {
+        #[allow(unused_imports)]
+        use self::super::super::super::super::root;
+        extern "C" {
+          #[link_name = "\u{1}_ZN4absl12lts_2023012513swap_internal4swapEv"]
+          pub fn swap();
+        }
+        pub type IsSwappableImpl<T> = T;
+        pub type IsNothrowSwappableImpl = u8;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsSwappable {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsNothrowSwappable {
+          pub _address: u8,
+        }
+        pub type StdSwapIsUnconstrained = root::absl::lts_20230125::swap_internal::IsSwappable;
+      }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct is_trivially_relocatable {
+        pub _address: u8,
+      }
       pub mod base_internal {
         #[allow(unused_imports)]
         use self::super::super::super::super::root;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct StrippedAccept {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        pub struct StrippedAccept_Accept {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct MemFunAndRef {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct MemFunAndRef_AcceptImpl {
+          pub _base: root::std::false_type,
+        }
+        #[test]
+        fn bindgen_test_layout_MemFunAndRef() {
+          assert_eq!(
+            ::std::mem::size_of::<MemFunAndRef>(),
+            1usize,
+            concat!("Size of: ", stringify!(MemFunAndRef))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<MemFunAndRef>(),
+            1usize,
+            concat!("Alignment of ", stringify!(MemFunAndRef))
+          );
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct MemFunAndPtr {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct MemFunAndPtr_AcceptImpl {
+          pub _base: root::std::false_type,
+        }
+        #[test]
+        fn bindgen_test_layout_MemFunAndPtr() {
+          assert_eq!(
+            ::std::mem::size_of::<MemFunAndPtr>(),
+            1usize,
+            concat!("Size of: ", stringify!(MemFunAndPtr))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<MemFunAndPtr>(),
+            1usize,
+            concat!("Alignment of ", stringify!(MemFunAndPtr))
+          );
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct DataMemAndRef {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct DataMemAndRef_AcceptImpl {
+          pub _base: root::std::false_type,
+        }
+        #[test]
+        fn bindgen_test_layout_DataMemAndRef() {
+          assert_eq!(
+            ::std::mem::size_of::<DataMemAndRef>(),
+            1usize,
+            concat!("Size of: ", stringify!(DataMemAndRef))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<DataMemAndRef>(),
+            1usize,
+            concat!("Alignment of ", stringify!(DataMemAndRef))
+          );
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct DataMemAndPtr {
+          pub _address: u8,
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct DataMemAndPtr_AcceptImpl {
+          pub _base: root::std::false_type,
+        }
+        #[test]
+        fn bindgen_test_layout_DataMemAndPtr() {
+          assert_eq!(
+            ::std::mem::size_of::<DataMemAndPtr>(),
+            1usize,
+            concat!("Size of: ", stringify!(DataMemAndPtr))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<DataMemAndPtr>(),
+            1usize,
+            concat!("Alignment of ", stringify!(DataMemAndPtr))
+          );
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct Callable {
+          pub _address: u8,
+        }
+        #[test]
+        fn bindgen_test_layout_Callable() {
+          assert_eq!(
+            ::std::mem::size_of::<Callable>(),
+            1usize,
+            concat!("Size of: ", stringify!(Callable))
+          );
+          assert_eq!(
+            ::std::mem::align_of::<Callable>(),
+            1usize,
+            concat!("Alignment of ", stringify!(Callable))
+          );
+        }
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct Invoker {
+          pub _address: u8,
+        }
+        pub type Invoker_type = u8;
+        pub type invoke_result_t = root::absl::lts_20230125::base_internal::Invoker;
+        #[repr(C)]
+        #[derive(Debug, Copy, Clone)]
+        pub struct IsInvocableRImpl {
+          pub _base: root::std::false_type,
+        }
+        pub type is_invocable_r = root::absl::lts_20230125::base_internal::IsInvocableRImpl;
         #[repr(C)]
         #[derive(Debug, Copy, Clone)]
         pub struct AtomicHook {
@@ -1195,229 +1530,6 @@ pub mod root {
         pub type identity_type<T> = T;
         pub type identity_t = root::absl::lts_20230125::internal::identity;
       }
-      pub mod type_traits_internal {
-        #[allow(unused_imports)]
-        use self::super::super::super::super::root;
-        #[repr(C)]
-        #[repr(align(1))]
-        pub struct SingleMemberUnion<T> {
-          pub t: root::__BindgenUnionField<T>,
-          pub bindgen_union_field: [u8; 0usize],
-          pub _phantom_0: ::std::marker::PhantomData<::std::cell::UnsafeCell<T>>,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsTriviallyMoveConstructibleObject {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsTriviallyCopyConstructibleObject {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsTriviallyMoveAssignableReference {
-          pub _base: root::std::false_type,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct VoidTImpl {
-          pub _address: u8,
-        }
-        pub type VoidTImpl_type = ::std::os::raw::c_void;
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct is_detected_impl {
-          pub _address: u8,
-        }
-        pub type is_detected_impl_type = root::std::false_type;
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct is_detected {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct is_detected_convertible_impl {
-          pub _address: u8,
-        }
-        pub type is_detected_convertible_impl_type = root::std::false_type;
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct is_detected_convertible {
-          pub _address: u8,
-        }
-        pub type IsCopyAssignableImpl<T> = T;
-        pub type IsMoveAssignableImpl<T> = T;
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct is_trivially_copyable {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct result_of {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsHashable {
-          pub _base: root::std::false_type,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct AssertHashEnabledHelper {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct AssertHashEnabledHelper_NAT {
-          pub _address: u8,
-        }
-        #[test]
-        fn bindgen_test_layout_AssertHashEnabledHelper_NAT() {
-          assert_eq!(
-            ::std::mem::size_of::<AssertHashEnabledHelper_NAT>(),
-            1usize,
-            concat!("Size of: ", stringify!(AssertHashEnabledHelper_NAT))
-          );
-          assert_eq!(
-            ::std::mem::align_of::<AssertHashEnabledHelper_NAT>(),
-            1usize,
-            concat!("Alignment of ", stringify!(AssertHashEnabledHelper_NAT))
-          );
-        }
-        #[test]
-        fn bindgen_test_layout_AssertHashEnabledHelper() {
-          assert_eq!(
-            ::std::mem::size_of::<AssertHashEnabledHelper>(),
-            1usize,
-            concat!("Size of: ", stringify!(AssertHashEnabledHelper))
-          );
-          assert_eq!(
-            ::std::mem::align_of::<AssertHashEnabledHelper>(),
-            1usize,
-            concat!("Alignment of ", stringify!(AssertHashEnabledHelper))
-          );
-        }
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_copy_assignable {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_move_assignable {
-        pub _address: u8,
-      }
-      pub type void_t = root::absl::lts_20230125::type_traits_internal::VoidTImpl;
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct conjunction {
-        pub _base: root::std::true_type,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct disjunction {
-        pub _base: root::std::false_type,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct negation {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_function {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_destructible {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_default_constructible {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_move_constructible {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_copy_constructible {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_move_assignable {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_copy_assignable {
-        pub _address: u8,
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct remove_cvref {
-        pub _address: u8,
-      }
-      pub type remove_cvref_type = u8;
-      pub type remove_cvref_t = root::absl::lts_20230125::remove_cvref;
-      pub type remove_cv_t = u8;
-      pub type remove_const_t = u8;
-      pub type remove_volatile_t = u8;
-      pub type add_cv_t = u8;
-      pub type add_const_t = u8;
-      pub type add_volatile_t = u8;
-      pub type remove_reference_t = u8;
-      pub type add_lvalue_reference_t = u8;
-      pub type add_rvalue_reference_t = u8;
-      pub type remove_pointer_t = u8;
-      pub type add_pointer_t = u8;
-      pub type make_signed_t = u8;
-      pub type make_unsigned_t = u8;
-      pub type remove_extent_t = u8;
-      pub type remove_all_extents_t = u8;
-      pub type aligned_storage_t = u8;
-      pub type decay_t = u8;
-      pub type enable_if_t = u8;
-      pub type conditional_t = u8;
-      pub type common_type_t = u8;
-      pub type underlying_type_t = u8;
-      pub type result_of_t = root::absl::lts_20230125::type_traits_internal::result_of;
-      pub mod swap_internal {
-        #[allow(unused_imports)]
-        use self::super::super::super::super::root;
-        extern "C" {
-          #[link_name = "\u{1}_ZN4absl12lts_2023012513swap_internal4swapEv"]
-          pub fn swap();
-        }
-        pub type IsSwappableImpl<T> = T;
-        pub type IsNothrowSwappableImpl = u8;
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsSwappable {
-          pub _address: u8,
-        }
-        #[repr(C)]
-        #[derive(Debug, Copy, Clone)]
-        pub struct IsNothrowSwappable {
-          pub _address: u8,
-        }
-        pub type StdSwapIsUnconstrained = root::absl::lts_20230125::swap_internal::IsSwappable;
-      }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct is_trivially_relocatable {
-        pub _address: u8,
-      }
       pub type integer_sequence_value_type<T> = T;
       pub type index_sequence = u8;
       pub mod utility_internal {
@@ -1451,9 +1563,17 @@ pub mod root {
           concat!("Alignment of ", stringify!(in_place_t))
         );
       }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct AbslInternalInlineVariableHolderin_place {
+        pub _address: u8,
+      }
       extern "C" {
-        #[link_name = "\u{1}_ZN4absl12lts_202301258in_placeE"]
-        pub static in_place: root::absl::lts_20230125::in_place_t;
+        pub static kInstance: root::absl::lts_20230125::in_place_t;
+      }
+      extern "C" {
+        #[link_name = "\u{1}_ZN4absl12lts_20230125L8in_placeE"]
+        pub static mut in_place: *const root::absl::lts_20230125::in_place_t;
       }
       pub type in_place_type_t = ::std::option::Option<
         unsafe extern "C" fn(arg1: root::absl::lts_20230125::utility_internal::InPlaceTypeTag),
@@ -1642,9 +1762,14 @@ pub mod root {
           concat!("Alignment of ", stringify!(nullopt_t))
         );
       }
+      #[repr(C)]
+      #[derive(Debug, Copy, Clone)]
+      pub struct AbslInternalInlineVariableHoldernullopt {
+        pub _address: u8,
+      }
       extern "C" {
-        #[link_name = "\u{1}_ZN4absl12lts_202301257nulloptE"]
-        pub static nullopt: root::absl::lts_20230125::nullopt_t;
+        #[link_name = "\u{1}_ZN4absl12lts_20230125L7nulloptE"]
+        pub static mut nullopt: *const root::absl::lts_20230125::nullopt_t;
       }
       #[repr(C)]
       #[derive(Debug)]
@@ -3070,22 +3195,98 @@ pub mod root {
   }
   #[repr(C)]
   #[derive(Debug, Copy, Clone)]
-  pub struct _bindgen_ty_56 {
+  pub struct _bindgen_ty_37 {
     pub _address: u8,
   }
   #[repr(C)]
   #[derive(Debug, Copy, Clone)]
-  pub struct _bindgen_ty_57 {
+  pub struct _bindgen_ty_38 {
     pub _address: u8,
   }
   #[repr(C)]
   #[derive(Debug, Copy, Clone)]
-  pub struct _bindgen_ty_58 {
+  pub struct _bindgen_ty_39 {
     pub _address: u8,
   }
   #[repr(C)]
   #[derive(Debug, Copy, Clone)]
-  pub struct _bindgen_ty_59 {
+  pub struct _bindgen_ty_40 {
     pub _address: u8,
+  }
+  #[test]
+  fn __bindgen_test_layout_StrippedAccept_open0_MemFunAndRef_close0_instantiation() {
+    assert_eq!(
+      ::std::mem::size_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Size of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+    assert_eq!(
+      ::std::mem::align_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Alignment of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+  }
+  #[test]
+  fn __bindgen_test_layout_StrippedAccept_open0_MemFunAndPtr_close0_instantiation() {
+    assert_eq!(
+      ::std::mem::size_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Size of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+    assert_eq!(
+      ::std::mem::align_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Alignment of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+  }
+  #[test]
+  fn __bindgen_test_layout_StrippedAccept_open0_DataMemAndRef_close0_instantiation() {
+    assert_eq!(
+      ::std::mem::size_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Size of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+    assert_eq!(
+      ::std::mem::align_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Alignment of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+  }
+  #[test]
+  fn __bindgen_test_layout_StrippedAccept_open0_DataMemAndPtr_close0_instantiation() {
+    assert_eq!(
+      ::std::mem::size_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Size of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
+    assert_eq!(
+      ::std::mem::align_of::<root::absl::lts_20230125::base_internal::StrippedAccept>(),
+      1usize,
+      concat!(
+        "Alignment of template specialization: ",
+        stringify!(root::absl::lts_20230125::base_internal::StrippedAccept)
+      )
+    );
   }
 }

@@ -273,6 +273,7 @@ pub mod spack {
         spack: self.clone(),
         spec: commands::CLISpec::new("m4"),
         verbosity: Default::default(),
+        env: None,
       };
       let installed_spec = bootstrap_install.install_find().await?;
 

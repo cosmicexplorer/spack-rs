@@ -21,11 +21,15 @@ re2                     = { path = "re2" }
 spack                   = { path = "." }
 super-process           = { path = "super-process" }
 
+bindgen                 = "0.69.1"
 displaydoc              = "0.2.4"
 eyre                    = "0.6.8"
+futures                 = "0.3.15"
+futures-core            = "0.3.15"
 futures-util            = "0.3.15"
 thiserror               = "1.0.30"
 tokio                   = "1.33.0"
+once_cell               = "1"
 
 [package]
 name                    = "spack"
@@ -39,17 +43,21 @@ authors.workspace       = true
 [dependencies]
 async-stream            = "0.3.3"
 async-trait             = "0.1.41"
+base64ct                = { version = "1.6.0", features = ["alloc"] }
+bindgen.workspace       = true
 displaydoc.workspace    = true
+eyre.workspace          = true
 flate2                  = "1.0"
 fslock                  = "0.2.1"
-futures-core            = "0.3.15"
+futures.workspace       = true
+futures-core.workspace  = true
 futures-lite            = "1"
 futures-util.workspace  = true
 hex                     = "0.4.3"
 hex-literal             = "0.3.4"
 indexmap                = "1.8.1"
 lazy_static             = "1.4.0"
-once_cell               = "1"
+once_cell.workspace     = true
 parking_lot             = "0.12.1"
 regex                   = "1"
 reqwest                 = "0.11.10"
@@ -57,6 +65,7 @@ serde                   = { version = "1.0.136", features = ["derive"] }
 serde_json              = "1.0.79"
 serde_yaml              = "0.8.23"
 sha2                    = "0.10.2"
+sha3                    = "0.10.8"
 shlex                   = "1.1.0"
 super-process.workspace = true
 tar                     = "0.4"
@@ -66,7 +75,6 @@ tokio                   = { workspace = true, features = ["fs", "sync"] }
 walkdir                 = "2"
 
 [dev-dependencies]
-eyre.workspace          = true
 tempdir                 = "0.3.7"
 tokio-test              = "0.4.2"
 tokio                   = { version = "1", features = ["full"] }

@@ -2,18 +2,33 @@
 /* SPDX-License-Identifier: (Apache-2.0 OR MIT) */
 
 pub mod spec {
+  use base64ct::{Base64Url, Encoding};
   use displaydoc::Display;
   use indexmap::{IndexMap, IndexSet};
   use serde::Deserialize;
+  use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
-  use std::path::PathBuf;
+  use std::{collections::HashMap, path::PathBuf};
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct EnvLabel(pub String);
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct Spec(pub String);
+
+  #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+  pub struct BindgenConfig {
+    pub header_path: PathBuf,
+    pub output_path: PathBuf,
+  }
+
+  #[derive(Debug, Clone, Deserialize)]
+  pub struct Dep {
+    pub r#type: String,
+    pub lib_names: Vec<String>,
+    pub allowlist: Vec<String>,
+  }
 
   /// This is deserialized from the output of `cargo metadata --format-version
   /// 1` with [`serde_json`].
@@ -24,23 +39,15 @@ pub mod spec {
   /// [package.metadata.spack]
   /// env_label               = "re2-runtime-deps"
   /// spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
-  /// static_libs             = ["re2"]
-  /// shared_libs             = ["abseil-cpp"]
   /// cxx                     = "c++17"
-  /// bindings_allowlist      = ["absl::*", "re2::.*"]
-  /// header_path             = "src/re2.hpp"
-  /// bindings_output_path    = "src/bindings.rs"
   /// ```
   #[derive(Debug, Clone, Deserialize)]
   pub struct LabelledPackageMetadata {
     pub env_label: String,
     pub spec: String,
-    pub static_libs: Vec<String>,
-    pub shared_libs: Vec<String>,
     pub cxx: Option<String>,
-    pub bindings_allowlist: Vec<String>,
-    pub header_path: PathBuf,
-    pub bindings_output_path: PathBuf,
+    pub bindgen: BindgenConfig,
+    pub deps: HashMap<String, Dep>,
   }
 
   /// Name of a package from the [`Spec`] resolver.
@@ -57,9 +64,29 @@ pub mod spec {
     Parsing(String),
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub enum LibraryType {
+    Static,
+    DynamicWithRpath,
+  }
+
+  impl LibraryType {
+    pub fn parse(s: &str) -> Result<Self, SpecError> {
+      match s {
+        "static" => Ok(Self::Static),
+        "dynamic" => Ok(Self::DynamicWithRpath),
+        s => Err(SpecError::Parsing(format!(
+          "dep type only accepts \"static\" or \"dynamic\"; was {:?}",
+          s
+        ))),
+      }
+    }
+  }
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub enum CxxSupport {
     None,
+    Std14,
     Std17,
   }
 
@@ -70,9 +97,11 @@ pub mod spec {
         Some(s) => {
           if s == "c++17" {
             Ok(Self::Std17)
+          } else if s == "c++14" {
+            Ok(Self::Std14)
           } else {
             Err(SpecError::Parsing(format!(
-              "cxx only supports the value \"c++17\"; was {:?}",
+              "cxx only supports \"c++17\" or \"c++14\"; was {:?}",
               s
             )))
           }
@@ -81,20 +110,56 @@ pub mod spec {
     }
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[derive(Debug, Clone)]
+  pub struct SubDep {
+    pub pkg_name: PackageName,
+    pub r#type: LibraryType,
+    pub lib_names: Vec<String>,
+    pub allowlist: Vec<String>,
+  }
+
+  #[derive(Debug, Clone)]
   pub struct Recipe {
     pub env_label: EnvLabel,
-    pub static_libs: Vec<PackageName>,
-    pub shared_libs: Vec<PackageName>,
     pub cxx: CxxSupport,
-    pub bindings_allowlist: Vec<String>,
-    pub header_path: PathBuf,
-    pub bindings_output_path: PathBuf,
+    pub sub_deps: Vec<SubDep>,
+    pub bindgen_config: BindgenConfig,
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct EnvInstructions {
+    pub specs: Vec<Spec>,
+  }
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[repr(transparent)]
+  pub struct EnvHash(pub [u8; 32]);
+
+  impl EnvHash {
+    fn base64_encoded(&self) -> String { Base64Url::encode_string(&self.0[..]) }
+
+    pub fn hashed_env_name(&self, readable_name: &str) -> String {
+      format!(
+        "{}-{}",
+        readable_name,
+        self.base64_encoded().strip_suffix('=').unwrap()
+      )
+    }
+  }
+
+  impl EnvInstructions {
+    pub fn compute_digest(&self) -> EnvHash {
+      let mut hasher = Sha3_256::new();
+      let strs: Vec<&str> = self.specs.iter().map(|Spec(s)| s.as_str()).collect();
+      let combined_output: String = strs[..].join("\n");
+      hasher.update(combined_output.as_bytes());
+      EnvHash(hasher.finalize().into())
+    }
   }
 
   #[derive(Debug, Clone)]
   pub struct DisjointResolves {
-    pub by_label: IndexMap<EnvLabel, Vec<Spec>>,
+    pub by_label: IndexMap<EnvLabel, EnvInstructions>,
     pub recipes: IndexMap<CrateName, Recipe>,
   }
 }
