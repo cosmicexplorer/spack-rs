@@ -187,12 +187,13 @@ impl Default for Options {
 /// use abseil::StringView;
 /// use re2::RE2;
 ///
-/// let p = StringView::from_str("he");
-/// let r = RE2::new(&p);
-/// assert!(r.full_match(&StringView::from_str("he")));
-/// assert!(r.partial_match(&StringView::from_str("hello")));
+/// let r = RE2::new(&StringView::from_str(".he"));
+/// assert!(r.full_match(&StringView::from_str("the")));
+/// assert!(!r.partial_match(&StringView::from_str("hello")));
+/// assert!(r.partial_match(&StringView::from_str("othello")));
 /// assert!(r.partial_match(&StringView::from_str("the")));
 /// ```
+#[repr(transparent)]
 pub struct RE2(pub re2::RE2);
 
 impl RE2 {
