@@ -33,6 +33,8 @@ pub struct RE2(pub re2::RE2);
 
 impl RE2 {
   pub fn new(pattern: &StringView) -> Self {
+    /* NB: mem::transmute is currently needed (but always safe) because we
+     * duplicate any native bindings across each crate. */
     Self(unsafe { re2::RE2::new2(mem::transmute(pattern.0)) })
   }
 
