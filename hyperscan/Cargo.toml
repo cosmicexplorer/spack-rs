@@ -29,8 +29,12 @@ spack.workspace         = true
 tokio                   = { workspace = true, features = ["macros"] }
 
 [dependencies]
+async-stream.workspace  = true
 displaydoc.workspace    = true
-once_cell.workspace     = true
+futures-core.workspace  = true
 num_enum.workspace      = true
+once_cell.workspace     = true
+parking_lot.workspace   = true
 static_assertions       = "1.1.0"
 thiserror.workspace     = true
+tokio.workspace         = true
