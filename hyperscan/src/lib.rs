@@ -11,6 +11,7 @@
 #![feature(const_nonnull_new)]
 #![feature(const_mut_refs)]
 #![feature(const_pin)]
+#![feature(trait_alias)]
 
 #[allow(unused, non_camel_case_types)]
 mod bindings;
@@ -21,22 +22,15 @@ use async_stream::try_stream;
 use displaydoc::Display;
 use futures_core::stream::Stream;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use thiserror::Error;
 use tokio::task;
 
 use std::{
-  any, cmp,
-  collections::VecDeque,
   ffi::CStr,
-  future::Future,
-  marker::PhantomData,
   mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr,
-  sync::Arc,
-  task::{Context, Poll, Waker},
 };
 
 #[derive(
@@ -634,9 +628,6 @@ pub enum MatchResult {
 }
 
 impl MatchResult {
-  /* #[inline] */
-  /* pub const fn */
-
   /* FIXME: update num_enum so they work with const fn too!!! */
   #[inline]
   pub const fn from_native(x: c_int) -> Self {
@@ -657,7 +648,7 @@ impl MatchResult {
 }
 
 #[derive(Debug)]
-pub struct MatchEvent {
+struct MatchEvent {
   pub id: ExpressionIndex,
   pub range: ops::Range<usize>,
   pub flags: ScanFlags,
@@ -682,7 +673,7 @@ impl MatchEvent {
     }
   }
 
-  #[inline]
+  #[inline(always)]
   pub const unsafe fn extract_context<'a, T>(
     context: Option<ptr::NonNull<c_void>>,
   ) -> Option<Pin<&'a mut T>> {
@@ -695,283 +686,321 @@ impl MatchEvent {
   }
 }
 
+
 pub type ByteSlice<'a> = &'a [c_char];
 
-#[derive(Debug)]
-pub struct Match<'a> {
-  pub id: ExpressionIndex,
-  pub source: ByteSlice<'a>,
-  pub flags: ScanFlags,
-}
+pub type VectoredByteSlices<'a> = &'a [ByteSlice<'a>];
 
-pub struct SliceMatcher<'data, 'code> {
-  parent_slice: ByteSlice<'data>,
-  matched_slices_queue: Mutex<VecDeque<Match<'data>>>,
-  handler: &'code mut dyn FnMut(&Match<'data>) -> MatchResult,
-  wakers: Mutex<Vec<Waker>>,
-}
+mod matchers {
+  use super::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult, ScanFlags, VectoredByteSlices};
 
-impl<'data, 'code> SliceMatcher<'data, 'code> {
-  #[inline]
-  pub fn new<F: FnMut(&Match<'data>) -> MatchResult>(
-    parent_slice: ByteSlice<'data>,
-    f: &'code mut F,
-  ) -> Self {
-    Self {
-      parent_slice,
-      matched_slices_queue: Mutex::new(VecDeque::new()),
-      handler: f,
-      wakers: Mutex::new(Vec::new()),
-    }
-  }
+  use parking_lot::Mutex;
 
-  #[inline(always)]
-  const fn parent(&self) -> ByteSlice<'data> { self.parent_slice }
-
-  /* #[inline(always)] */
-  /* pub fn is_empty(&self) -> bool { self.matched_slices_queue.is_empty() } */
-
-  #[inline(always)]
-  pub fn pop(&mut self) -> Option<Match<'data>> { self.matched_slices_queue.lock().pop_front() }
-
-  pub fn pop_rest(&mut self) -> Vec<Match<'data>> {
-    self.matched_slices_queue.lock().drain(..).collect()
-  }
-
-  #[inline(always)]
-  pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> { &self.parent()[range] }
-
-  #[inline(always)]
-  pub fn push_new_match(&mut self, m: Match<'data>) {
-    self.matched_slices_queue.lock().push_back(m);
-    for waker in self.wakers.lock().drain(..) {
-      waker.wake();
-    }
-  }
-
-  /* pub fn handle_match(&self, m: Match<'data>) -> MatchResult { */
-  /* let x = 3; */
-  /* m */
-  /* } */
-
-  #[inline(always)]
-  pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
-
-  #[inline(always)]
-  pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
-}
-
-impl<'data, 'code> Future for SliceMatcher<'data, 'code> {
-  type Output = Match<'data>;
-
-  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    if let Some(m) = self.pop() {
-      Poll::Ready(m)
-    } else {
-      self.push_waker(cx.waker().clone());
-      Poll::Pending
-    }
-  }
-}
-
-unsafe extern "C" fn match_slice_ref(
-  id: c_uint,
-  from: c_ulonglong,
-  to: c_ulonglong,
-  flags: c_uint,
-  context: *mut c_void,
-) -> c_int {
-  let MatchEvent {
-    id,
-    range,
-    flags,
-    context,
-  } = MatchEvent::coerce_args(id, from, to, flags, context);
-  let mut slice_matcher: Pin<&mut SliceMatcher> =
-    MatchEvent::extract_context::<'_, SliceMatcher>(context).unwrap();
-  let matched_substring = slice_matcher.index_range(range);
-  let m = Match {
-    id,
-    source: matched_substring,
-    flags,
+  use std::{
+    cmp,
+    collections::VecDeque,
+    future::Future,
+    ops,
+    os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
+    pin::Pin,
+    task::{Context, Poll, Waker},
   };
 
-  let result = slice_matcher.handle_match(&m);
-  if result == MatchResult::Continue {
-    slice_matcher.push_new_match(m);
-  }
+  pub mod contiguous_slice {
+    use super::*;
 
-  result.into_native()
-}
-
-#[derive(Debug)]
-pub struct VectoredMatch<'a> {
-  pub id: ExpressionIndex,
-  pub source: Vec<ByteSlice<'a>>,
-  pub flags: ScanFlags,
-}
-
-pub struct VectoredSliceMatcher<'data, 'code> {
-  parent_slices: &'data [ByteSlice<'data>],
-  matched_slices_queue: Mutex<VecDeque<VectoredMatch<'data>>>,
-  handler: &'code mut dyn FnMut(&VectoredMatch<'data>) -> MatchResult,
-  wakers: Mutex<Vec<Waker>>,
-}
-
-impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
-  #[inline]
-  pub fn new<F: FnMut(&VectoredMatch<'data>) -> MatchResult>(
-    parent_slices: &'data [ByteSlice<'data>],
-    f: &'code mut F,
-  ) -> Self {
-    Self {
-      parent_slices,
-      matched_slices_queue: Mutex::new(VecDeque::new()),
-      handler: f,
-      wakers: Mutex::new(Vec::new()),
-    }
-  }
-
-  #[inline(always)]
-  const fn parent(&self) -> &'data [ByteSlice<'data>] { self.parent_slices }
-
-  #[inline(always)]
-  pub fn pop(&mut self) -> Option<VectoredMatch<'data>> {
-    self.matched_slices_queue.lock().pop_front()
-  }
-
-  pub fn pop_rest(&mut self) -> Vec<VectoredMatch<'data>> {
-    self.matched_slices_queue.lock().drain(..).collect()
-  }
-
-  fn find_index_at(
-    &self,
-    mut column: usize,
-    mut within_column_index: usize,
-    mut remaining: usize,
-  ) -> Option<(usize, usize)> {
-    let num_columns = self.parent().len();
-    if column >= num_columns {
-      return None;
-    }
-    if remaining == 0 {
-      return Some((column, within_column_index));
+    #[derive(Debug)]
+    pub struct Match<'a> {
+      pub id: ExpressionIndex,
+      pub source: ByteSlice<'a>,
+      pub flags: ScanFlags,
     }
 
-    let within_column_index = loop {
-      let cur_col = self.parent()[column];
-      let (prev, max_diff) = if within_column_index > 0 {
-        let x = within_column_index;
-        within_column_index = 0;
-        assert_ne!(cur_col.len(), x);
-        (x, cur_col.len() - x)
-      } else {
-        (0, cur_col.len())
+    pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult+'data;
+
+    pub(crate) struct SliceMatcher<'data, 'code> {
+      parent_slice: ByteSlice<'data>,
+      matched_slices_queue: Mutex<VecDeque<Match<'data>>>,
+      handler: &'code mut dyn Scanner<'data>,
+      wakers: Mutex<Vec<Waker>>,
+    }
+
+    impl<'data, 'code> SliceMatcher<'data, 'code> {
+      #[inline]
+      pub fn new<F: Scanner<'data>>(parent_slice: ByteSlice<'data>, f: &'code mut F) -> Self {
+        Self {
+          parent_slice,
+          matched_slices_queue: Mutex::new(VecDeque::new()),
+          handler: f,
+          wakers: Mutex::new(Vec::new()),
+        }
+      }
+
+      #[inline(always)]
+      const fn parent(&self) -> ByteSlice<'data> { self.parent_slice }
+
+      #[inline(always)]
+      pub fn pop(&mut self) -> Option<Match<'data>> { self.matched_slices_queue.lock().pop_front() }
+
+      pub fn pop_rest(&mut self) -> Vec<Match<'data>> {
+        self.matched_slices_queue.lock().drain(..).collect()
+      }
+
+      #[inline(always)]
+      pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
+        &self.parent()[range]
+      }
+
+      #[inline(always)]
+      pub fn push_new_match(&mut self, m: Match<'data>) {
+        self.matched_slices_queue.lock().push_back(m);
+        for waker in self.wakers.lock().drain(..) {
+          waker.wake();
+        }
+      }
+
+      #[inline(always)]
+      pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
+
+      #[inline(always)]
+      pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
+    }
+
+    impl<'data, 'code> Future for SliceMatcher<'data, 'code> {
+      type Output = Match<'data>;
+
+      fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(m) = self.pop() {
+          Poll::Ready(m)
+        } else {
+          self.push_waker(cx.waker().clone());
+          Poll::Pending
+        }
+      }
+    }
+
+    pub(crate) unsafe extern "C" fn match_slice_ref(
+      id: c_uint,
+      from: c_ulonglong,
+      to: c_ulonglong,
+      flags: c_uint,
+      context: *mut c_void,
+    ) -> c_int {
+      let MatchEvent {
+        id,
+        range,
+        flags,
+        context,
+      } = MatchEvent::coerce_args(id, from, to, flags, context);
+      let mut slice_matcher: Pin<&mut SliceMatcher> =
+        MatchEvent::extract_context::<'_, SliceMatcher>(context).unwrap();
+      let matched_substring = slice_matcher.index_range(range);
+      let m = Match {
+        id,
+        source: matched_substring,
+        flags,
       };
-      assert_ne!(max_diff, 0);
-      let new_offset = cmp::min(remaining, max_diff);
-      let cur_ind = prev + new_offset;
-      remaining -= new_offset;
-      if remaining == 0 {
-        break cur_ind;
-      } else if column == (num_columns - 1) {
-        return None;
-      } else {
-        column += 1;
+
+      let result = slice_matcher.handle_match(&m);
+      if result == MatchResult::Continue {
+        slice_matcher.push_new_match(m);
       }
-    };
 
-    Some((column, within_column_index))
+      result.into_native()
+    }
+
+    #[cfg(test)]
+    mod test {
+      use super::*;
+
+      #[test]
+      fn test_index() {}
+    }
   }
 
-  fn collect_slices_range(
-    &self,
-    start: (usize, usize),
-    end: (usize, usize),
-  ) -> Vec<ByteSlice<'data>> {
-    let (start_col, start_ind) = start;
-    let (end_col, end_ind) = end;
-    assert!(end_col >= start_col);
+  pub mod vectored_slice {
+    use super::*;
 
-    if start_col == end_col {
-      assert!(end_ind >= start_ind);
-      vec![&self.parent()[start_col][start_ind..end_ind]]
-    } else {
-      let mut ret: Vec<&'data [c_char]> = Vec::with_capacity(end_col - start_col + 1);
+    #[derive(Debug)]
+    pub struct VectoredMatch<'a> {
+      pub id: ExpressionIndex,
+      pub source: Vec<ByteSlice<'a>>,
+      pub flags: ScanFlags,
+    }
 
-      ret.push(&self.parent()[start_col][start_ind..]);
-      for cur_col in (start_col + 1)..end_col {
-        ret.push(&self.parent()[cur_col]);
+    pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) -> MatchResult+'data;
+
+    pub(crate) struct VectoredSliceMatcher<'data, 'code> {
+      parent_slices: VectoredByteSlices<'data>,
+      matched_slices_queue: Mutex<VecDeque<VectoredMatch<'data>>>,
+      handler: &'code mut dyn VectorScanner<'data>,
+      wakers: Mutex<Vec<Waker>>,
+    }
+
+    impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
+      #[inline]
+      pub fn new<F: VectorScanner<'data>>(
+        parent_slices: &'data [ByteSlice<'data>],
+        f: &'code mut F,
+      ) -> Self {
+        Self {
+          parent_slices,
+          matched_slices_queue: Mutex::new(VecDeque::new()),
+          handler: f,
+          wakers: Mutex::new(Vec::new()),
+        }
       }
-      ret.push(&self.parent()[end_col][..end_ind]);
-      ret
+
+      #[inline(always)]
+      const fn parent(&self) -> &'data [ByteSlice<'data>] { self.parent_slices }
+
+      #[inline(always)]
+      pub fn pop(&mut self) -> Option<VectoredMatch<'data>> {
+        self.matched_slices_queue.lock().pop_front()
+      }
+
+      pub fn pop_rest(&mut self) -> Vec<VectoredMatch<'data>> {
+        self.matched_slices_queue.lock().drain(..).collect()
+      }
+
+      fn find_index_at(
+        &self,
+        mut column: usize,
+        mut within_column_index: usize,
+        mut remaining: usize,
+      ) -> Option<(usize, usize)> {
+        let num_columns = self.parent().len();
+        if column >= num_columns {
+          return None;
+        }
+        if remaining == 0 {
+          return Some((column, within_column_index));
+        }
+
+        let within_column_index = loop {
+          let cur_col = self.parent()[column];
+          let (prev, max_diff) = if within_column_index > 0 {
+            let x = within_column_index;
+            within_column_index = 0;
+            assert_ne!(cur_col.len(), x);
+            (x, cur_col.len() - x)
+          } else {
+            (0, cur_col.len())
+          };
+          assert_ne!(max_diff, 0);
+          let new_offset = cmp::min(remaining, max_diff);
+          let cur_ind = prev + new_offset;
+          remaining -= new_offset;
+          if remaining == 0 {
+            break cur_ind;
+          } else if column == (num_columns - 1) {
+            return None;
+          } else {
+            column += 1;
+          }
+        };
+
+        Some((column, within_column_index))
+      }
+
+      fn collect_slices_range(
+        &self,
+        start: (usize, usize),
+        end: (usize, usize),
+      ) -> Vec<ByteSlice<'data>> {
+        let (start_col, start_ind) = start;
+        let (end_col, end_ind) = end;
+        assert!(end_col >= start_col);
+
+        if start_col == end_col {
+          assert!(end_ind >= start_ind);
+          vec![&self.parent()[start_col][start_ind..end_ind]]
+        } else {
+          let mut ret: Vec<&'data [c_char]> = Vec::with_capacity(end_col - start_col + 1);
+
+          ret.push(&self.parent()[start_col][start_ind..]);
+          for cur_col in (start_col + 1)..end_col {
+            ret.push(&self.parent()[cur_col]);
+          }
+          ret.push(&self.parent()[end_col][..end_ind]);
+          ret
+        }
+      }
+
+      pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
+        let ops::Range { start, end } = range;
+        let (start_col, start_ind) = self.find_index_at(0, 0, start).unwrap();
+        let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end).unwrap();
+        self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+      }
+
+      #[inline(always)]
+      pub fn push_new_match(&mut self, m: VectoredMatch<'data>) {
+        self.matched_slices_queue.lock().push_back(m);
+        for waker in self.wakers.lock().drain(..) {
+          waker.wake();
+        }
+      }
+
+      #[inline(always)]
+      pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
+
+      #[inline(always)]
+      pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
+    }
+
+    impl<'data, 'code> Future for VectoredSliceMatcher<'data, 'code> {
+      type Output = VectoredMatch<'data>;
+
+      fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(m) = self.pop() {
+          Poll::Ready(m)
+        } else {
+          self.push_waker(cx.waker().clone());
+          Poll::Pending
+        }
+      }
+    }
+
+    pub(crate) unsafe extern "C" fn match_slice_vectored_ref(
+      id: c_uint,
+      from: c_ulonglong,
+      to: c_ulonglong,
+      flags: c_uint,
+      context: *mut c_void,
+    ) -> c_int {
+      let MatchEvent {
+        id,
+        range,
+        flags,
+        context,
+      } = MatchEvent::coerce_args(id, from, to, flags, context);
+      let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
+        MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
+      let matched_substring = slice_matcher.index_range(range);
+      let m = VectoredMatch {
+        id,
+        source: matched_substring,
+        flags,
+      };
+
+      let result = slice_matcher.handle_match(&m);
+      if result == MatchResult::Continue {
+        slice_matcher.push_new_match(m);
+      }
+
+      result.into_native()
     }
   }
-
-  pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
-    let ops::Range { start, end } = range;
-    let (start_col, start_ind) = self.find_index_at(0, 0, start).unwrap();
-    let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end).unwrap();
-    self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
-  }
-
-  #[inline(always)]
-  pub fn push_new_match(&mut self, m: VectoredMatch<'data>) {
-    self.matched_slices_queue.lock().push_back(m);
-    for waker in self.wakers.lock().drain(..) {
-      waker.wake();
-    }
-  }
-
-  #[inline(always)]
-  pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
-
-  #[inline(always)]
-  pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
 }
-
-impl<'data, 'code> Future for VectoredSliceMatcher<'data, 'code> {
-  type Output = VectoredMatch<'data>;
-
-  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    if let Some(m) = self.pop() {
-      Poll::Ready(m)
-    } else {
-      self.push_waker(cx.waker().clone());
-      Poll::Pending
-    }
-  }
-}
-
-unsafe extern "C" fn match_slice_vectored_ref(
-  id: c_uint,
-  from: c_ulonglong,
-  to: c_ulonglong,
-  flags: c_uint,
-  context: *mut c_void,
-) -> c_int {
-  let MatchEvent {
-    id,
-    range,
-    flags,
-    context,
-  } = MatchEvent::coerce_args(id, from, to, flags, context);
-  let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
-    MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
-  let matched_substring = slice_matcher.index_range(range);
-  let m = VectoredMatch {
-    id,
-    source: matched_substring,
-    flags,
-  };
-
-  let result = slice_matcher.handle_match(&m);
-  if result == MatchResult::Continue {
-    slice_matcher.push_new_match(m);
-  }
-
-  result.into_native()
-}
+use matchers::{
+  contiguous_slice::{match_slice_ref, SliceMatcher},
+  vectored_slice::{match_slice_vectored_ref, VectoredSliceMatcher},
+};
+pub use matchers::{
+  contiguous_slice::{Match, Scanner},
+  vectored_slice::{VectorScanner, VectoredMatch},
+};
 
 impl Database {
   fn validate_flags_and_mode(
@@ -1008,9 +1037,9 @@ impl Database {
     Ok(Self(unsafe { db.assume_init() }))
   }
 
-  pub fn scan_matches<'data, F: FnMut(&Match<'data>) -> MatchResult+'data>(
+  pub fn scan_matches<'data, F: Scanner<'data>>(
     &self,
-    data: &'data [c_char],
+    data: ByteSlice<'data>,
     flags: ScanFlags,
     scratch: &mut Scratch,
     mut f: F,
@@ -1052,9 +1081,9 @@ impl Database {
     }
   }
 
-  pub fn scan_vector<'data, F: FnMut(&VectoredMatch<'data>) -> MatchResult+'data>(
+  pub fn scan_vector<'data, F: VectorScanner<'data>>(
     &self,
-    data: &'data [&'data [c_char]],
+    data: VectoredByteSlices<'data>,
     flags: ScanFlags,
     scratch: &mut Scratch,
     mut f: F,
@@ -1064,6 +1093,7 @@ impl Database {
     static_assertions::assert_eq_size!([u8; 4], u32);
     static_assertions::assert_eq_size!(&u8, *const u8);
     static_assertions::const_assert_ne!(mem::size_of::<&[u8]>(), mem::size_of::<*const u8>());
+
     let data_len: usize = data.len();
     let lengths: Vec<c_uint> = data.iter().map(|col| col.len() as c_uint).collect();
     let data_pointers: Vec<*const c_char> = data.iter().map(|col| col.as_ptr()).collect();
@@ -1077,8 +1107,8 @@ impl Database {
     let data: usize = unsafe { mem::transmute(data) };
     let scratch: &mut hs::hs_scratch = scratch.as_mut();
     let scratch: usize = unsafe { mem::transmute(scratch) };
-    let ctx: usize = unsafe { mem::transmute(&mut matcher) };
 
+    let ctx: usize = unsafe { mem::transmute(&mut matcher) };
     let scan_task = task::spawn_blocking(move || {
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
