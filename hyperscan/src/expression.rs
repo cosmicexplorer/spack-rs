@@ -4,22 +4,40 @@
 //! ???
 
 use crate::{
+  database::Database,
   error::{HyperscanCompileError, HyperscanError},
-  flags::{ExtFlags, Flags},
+  flags::{ExtFlags, Flags, Mode},
   hs,
 };
 
 use std::{
   ffi::CString,
-  mem, ops,
+  fmt, mem, ops,
   os::raw::{c_char, c_uint, c_ulonglong},
+  str,
 };
 
 use displaydoc::Display;
 
+#[derive(Clone)]
 pub struct Expression(CString);
 
+impl fmt::Debug for Expression {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self.try_decode_utf8() {
+      Ok(s) => write!(f, "Expression({:?})", s),
+      Err(_) => write!(f, "Expression({:?})", self.as_bytes()),
+    }
+  }
+}
+
 impl Expression {
+  #[inline]
+  pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+
+  #[inline]
+  fn try_decode_utf8(&self) -> Result<&str, str::Utf8Error> { str::from_utf8(self.as_bytes()) }
+
   #[inline]
   pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
@@ -67,6 +85,10 @@ impl Expression {
     )?;
     let info = ExprInfo::from_native(unsafe { info.assume_init() });
     Ok(info)
+  }
+
+  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
+    Database::compile(self, flags, mode)
   }
 }
 

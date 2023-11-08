@@ -5,6 +5,7 @@
 
 use crate::{
   error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
+  expression::Expression,
   flags::{Flags, Mode, ScanFlags},
   hs,
   matchers::{
@@ -22,7 +23,6 @@ use futures_core::stream::Stream;
 use tokio::task;
 
 use std::{
-  ffi::CString,
   mem, ops,
   os::raw::{c_char, c_uint, c_void},
   pin::Pin,
@@ -50,22 +50,20 @@ impl Database {
     Ok((flags.into_native(), mode.into_native()))
   }
 
-  pub fn compile(
-    expression: Vec<u8>,
+  pub(crate) fn compile(
+    expression: &Expression,
     flags: Flags,
     mode: Mode,
   ) -> Result<Self, HyperscanCompileError> {
     let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
     let platform = Platform::get();
 
-    let expression = CString::new(expression)?;
-
     let mut db = mem::MaybeUninit::<hs::hs_database>::uninit();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
     HyperscanError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
-          expression.as_c_str().as_ptr(),
+          expression.as_ptr(),
           flags,
           mode,
           platform.as_ref(),
