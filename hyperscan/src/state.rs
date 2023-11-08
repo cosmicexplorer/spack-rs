@@ -4,9 +4,10 @@
 //! ???
 
 use crate::{
+  database::Database,
   error::HyperscanError,
   flags::{CpuFeatures, TuneFamily},
-  hs, Database,
+  hs,
 };
 
 use once_cell::sync::Lazy;
