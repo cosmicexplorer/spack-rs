@@ -32,6 +32,7 @@ tokio                   = { workspace = true, features = ["macros"] }
 async-stream.workspace  = true
 displaydoc.workspace    = true
 futures-core.workspace  = true
+indexmap.workspace      = true
 num_enum.workspace      = true
 once_cell.workspace     = true
 parking_lot.workspace   = true

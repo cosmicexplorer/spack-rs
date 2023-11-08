@@ -5,7 +5,7 @@
 
 use crate::{
   error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
-  expression::Expression,
+  expression::{Expression, ExpressionSet},
   flags::{Flags, Mode, ScanFlags},
   hs,
   matchers::{
@@ -50,7 +50,7 @@ impl Database {
     Ok((flags.into_native(), mode.into_native()))
   }
 
-  pub(crate) fn compile(
+  pub fn compile(
     expression: &Expression,
     flags: Flags,
     mode: Mode,
@@ -70,6 +70,47 @@ impl Database {
           mem::transmute(&mut db.as_mut_ptr()),
           mem::transmute(&mut compile_err.as_mut_ptr()),
         )
+      },
+      compile_err.as_mut_ptr(),
+    )?;
+    Ok(Self(unsafe { db.assume_init() }))
+  }
+
+  pub fn compile_multi(
+    expression_set: &ExpressionSet,
+    mode: Mode,
+  ) -> Result<Self, HyperscanCompileError> {
+    mode.validate_db_type()?;
+    let platform = Platform::get();
+
+    let mut db = mem::MaybeUninit::<hs::hs_database>::uninit();
+    let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
+    HyperscanError::copy_from_native_compile_error(
+      unsafe {
+        if let Some(exts_ptr) = expression_set.exts_ptr() {
+          hs::hs_compile_ext_multi(
+            expression_set.expressions_ptr(),
+            expression_set.flags_ptr(),
+            expression_set.ids_ptr(),
+            exts_ptr,
+            expression_set.num_elements(),
+            mode.into_native(),
+            platform.as_ref(),
+            mem::transmute(&mut db.as_mut_ptr()),
+            mem::transmute(&mut compile_err.as_mut_ptr()),
+          )
+        } else {
+          hs::hs_compile_multi(
+            expression_set.expressions_ptr(),
+            expression_set.flags_ptr(),
+            expression_set.ids_ptr(),
+            expression_set.num_elements(),
+            mode.into_native(),
+            platform.as_ref(),
+            mem::transmute(&mut db.as_mut_ptr()),
+            mem::transmute(&mut compile_err.as_mut_ptr()),
+          )
+        }
       },
       compile_err.as_mut_ptr(),
     )?;

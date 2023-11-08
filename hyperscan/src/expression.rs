@@ -10,14 +10,16 @@ use crate::{
   hs,
 };
 
+use displaydoc::Display;
+
 use std::{
   ffi::CString,
-  fmt, mem, ops,
+  fmt,
+  marker::PhantomData,
+  mem, ops,
   os::raw::{c_char, c_uint, c_ulonglong},
-  str,
+  ptr, str,
 };
-
-use displaydoc::Display;
 
 #[derive(Clone)]
 pub struct Expression(CString);
@@ -89,6 +91,90 @@ impl Expression {
 
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile(self, flags, mode)
+  }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ExprId(c_uint);
+
+#[derive(Debug, Clone)]
+pub struct ExpressionSet<'a> {
+  ptrs: Vec<*const c_char>,
+  flags: Option<Vec<Flags>>,
+  ids: Option<Vec<ExprId>>,
+  exts: Option<Vec<*const hs::hs_expr_ext>>,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> ExpressionSet<'a> {
+  pub fn from_exprs(exprs: &[&'a Expression]) -> Self {
+    Self {
+      ptrs: exprs.iter().map(|e| e.as_ptr()).collect(),
+      flags: None,
+      ids: None,
+      exts: None,
+      _ph: PhantomData,
+    }
+  }
+
+  pub fn with_flags(&mut self, flags: &[Flags]) {
+    assert_eq!(self.ptrs.len(), flags.len());
+    self.flags = Some(flags.iter().cloned().collect());
+  }
+
+  pub fn with_ids(&mut self, ids: &[ExprId]) {
+    assert_eq!(self.ptrs.len(), ids.len());
+    self.ids = Some(ids.iter().cloned().collect());
+  }
+
+  pub fn with_exts(&mut self, exts: &[Option<&'a ExprExt>]) {
+    assert_eq!(self.ptrs.len(), exts.len());
+    self.exts = Some(
+      exts
+        .iter()
+        .map(|e| {
+          e.map(|e| unsafe { mem::transmute(e.as_ref()) })
+            .unwrap_or(ptr::null())
+        })
+        .collect(),
+    );
+  }
+
+  pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
+    Database::compile_multi(&self, mode)
+  }
+
+  #[inline]
+  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+
+  #[inline]
+  pub(crate) fn exts_ptr(&self) -> Option<*const *const hs::hs_expr_ext> {
+    self
+      .exts
+      .as_ref()
+      .map(|e| unsafe { mem::transmute(e.as_ptr()) })
+  }
+
+  #[inline]
+  pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
+
+  #[inline]
+  pub(crate) fn flags_ptr(&self) -> *const c_uint {
+    self
+      .flags
+      .as_ref()
+      .map(|f| unsafe { mem::transmute(f.as_ptr()) })
+      .unwrap_or(ptr::null())
+  }
+
+  #[inline]
+  pub(crate) fn ids_ptr(&self) -> *const c_uint {
+    self
+      .ids
+      .as_ref()
+      .map(|i| unsafe { mem::transmute(i.as_ptr()) })
+      .unwrap_or(ptr::null())
   }
 }
 
