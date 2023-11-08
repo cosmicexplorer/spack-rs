@@ -15,13 +15,113 @@ use std::{
   mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
-  ptr,
+  ptr, slice,
   task::{Context, Poll, Waker},
 };
 
-pub type ByteSlice<'a> = &'a [c_char];
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct ByteSlice<'a>(pub &'a [u8]);
 
-pub type VectoredByteSlices<'a> = &'a [ByteSlice<'a>];
+impl<'a> ByteSlice<'a> {
+  #[inline(always)]
+  pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
+    self.0.get(range).map(Self)
+  }
+
+  #[inline(always)]
+  pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
+
+  #[inline(always)]
+  pub(crate) const fn len(&self) -> c_uint { self.0.len() as c_uint }
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct VectoredByteSlices<'a>(pub &'a [ByteSlice<'a>]);
+
+impl<'a> VectoredByteSlices<'a> {
+  #[inline(always)]
+  pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
+    let lengths: Vec<c_uint> = self.0.iter().map(|col| col.len() as c_uint).collect();
+    let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
+    (data_pointers, lengths)
+  }
+
+  #[inline(always)]
+  pub(crate) const fn len(&self) -> c_uint { self.0.len() as c_uint }
+
+  fn find_index_at(
+    &self,
+    mut column: usize,
+    mut within_column_index: usize,
+    mut remaining: usize,
+  ) -> Option<(usize, usize)> {
+    let num_columns = self.0.len();
+    if column >= num_columns {
+      return None;
+    }
+    if remaining == 0 {
+      return Some((column, within_column_index));
+    }
+
+    let within_column_index = loop {
+      let cur_col = &self.0[column];
+      let (prev, max_diff) = if within_column_index > 0 {
+        let x = within_column_index;
+        within_column_index = 0;
+        assert_ne!(cur_col.0.len(), x);
+        (x, cur_col.0.len() - x)
+      } else {
+        (0, cur_col.0.len())
+      };
+      assert_ne!(max_diff, 0);
+      let new_offset = cmp::min(remaining, max_diff);
+      let cur_ind = prev + new_offset;
+      remaining -= new_offset;
+      if remaining == 0 {
+        break cur_ind;
+      } else if column == (num_columns - 1) {
+        return None;
+      } else {
+        column += 1;
+      }
+    };
+
+    Some((column, within_column_index))
+  }
+
+  fn collect_slices_range(
+    &self,
+    start: (usize, usize),
+    end: (usize, usize),
+  ) -> Option<Vec<ByteSlice<'a>>> {
+    let (start_col, start_ind) = start;
+    let (end_col, end_ind) = end;
+    assert!(end_col >= start_col);
+
+    if start_col == end_col {
+      assert!(end_ind >= start_ind);
+      Some(vec![self.0[start_col].index_range(start_ind..end_ind)?])
+    } else {
+      let mut ret: Vec<ByteSlice<'a>> = Vec::with_capacity(end_col - start_col + 1);
+
+      ret.push(self.0[start_col].index_range(start_ind..)?);
+      for cur_col in (start_col + 1)..end_col {
+        ret.push(self.0[cur_col]);
+      }
+      ret.push(self.0[end_col].index_range(..end_ind)?);
+      Some(ret)
+    }
+  }
+
+  pub fn index_range(&self, range: ops::Range<usize>) -> Option<Vec<ByteSlice<'a>>> {
+    let ops::Range { start, end } = range;
+    let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
+    let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end)?;
+    self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+  }
+}
 
 /// <expression index {0}>
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -162,9 +262,6 @@ pub mod contiguous_slice {
     }
 
     #[inline(always)]
-    const fn parent(&self) -> ByteSlice<'data> { self.parent_slice }
-
-    #[inline(always)]
     pub fn pop(&mut self) -> Option<Match<'data>> { self.matched_slices_queue.lock().pop_front() }
 
     pub fn pop_rest(&mut self) -> Vec<Match<'data>> {
@@ -173,7 +270,7 @@ pub mod contiguous_slice {
 
     #[inline(always)]
     pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
-      &self.parent()[range]
+      self.parent_slice.index_range(range).unwrap()
     }
 
     #[inline(always)]
@@ -265,7 +362,7 @@ pub mod vectored_slice {
   impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
     #[inline]
     pub fn new<F: VectorScanner<'data>>(
-      parent_slices: &'data [ByteSlice<'data>],
+      parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
     ) -> Self {
       Self {
@@ -277,9 +374,6 @@ pub mod vectored_slice {
     }
 
     #[inline(always)]
-    const fn parent(&self) -> &'data [ByteSlice<'data>] { self.parent_slices }
-
-    #[inline(always)]
     pub fn pop(&mut self) -> Option<VectoredMatch<'data>> {
       self.matched_slices_queue.lock().pop_front()
     }
@@ -288,75 +382,8 @@ pub mod vectored_slice {
       self.matched_slices_queue.lock().drain(..).collect()
     }
 
-    fn find_index_at(
-      &self,
-      mut column: usize,
-      mut within_column_index: usize,
-      mut remaining: usize,
-    ) -> Option<(usize, usize)> {
-      let num_columns = self.parent().len();
-      if column >= num_columns {
-        return None;
-      }
-      if remaining == 0 {
-        return Some((column, within_column_index));
-      }
-
-      let within_column_index = loop {
-        let cur_col = self.parent()[column];
-        let (prev, max_diff) = if within_column_index > 0 {
-          let x = within_column_index;
-          within_column_index = 0;
-          assert_ne!(cur_col.len(), x);
-          (x, cur_col.len() - x)
-        } else {
-          (0, cur_col.len())
-        };
-        assert_ne!(max_diff, 0);
-        let new_offset = cmp::min(remaining, max_diff);
-        let cur_ind = prev + new_offset;
-        remaining -= new_offset;
-        if remaining == 0 {
-          break cur_ind;
-        } else if column == (num_columns - 1) {
-          return None;
-        } else {
-          column += 1;
-        }
-      };
-
-      Some((column, within_column_index))
-    }
-
-    fn collect_slices_range(
-      &self,
-      start: (usize, usize),
-      end: (usize, usize),
-    ) -> Vec<ByteSlice<'data>> {
-      let (start_col, start_ind) = start;
-      let (end_col, end_ind) = end;
-      assert!(end_col >= start_col);
-
-      if start_col == end_col {
-        assert!(end_ind >= start_ind);
-        vec![&self.parent()[start_col][start_ind..end_ind]]
-      } else {
-        let mut ret: Vec<&'data [c_char]> = Vec::with_capacity(end_col - start_col + 1);
-
-        ret.push(&self.parent()[start_col][start_ind..]);
-        for cur_col in (start_col + 1)..end_col {
-          ret.push(&self.parent()[cur_col]);
-        }
-        ret.push(&self.parent()[end_col][..end_ind]);
-        ret
-      }
-    }
-
     pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
-      let ops::Range { start, end } = range;
-      let (start_col, start_ind) = self.find_index_at(0, 0, start).unwrap();
-      let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end).unwrap();
-      self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+      self.parent_slices.index_range(range).unwrap()
     }
 
     #[inline(always)]

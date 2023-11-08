@@ -25,7 +25,6 @@ pub use flags::{CpuFeatures, Flags, Mode, ScanFlags, TuneFamily};
 pub(crate) use bindings as hs;
 
 use async_stream::try_stream;
-use displaydoc::Display;
 use futures_core::stream::Stream;
 use once_cell::sync::Lazy;
 use tokio::task;
@@ -33,9 +32,8 @@ use tokio::task;
 use std::{
   ffi::CStr,
   mem, ops,
-  os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
+  os::raw::{c_char, c_uint, c_void},
   pin::Pin,
-  ptr,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -186,13 +184,15 @@ impl Database {
     scratch: &mut Scratch,
     mut f: F,
   ) -> impl Stream<Item=Result<Match<'data>, HyperscanError>>+'data {
+    let data_len = data.len();
+    let data_pointer: *const c_char = data.as_ptr();
+
     let f: &'static mut u8 = unsafe { mem::transmute(&mut f) };
     let mut matcher = SliceMatcher::new::<F>(data, unsafe { mem::transmute(f) });
 
     let s: &hs::hs_database = self.as_ref();
     let s: usize = unsafe { mem::transmute(s) };
-    let data_len: usize = data.len();
-    let data: usize = unsafe { mem::transmute(data.as_ptr()) };
+    let data: usize = unsafe { mem::transmute(data_pointer) };
     let scratch: &mut hs::hs_scratch = scratch.as_mut();
     let scratch: usize = unsafe { mem::transmute(scratch) };
 
@@ -202,7 +202,7 @@ impl Database {
         hs::hs_scan(
           s as *const hs::hs_database,
           data as *const c_char,
-          data_len as c_uint,
+          data_len,
           flags.into_native(),
           scratch as *mut hs::hs_scratch,
           Some(match_slice_ref),
@@ -236,9 +236,8 @@ impl Database {
     static_assertions::assert_eq_size!(&u8, *const u8);
     static_assertions::const_assert_ne!(mem::size_of::<&[u8]>(), mem::size_of::<*const u8>());
 
-    let data_len: usize = data.len();
-    let lengths: Vec<c_uint> = data.iter().map(|col| col.len() as c_uint).collect();
-    let data_pointers: Vec<*const c_char> = data.iter().map(|col| col.as_ptr()).collect();
+    let data_len = data.len();
+    let (data_pointers, lengths) = data.pointers_and_lengths();
 
     let f: &'static mut u8 = unsafe { mem::transmute(&mut f) };
     let mut matcher = VectoredSliceMatcher::new::<F>(data, unsafe { mem::transmute(f) });
@@ -257,7 +256,7 @@ impl Database {
           s as *const hs::hs_database,
           data as *const *const c_char,
           lengths.as_ptr(),
-          data_len as c_uint,
+          data_len,
           flags.into_native(),
           scratch as *mut hs::hs_scratch,
           Some(match_slice_vectored_ref),
