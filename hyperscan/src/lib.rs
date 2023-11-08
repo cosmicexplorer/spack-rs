@@ -22,102 +22,21 @@ pub use error::{CompileError, HyperscanCompileError, HyperscanError, HyperscanFl
 mod flags;
 pub use flags::{CpuFeatures, Flags, Mode, ScanFlags, TuneFamily};
 
+mod state;
+pub use state::{Platform, Scratch};
+
 pub(crate) use bindings as hs;
 
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use once_cell::sync::Lazy;
 use tokio::task;
 
 use std::{
-  ffi::CStr,
+  ffi::CString,
   mem, ops,
   os::raw::{c_char, c_uint, c_void},
   pin::Pin,
 };
-
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct Platform(pub hs::hs_platform_info);
-
-static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
-
-impl Platform {
-  #[inline]
-  pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
-
-  #[inline]
-  pub fn set_tune(&mut self, tune: TuneFamily) { self.0.tune = tune.into_native(); }
-
-  #[inline]
-  pub fn cpu_features(&self) -> CpuFeatures { CpuFeatures::from_native(self.0.cpu_features) }
-
-  #[inline]
-  pub fn set_cpu_features(&mut self, cpu_features: CpuFeatures) {
-    self.0.cpu_features = cpu_features.into_native();
-  }
-
-  #[inline]
-  pub fn populate() -> Result<Self, HyperscanError> {
-    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
-    HyperscanError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
-    Ok(unsafe { Self(s.assume_init()) })
-  }
-
-  #[inline]
-  pub fn get() -> &'static Self { &*CACHED_PLATFORM }
-}
-
-impl AsRef<hs::hs_platform_info> for Platform {
-  fn as_ref(&self) -> &hs::hs_platform_info { &self.0 }
-}
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct Scratch(pub hs::hs_scratch);
-
-impl Scratch {
-  pub fn alloc(db: &Database) -> Result<Self, HyperscanError> {
-    let mut scratch = mem::MaybeUninit::<hs::hs_scratch>::uninit();
-    HyperscanError::from_native(unsafe {
-      hs::hs_alloc_scratch(db.as_ref(), mem::transmute(&mut scratch.as_mut_ptr()))
-    })?;
-    Ok(Self(unsafe { scratch.assume_init() }))
-  }
-
-  pub fn get_size(&self) -> Result<usize, HyperscanError> {
-    let mut n = mem::MaybeUninit::<usize>::uninit();
-    HyperscanError::from_native(unsafe { hs::hs_scratch_size(self.as_ref(), n.as_mut_ptr()) })?;
-    Ok(unsafe { n.assume_init() })
-  }
-
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
-    let mut scratch = mem::MaybeUninit::<hs::hs_scratch>::uninit();
-    HyperscanError::from_native(unsafe {
-      hs::hs_clone_scratch(self.as_ref(), mem::transmute(&mut scratch.as_mut_ptr()))
-    })?;
-    Ok(Self(unsafe { scratch.assume_init() }))
-  }
-
-  pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
-  }
-}
-
-impl ops::Drop for Scratch {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
-}
-
-impl Clone for Scratch {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-}
-
-impl AsRef<hs::hs_scratch> for Scratch {
-  fn as_ref(&self) -> &hs::hs_scratch { &self.0 }
-}
-impl AsMut<hs::hs_scratch> for Scratch {
-  fn as_mut(&mut self) -> &mut hs::hs_scratch { &mut self.0 }
-}
 
 mod matchers;
 use matchers::{
@@ -153,18 +72,21 @@ impl Database {
   }
 
   pub fn compile(
-    expression: &CStr,
+    expression: Vec<u8>,
     flags: Flags,
     mode: Mode,
   ) -> Result<Self, HyperscanCompileError> {
     let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
     let platform = Platform::get();
+
+    let expression = CString::new(expression)?;
+
     let mut db = mem::MaybeUninit::<hs::hs_database>::uninit();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
     HyperscanError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
-          expression.as_ptr(),
+          expression.as_c_str().as_ptr(),
           flags,
           mode,
           platform.as_ref(),

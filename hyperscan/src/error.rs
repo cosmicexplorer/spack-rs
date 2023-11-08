@@ -8,7 +8,10 @@ use crate::{hs, matchers::ExpressionIndex};
 use displaydoc::Display;
 use thiserror::Error;
 
-use std::{ffi::CStr, os::raw::c_uint};
+use std::{
+  ffi::{CStr, NulError},
+  os::raw::c_uint,
+};
 
 #[derive(
   Debug,
@@ -173,4 +176,6 @@ pub enum HyperscanCompileError {
   NonCompile(#[from] HyperscanError),
   /// pattern compilation error: {0}
   Compile(#[from] CompileError),
+  /// null byte in expression: {0}
+  NullByte(#[from] NulError),
 }
