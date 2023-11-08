@@ -108,7 +108,7 @@ pub enum HyperscanError {
 
 impl HyperscanError {
   #[inline]
-  pub fn from_native(x: hs::hs_error_t) -> Result<(), Self> {
+  pub(crate) fn from_native(x: hs::hs_error_t) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, hs::HS_SUCCESS);
     if x == 0 {
       Ok(())
@@ -119,7 +119,7 @@ impl HyperscanError {
   }
 
   #[inline]
-  pub fn copy_from_native_compile_error(
+  pub(crate) fn copy_from_native_compile_error(
     x: hs::hs_error_t,
     c: *mut hs::hs_compile_error,
   ) -> Result<(), HyperscanCompileError> {

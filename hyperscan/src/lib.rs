@@ -25,6 +25,9 @@ pub use flags::{CpuFeatures, Flags, Mode, ScanFlags, TuneFamily};
 mod state;
 pub use state::{Platform, Scratch};
 
+mod expression;
+pub use expression::{ExprInfo, ExprWidth, Expression, MatchAtEndBehavior, UnorderedMatchBehavior};
+
 pub(crate) use bindings as hs;
 
 use async_stream::try_stream;
