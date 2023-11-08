@@ -5,14 +5,14 @@
 
 use crate::{
   error::{HyperscanCompileError, HyperscanError},
-  flags::Flags,
+  flags::{ExtFlags, Flags},
   hs,
 };
 
 use std::{
   ffi::CString,
-  mem,
-  os::raw::{c_char, c_uint},
+  mem, ops,
+  os::raw::{c_char, c_uint, c_ulonglong},
 };
 
 use displaydoc::Display;
@@ -45,6 +45,29 @@ impl Expression {
     let info = ExprInfo::from_native(unsafe { info.assume_init() });
     Ok(info)
   }
+
+  pub fn ext_info(
+    &self,
+    flags: Flags,
+    ext_flags: &ExprExt,
+  ) -> Result<ExprInfo, HyperscanCompileError> {
+    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::uninit();
+    let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
+    HyperscanError::copy_from_native_compile_error(
+      unsafe {
+        hs::hs_expression_ext_info(
+          self.as_ptr(),
+          flags.into_native(),
+          ext_flags.as_ref(),
+          mem::transmute(&mut info.as_mut_ptr()),
+          mem::transmute(&mut compile_err.as_mut_ptr()),
+        )
+      },
+      compile_err.as_mut_ptr(),
+    )?;
+    let info = ExprInfo::from_native(unsafe { info.assume_init() });
+    Ok(info)
+  }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,6 +87,7 @@ impl ExprWidth {
     }
   }
 }
+
 
 #[derive(
   Debug,
@@ -121,6 +145,7 @@ impl MatchAtEndBehavior {
   }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExprInfo {
   pub min_width: ExprWidth,
   pub max_width: Option<ExprWidth>,
@@ -157,5 +182,154 @@ impl ExprInfo {
       unordered_matches,
       matches_at_eod,
     }
+  }
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct ExprExt(hs::hs_expr_ext);
+
+impl Default for ExprExt {
+  fn default() -> Self { Self::zeroed() }
+}
+
+impl ExprExt {
+  #[inline]
+  pub const fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
+
+  #[inline]
+  pub const fn from_min_offset(x: usize) -> Self {
+    let ext_flags = ExtFlags::MIN_OFFSET;
+    let mut s = Self::zeroed();
+    s.0.flags = ext_flags.into_native();
+    s.0.min_offset = x as c_ulonglong;
+    s
+  }
+
+  #[inline]
+  pub const fn from_max_offset(x: usize) -> Self {
+    let ext_flags = ExtFlags::MAX_OFFSET;
+    let mut s = Self::zeroed();
+    s.0.flags = ext_flags.into_native();
+    s.0.max_offset = x as c_ulonglong;
+    s
+  }
+
+  #[inline]
+  pub const fn from_min_length(x: usize) -> Self {
+    let ext_flags = ExtFlags::MIN_LENGTH;
+    let mut s = Self::zeroed();
+    s.0.flags = ext_flags.into_native();
+    s.0.min_length = x as c_ulonglong;
+    s
+  }
+
+  #[inline]
+  pub const fn from_edit_distance(x: usize) -> Self {
+    let ext_flags = ExtFlags::EDIT_DISTANCE;
+    let mut s = Self::zeroed();
+    s.0.flags = ext_flags.into_native();
+    assert!(x < c_uint::MAX as usize);
+    s.0.edit_distance = x as c_uint;
+    s
+  }
+
+  #[inline]
+  pub const fn from_hamming_distance(x: usize) -> Self {
+    let ext_flags = ExtFlags::HAMMING_DISTANCE;
+    let mut s = Self::zeroed();
+    s.0.flags = ext_flags.into_native();
+    assert!(x < c_uint::MAX as usize);
+    s.0.hamming_distance = x as c_uint;
+    s
+  }
+
+  #[inline]
+  fn ext_flags(&self) -> ExtFlags { ExtFlags::from_native(self.0.flags) }
+
+  #[inline]
+  pub fn min_offset(&self) -> Option<c_ulonglong> {
+    if self.ext_flags().has_min_offset() {
+      Some(self.0.min_offset)
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  pub fn max_offset(&self) -> Option<c_ulonglong> {
+    if self.ext_flags().has_max_offset() {
+      Some(self.0.max_offset)
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  pub fn min_length(&self) -> Option<c_ulonglong> {
+    if self.ext_flags().has_min_length() {
+      Some(self.0.min_length)
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  pub fn edit_distance(&self) -> Option<c_uint> {
+    if self.ext_flags().has_edit_distance() {
+      Some(self.0.edit_distance)
+    } else {
+      None
+    }
+  }
+
+  #[inline]
+  pub fn hamming_distance(&self) -> Option<c_uint> {
+    if self.ext_flags().has_hamming_distance() {
+      Some(self.0.hamming_distance)
+    } else {
+      None
+    }
+  }
+
+  fn compose(mut self, rhs: Self) -> Self {
+    self.0.flags = (self.ext_flags() | rhs.ext_flags()).into_native();
+    if let Some(min_offset) = rhs.min_offset() {
+      self.0.min_offset = min_offset;
+    }
+    if let Some(max_offset) = rhs.max_offset() {
+      self.0.max_offset = max_offset;
+    }
+    if let Some(min_length) = rhs.min_length() {
+      self.0.min_length = min_length;
+    }
+    if let Some(edit_distance) = rhs.edit_distance() {
+      self.0.edit_distance = edit_distance;
+    }
+    if let Some(hamming_distance) = rhs.hamming_distance() {
+      self.0.hamming_distance = hamming_distance;
+    }
+    self
+  }
+}
+
+impl AsRef<hs::hs_expr_ext> for ExprExt {
+  fn as_ref(&self) -> &hs::hs_expr_ext { &self.0 }
+}
+
+impl AsMut<hs::hs_expr_ext> for ExprExt {
+  fn as_mut(&mut self) -> &mut hs::hs_expr_ext { &mut self.0 }
+}
+
+impl ops::BitOr for ExprExt {
+  type Output = Self;
+
+  fn bitor(self, other: Self) -> Self { self.compose(other) }
+}
+
+impl ops::BitOrAssign for ExprExt {
+  fn bitor_assign(&mut self, rhs: Self) {
+    use ops::BitOr;
+    *self = self.bitor(rhs);
   }
 }

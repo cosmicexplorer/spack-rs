@@ -317,3 +317,67 @@ impl ScanFlags {
   #[inline(always)]
   pub const fn into_native(self) -> c_uint { self.0 }
 }
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ExtFlags(u8);
+
+impl ExtFlags {
+  pub const EDIT_DISTANCE: Self = Self(hs::HS_EXT_FLAG_EDIT_DISTANCE);
+  pub const HAMMING_DISTANCE: Self = Self(hs::HS_EXT_FLAG_HAMMING_DISTANCE);
+  pub const MAX_OFFSET: Self = Self(hs::HS_EXT_FLAG_MAX_OFFSET);
+  pub const MIN_LENGTH: Self = Self(hs::HS_EXT_FLAG_MIN_LENGTH);
+  pub const MIN_OFFSET: Self = Self(hs::HS_EXT_FLAG_MIN_OFFSET);
+
+  #[inline]
+  pub fn has_edit_distance(&self) -> bool { self.contains(&Self::EDIT_DISTANCE) }
+
+  #[inline]
+  pub fn has_hamming_distance(&self) -> bool { self.contains(&Self::HAMMING_DISTANCE) }
+
+  #[inline]
+  pub fn has_max_offset(&self) -> bool { self.contains(&Self::MAX_OFFSET) }
+
+  #[inline]
+  pub fn has_min_length(&self) -> bool { self.contains(&Self::MIN_LENGTH) }
+
+  #[inline]
+  pub fn has_min_offset(&self) -> bool { self.contains(&Self::MIN_OFFSET) }
+
+  #[inline(always)]
+  pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
+
+  #[inline(always)]
+  pub(crate) const fn from_native(x: c_ulonglong) -> Self { Self(x as u8) }
+}
+
+impl BitSet for ExtFlags {
+  #[inline]
+  fn nonzero(&self) -> bool { self.0 != 0 }
+}
+
+impl ops::BitOr for ExtFlags {
+  type Output = Self;
+
+  fn bitor(self, other: Self) -> Self { Self(self.0.bitor(other.0)) }
+}
+
+impl ops::BitOrAssign for ExtFlags {
+  fn bitor_assign(&mut self, rhs: Self) {
+    use ops::BitOr;
+    *self = self.bitor(rhs);
+  }
+}
+
+impl ops::BitAnd for ExtFlags {
+  type Output = Self;
+
+  fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
+}
+
+impl ops::BitAndAssign for ExtFlags {
+  fn bitand_assign(&mut self, rhs: Self) {
+    use ops::BitAnd;
+    *self = self.bitand(rhs);
+  }
+}
