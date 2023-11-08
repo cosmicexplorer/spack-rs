@@ -3,7 +3,7 @@
 
 //! ???
 
-use crate::{hs, ExpressionIndex};
+use crate::{hs, matchers::ExpressionIndex};
 
 use displaydoc::Display;
 use thiserror::Error;

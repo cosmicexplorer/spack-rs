@@ -3,19 +3,133 @@
 
 //! ???
 
-use super::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult, ScanFlags, VectoredByteSlices};
+use crate::flags::ScanFlags;
 
+use displaydoc::Display;
 use parking_lot::Mutex;
 
 use std::{
   cmp,
   collections::VecDeque,
   future::Future,
-  ops,
+  mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
+  ptr,
   task::{Context, Poll, Waker},
 };
+
+pub type ByteSlice<'a> = &'a [c_char];
+
+pub type VectoredByteSlices<'a> = &'a [ByteSlice<'a>];
+
+/// <expression index {0}>
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ExpressionIndex(pub c_uint);
+
+impl ExpressionIndex {
+  pub const WHOLE_PATTERN: Self = Self(0);
+}
+
+/// <range index {0}>
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+struct RangeIndex(pub c_ulonglong);
+
+impl RangeIndex {
+  #[inline(always)]
+  pub const fn into_rust_index(self) -> usize {
+    static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
+    self.0 as usize
+  }
+
+  #[inline(always)]
+  pub const fn bounded_range(from: Self, to: Self) -> ops::Range<usize> {
+    static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
+    let from = from.into_rust_index();
+    let to = to.into_rust_index();
+    debug_assert!(from <= to);
+    ops::Range {
+      start: from,
+      end: to,
+    }
+  }
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
+#[ignore_extra_doc_attributes]
+pub enum MatchResult {
+  /// Continue matching.
+  Continue = 0,
+  /// Immediately cease matching.
+  ///
+  /// If scanning is performed in streaming mode and this value is returned, any
+  /// subsequent calls to @ref hs_scan_stream() for the same stream will
+  /// immediately return with
+  /// [`SCAN_TERMINATED`](HyperscanError::ScanTerminated).
+  CeaseMatching = 1,
+}
+
+impl MatchResult {
+  /* FIXME: update num_enum so they work with const fn too!!! */
+  #[inline(always)]
+  pub(crate) const fn from_native(x: c_int) -> Self {
+    if x == 0 {
+      Self::Continue
+    } else {
+      Self::CeaseMatching
+    }
+  }
+
+  #[inline(always)]
+  pub(crate) const fn into_native(self) -> c_int {
+    match self {
+      Self::Continue => 0,
+      Self::CeaseMatching => 1,
+    }
+  }
+}
+
+#[derive(Debug)]
+struct MatchEvent {
+  pub id: ExpressionIndex,
+  pub range: ops::Range<usize>,
+  pub flags: ScanFlags,
+  pub context: Option<ptr::NonNull<c_void>>,
+}
+
+impl MatchEvent {
+  #[inline(always)]
+  pub const fn coerce_args(
+    id: c_uint,
+    from: c_ulonglong,
+    to: c_ulonglong,
+    flags: c_uint,
+    context: *mut c_void,
+  ) -> Self {
+    static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
+    Self {
+      id: ExpressionIndex(id),
+      range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
+      flags: ScanFlags::from_native(flags),
+      context: ptr::NonNull::new(context),
+    }
+  }
+
+  #[inline(always)]
+  pub const unsafe fn extract_context<'a, T>(
+    context: Option<ptr::NonNull<c_void>>,
+  ) -> Option<Pin<&'a mut T>> {
+    match context {
+      None => None,
+      Some(c) => Some(Pin::new_unchecked(&mut *mem::transmute::<_, *mut T>(
+        c.as_ptr(),
+      ))),
+    }
+  }
+}
 
 pub mod contiguous_slice {
   use super::*;

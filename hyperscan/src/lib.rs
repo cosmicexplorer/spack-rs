@@ -20,7 +20,7 @@ mod error;
 pub use error::{CompileError, HyperscanCompileError, HyperscanError, HyperscanFlagsError};
 
 mod flags;
-pub use flags::{CpuFeatures, Flags, Mode, TuneFamily};
+pub use flags::{CpuFeatures, Flags, Mode, ScanFlags, TuneFamily};
 
 pub(crate) use bindings as hs;
 
@@ -121,131 +121,6 @@ impl AsMut<hs::hs_scratch> for Scratch {
   fn as_mut(&mut self) -> &mut hs::hs_scratch { &mut self.0 }
 }
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct ScanFlags(c_uint);
-
-impl ScanFlags {
-  #[inline(always)]
-  pub const fn from_native(x: c_uint) -> Self { Self(x) }
-
-  #[inline(always)]
-  pub const fn into_native(self) -> c_uint { self.0 }
-}
-
-/// <expression index {0}>
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct ExpressionIndex(pub c_uint);
-
-impl ExpressionIndex {
-  pub const WHOLE_PATTERN: Self = Self(0);
-}
-
-/// <range index {0}>
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct RangeIndex(pub c_ulonglong);
-
-impl RangeIndex {
-  #[inline(always)]
-  pub const fn into_rust_index(self) -> usize {
-    static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
-    self.0 as usize
-  }
-
-  #[inline(always)]
-  pub const fn bounded_range(from: Self, to: Self) -> ops::Range<usize> {
-    static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
-    let from = from.into_rust_index();
-    let to = to.into_rust_index();
-    debug_assert!(from <= to);
-    ops::Range {
-      start: from,
-      end: to,
-    }
-  }
-}
-
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(u8)]
-#[ignore_extra_doc_attributes]
-pub enum MatchResult {
-  /// Continue matching.
-  Continue = 0,
-  /// Immediately cease matching.
-  ///
-  /// If scanning is performed in streaming mode and this value is returned, any
-  /// subsequent calls to @ref hs_scan_stream() for the same stream will
-  /// immediately return with
-  /// [`SCAN_TERMINATED`](HyperscanError::ScanTerminated).
-  CeaseMatching = 1,
-}
-
-impl MatchResult {
-  /* FIXME: update num_enum so they work with const fn too!!! */
-  #[inline]
-  pub const fn from_native(x: c_int) -> Self {
-    if x == 0 {
-      Self::Continue
-    } else {
-      Self::CeaseMatching
-    }
-  }
-
-  #[inline]
-  pub const fn into_native(self) -> c_int {
-    match self {
-      Self::Continue => 0,
-      Self::CeaseMatching => 1,
-    }
-  }
-}
-
-#[derive(Debug)]
-struct MatchEvent {
-  pub id: ExpressionIndex,
-  pub range: ops::Range<usize>,
-  pub flags: ScanFlags,
-  pub context: Option<ptr::NonNull<c_void>>,
-}
-
-impl MatchEvent {
-  #[inline(always)]
-  pub const fn coerce_args(
-    id: c_uint,
-    from: c_ulonglong,
-    to: c_ulonglong,
-    flags: c_uint,
-    context: *mut c_void,
-  ) -> Self {
-    static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
-    Self {
-      id: ExpressionIndex(id),
-      range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
-      flags: ScanFlags::from_native(flags),
-      context: ptr::NonNull::new(context),
-    }
-  }
-
-  #[inline(always)]
-  pub const unsafe fn extract_context<'a, T>(
-    context: Option<ptr::NonNull<c_void>>,
-  ) -> Option<Pin<&'a mut T>> {
-    match context {
-      None => None,
-      Some(c) => Some(Pin::new_unchecked(&mut *mem::transmute::<_, *mut T>(
-        c.as_ptr(),
-      ))),
-    }
-  }
-}
-
-
-pub type ByteSlice<'a> = &'a [c_char];
-
-pub type VectoredByteSlices<'a> = &'a [ByteSlice<'a>];
-
 mod matchers;
 use matchers::{
   contiguous_slice::{match_slice_ref, SliceMatcher},
@@ -254,6 +129,7 @@ use matchers::{
 pub use matchers::{
   contiguous_slice::{Match, Scanner},
   vectored_slice::{VectorScanner, VectoredMatch},
+  ByteSlice, VectoredByteSlices,
 };
 
 #[derive(Debug)]
