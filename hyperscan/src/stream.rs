@@ -13,7 +13,6 @@ use crate::{
 };
 
 
-
 use tokio::{sync::mpsc, task};
 
 use std::{
@@ -25,11 +24,51 @@ use std::{
   sync::Arc,
 };
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct InputIndex(pub u32);
 
+///```
+/// # #[allow(warnings)]
+/// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, flags::*, matchers::*, state::*, stream::*};
+/// use futures_util::StreamExt;
+///
+/// let expr = Expression::new("a+")?;
+/// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+///
+/// let flags = ScanFlags::default();
+/// let Streamer { mut sink, rx } = Streamer::try_open((flags, &db, 32)).await?;
+/// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
+///
+/// let msg1 = "aardvark";
+/// sink.scan(msg1.as_bytes().into(), flags).await?;
+///
+/// let msg2 = "asdf was a friend";
+/// sink.scan(msg2.as_bytes().into(), flags).await?;
+///
+/// let msg3 = "after all";
+/// sink.scan(msg3.as_bytes().into(), flags).await?;
+/// sink.try_drop().await?;
+/// std::mem::drop(sink);
+///
+/// let msgs: String = [msg1, msg2, msg3].concat();
+/// let results: Vec<(InputIndex, &str)> =
+///   rx.map(|StreamMatch { input, range, .. }| (input, &msgs[range])).collect().await;
+/// assert_eq!(results, vec![
+///   (InputIndex(0), "a"), (InputIndex(0), "aa"), (InputIndex(0), "aardva"),
+///   (InputIndex(1), "aardvarka"), (InputIndex(1), "aardvarkasdf wa"),
+///   (InputIndex(1), "aardvarkasdf was a"), (InputIndex(2), "aardvarkasdf was a frienda"),
+///   (InputIndex(2), "aardvarkasdf was a friendafter a"),
+/// ]);
+/// # Ok(())
+/// # })}
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StreamMatch {
   pub id: ExpressionIndex,
   pub range: ops::Range<usize>,
+  pub input: InputIndex,
   pub flags: ScanFlags,
 }
 
@@ -45,6 +84,7 @@ pub trait StreamOps: HandleOps {
 pub(crate) struct StreamMatcher<S> {
   pub matches_tx: mpsc::Sender<StreamMatch>,
   pub handler: S,
+  pub cur_idx: InputIndex,
 }
 
 impl<S: StreamScanner> StreamMatcher<S> {
@@ -53,6 +93,13 @@ impl<S: StreamScanner> StreamMatcher<S> {
 
   #[inline(always)]
   pub fn handle_match(&mut self, m: &StreamMatch) -> MatchResult { (self.handler).stream_scan(m) }
+
+  #[inline(always)]
+  pub fn get_next_input_index(&mut self) -> InputIndex {
+    let ret = self.cur_idx;
+    self.cur_idx.0 += 1;
+    ret
+  }
 }
 
 impl<S: Ops> Ops for StreamMatcher<S> {
@@ -66,17 +113,23 @@ impl<S: HandleOps<OClone=S>> HandleOps for StreamMatcher<S> {
     Ok(Self {
       matches_tx: self.matches_tx.clone(),
       handler: self.handler.try_clone().await?,
+      cur_idx: self.cur_idx,
     })
   }
 }
 
 impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
-  async fn try_reset(&mut self) -> Result<(), Self::Err> { self.handler.try_reset().await }
+  async fn try_reset(&mut self) -> Result<(), Self::Err> {
+    self.handler.try_reset().await?;
+    self.cur_idx.0 = 0;
+    Ok(())
+  }
 
   async fn try_reset_and_copy(&self) -> Result<Self::OClone, Self::Err> {
     Ok(Self {
       matches_tx: self.matches_tx.clone(),
       handler: self.handler.try_reset_and_copy().await?,
+      cur_idx: InputIndex(0),
     })
   }
 }
@@ -328,6 +381,7 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
     let matcher = StreamMatcher {
       matches_tx: tx,
       handler: AcceptMatches::try_open(()).await?,
+      cur_idx: InputIndex(0),
     };
     Ok(Self {
       live,
@@ -500,8 +554,8 @@ impl<'db> StreamSink<'db, AcceptMatches> {
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
-      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
-      let matcher = matcher as usize;
+      let p_matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let p_matcher = p_matcher as usize;
       HyperscanError::from_native(unsafe {
         hs::hs_scan_stream(
           live.as_mut(),
@@ -510,9 +564,11 @@ impl<'db> StreamSink<'db, AcceptMatches> {
           flags.into_native(),
           Arc::make_mut(scratch).as_mut(),
           Some(match_slice_stream),
-          matcher as *mut c_void,
+          p_matcher as *mut c_void,
         )
-      })
+      })?;
+      let _ = matcher.get_next_input_index();
+      Ok(())
     })
     .await
     .unwrap()
@@ -535,6 +591,7 @@ impl<'db> StreamSink<'db, AcceptMatches> {
 /// let msg = "aardvark";
 /// sink.scan(msg.as_bytes().into(), flags).await?;
 /// sink.try_drop().await?;
+/// // NB: This line is necessary to avoid a deadlock!!! (why??)
 /// std::mem::drop(sink);
 ///
 /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
@@ -778,7 +835,12 @@ unsafe extern "C" fn match_slice_stream(
   } = MatchEvent::coerce_args(id, from, to, flags, context);
   let mut matcher: Pin<&mut StreamMatcher<AcceptMatches>> =
     MatchEvent::extract_context::<'_, StreamMatcher<AcceptMatches>>(context).unwrap();
-  let m = StreamMatch { id, range, flags };
+  let m = StreamMatch {
+    input: matcher.cur_idx,
+    id,
+    range,
+    flags,
+  };
 
   let result = matcher.handle_match(&m);
   if result == MatchResult::Continue {
