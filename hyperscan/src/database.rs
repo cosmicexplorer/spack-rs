@@ -45,7 +45,7 @@ impl Database {
   /// let mode = Mode::BLOCK;
   /// let db = Database::compile(&expr, flags, mode)?;
   ///
-  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
   /// let scratch = Pin::new(&mut scratch);
   ///
   /// let data = ByteSlice(b"hello");
@@ -99,7 +99,7 @@ impl Database {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
   /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();

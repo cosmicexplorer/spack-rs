@@ -60,17 +60,42 @@ impl AsRef<hs::hs_platform_info> for Platform {
   fn as_ref(&self) -> &hs::hs_platform_info { &self.0 }
 }
 
+pub trait HandleOps {
+  type Container;
+  type Err;
+  fn try_clone(&self) -> Result<Self::Container, Self::Err>;
+}
+
+pub trait ResourceOps: HandleOps {
+  type Params;
+  fn try_open(p: Self::Params) -> Result<Self::Container, Self::Err>;
+  fn try_drop(&mut self) -> Result<(), Self::Err>;
+}
+
 #[derive(Debug)]
 pub struct Scratch<'db> {
   inner: *mut hs::hs_scratch,
-  /* This ensures it's only ever used by the same database! */
   db: Pin<&'db Database>,
 }
 
-impl<'db> Scratch<'db> {
-  pub fn pinned_db(self: Pin<&Self>) -> Pin<&'db Database> { self.db }
+impl<'db> HandleOps for Scratch<'db> {
+  type Container = Self;
+  type Err = HyperscanError;
 
-  pub fn alloc(db: Pin<&'db Database>) -> Result<Self, HyperscanError> {
+  fn try_clone(&self) -> Result<Self, HyperscanError> {
+    let mut scratch_ptr = ptr::null_mut();
+    HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })?;
+    Ok(Self {
+      inner: scratch_ptr,
+      db: self.db,
+    })
+  }
+}
+
+impl<'db> ResourceOps for Scratch<'db> {
+  type Params = Pin<&'db Database>;
+
+  fn try_open(db: Pin<&'db Database>) -> Result<Self, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
       hs::hs_alloc_scratch(db.get_ref().as_ref(), &mut scratch_ptr)
@@ -81,23 +106,18 @@ impl<'db> Scratch<'db> {
     })
   }
 
+  fn try_drop(&mut self) -> Result<(), HyperscanError> {
+    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
+  }
+}
+
+impl<'db> Scratch<'db> {
+  pub fn pinned_db(self: Pin<&Self>) -> Pin<&'db Database> { self.db }
+
   pub fn get_size(&self) -> Result<usize, HyperscanError> {
     let mut n = mem::MaybeUninit::<usize>::uninit();
     HyperscanError::from_native(unsafe { hs::hs_scratch_size(self.as_ref(), n.as_mut_ptr()) })?;
     Ok(unsafe { n.assume_init() })
-  }
-
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
-    let mut scratch_ptr = ptr::null_mut();
-    HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })?;
-    Ok(Self {
-      inner: scratch_ptr,
-      db: self.db,
-    })
-  }
-
-  fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.get_mut().as_mut()) })
   }
 
   fn db_ptr(&self) -> *const hs::hs_database {
@@ -146,7 +166,7 @@ impl<'db> Scratch<'db> {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
   /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
@@ -230,7 +250,7 @@ impl<'db> Scratch<'db> {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::VECTORED)?;
   ///
-  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
   /// let scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
