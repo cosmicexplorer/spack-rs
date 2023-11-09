@@ -24,12 +24,7 @@ use futures_core::stream::Stream;
 use tokio::task;
 
 
-use std::{
-  mem, ops,
-  os::raw::{c_char, c_uint},
-  pin::Pin,
-  ptr,
-};
+use std::{mem, ops, os::raw::c_uint, pin::Pin, ptr};
 
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
@@ -193,7 +188,7 @@ impl Database {
 
     let s: &Self = &self.as_ref();
     let s: *const hs::hs_database = s.as_ref();
-    let s: usize = unsafe { mem::transmute(s) };
+    let s: usize = s as usize;
     let scratch: *mut Scratch = scratch.get_mut();
     let scratch: usize = scratch as usize;
 
@@ -237,20 +232,13 @@ impl Database {
     static_assertions::assert_eq_size!(&u8, *const u8);
     static_assertions::const_assert_ne!(mem::size_of::<&[u8]>(), mem::size_of::<*const u8>());
 
-    let data_len = data.len();
-    let (data_pointers, lengths) = data.pointers_and_lengths();
-
     let (matcher, mut matches_rx) = VectoredSliceMatcher::new::<32, _>(data, &mut f);
     let ctx: *mut VectoredSliceMatcher = Box::into_raw(Box::new(matcher));
     let ctx: usize = ctx as usize;
 
     let s: &Self = &self.as_ref();
     let s: *const hs::hs_database = s.as_ref();
-    let s: usize = unsafe { mem::transmute(s) };
-    let data: *const *const c_char = data_pointers.as_ptr();
-    let data: usize = data as usize;
-    let lengths: *const c_uint = lengths.as_ptr();
-    let lengths: usize = lengths as usize;
+    let s: usize = s as usize;
     let scratch: *mut Scratch = scratch.get_mut();
     let scratch: usize = scratch as usize;
 
@@ -258,13 +246,15 @@ impl Database {
       let scratch: Pin<&mut Scratch> = Pin::new(unsafe { &mut *(scratch as *mut Scratch) });
       let mut matcher: Pin<Box<VectoredSliceMatcher>> =
         Box::into_pin(unsafe { Box::from_raw(ctx as *mut VectoredSliceMatcher) });
+      let parent_slices = matcher.parent_slices();
+      let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
       eprintln!("egad!");
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
           s as *const hs::hs_database,
-          data as *const *const c_char,
-          lengths as *const c_uint,
-          data_len,
+          data_pointers.as_ptr(),
+          lengths.as_ptr(),
+          parent_slices.len(),
           flags.into_native(),
           scratch.get_mut().as_mut(),
           Some(match_slice_vectored_ref),

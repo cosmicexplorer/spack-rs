@@ -14,7 +14,7 @@
 #![feature(trait_alias)]
 #![feature(const_maybe_uninit_zeroed)]
 
-#[allow(unused, non_camel_case_types)]
+#[allow(unused, non_camel_case_types, clippy::all)]
 mod bindings;
 
 pub mod error;

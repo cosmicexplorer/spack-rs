@@ -178,8 +178,12 @@ impl<'db> Scratch<'db> {
   ///   .and_then(|m| async move { Ok(m.source.into_iter().map(|s| s.decode_utf8().unwrap()).collect()) })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &[vec!["a"], vec!["aa"], vec!["aardva"]]);
-  /// assert_eq!(&matches, &[vec!["imb"], vec!["imbib"]]);
+  /// assert_eq!(&matches, &[
+  ///   vec!["a"], vec!["aa"], vec!["aardva"],
+  ///   vec!["aardvark", "imb"], vec!["aardvark", "imbib"],
+  ///   vec!["aardvark", "imbibe", "lea"],
+  ///   vec!["aardvark", "imbibe", "leas", "df"],
+  /// ]);
   /// # Ok(())
   /// # })}
   /// ```

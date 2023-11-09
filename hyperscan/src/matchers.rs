@@ -10,9 +10,7 @@ use tokio::sync::mpsc;
 
 
 use std::{
-  cmp,
-  future::Future,
-  mem, ops,
+  cmp, mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr, slice, str,
@@ -196,6 +194,7 @@ pub enum MatchResult {
 impl MatchResult {
   /* FIXME: update num_enum so they work with const fn too!!! */
   #[inline(always)]
+  #[allow(dead_code)]
   pub(crate) const fn from_native(x: c_int) -> Self {
     if x == 0 {
       Self::Continue
@@ -373,6 +372,8 @@ pub mod vectored_slice {
       };
       (s, matches_rx)
     }
+
+    pub(crate) fn parent_slices(&self) -> VectoredByteSlices<'data> { self.parent_slices }
 
     pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
       self.parent_slices.index_range(range).unwrap()
