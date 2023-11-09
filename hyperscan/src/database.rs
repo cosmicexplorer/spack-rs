@@ -64,6 +64,7 @@ impl Database {
   /// let db = Database::compile(&expr, flags, mode)?;
   ///
   /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let scratch = Pin::new(&mut scratch);
   ///
   /// let data = ByteSlice(b"hello");
   /// let scan_flags = ScanFlags::default();
@@ -117,10 +118,12 @@ impl Database {
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
   /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
   ///
   /// let matches: Vec<&str> = scratch
+  ///   .as_mut()
   ///   .scan(b"aardvark".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
   ///   .try_collect()
@@ -181,12 +184,9 @@ impl Database {
     self: Pin<&Self>,
     data: ByteSlice<'data>,
     flags: ScanFlags,
-    scratch: &mut Scratch,
+    scratch: Pin<&mut Scratch>,
     mut f: F,
   ) -> impl Stream<Item=Result<Match<'data>, HyperscanError>>+'data {
-    let data_len = data.len();
-    let data_pointer: *const c_char = data.as_ptr();
-
     let (matcher, mut matches_rx) = SliceMatcher::new::<32, _>(data, &mut f);
     let ctx: *mut SliceMatcher = Box::into_raw(Box::new(matcher));
     let ctx: usize = ctx as usize;
@@ -194,20 +194,21 @@ impl Database {
     let s: &Self = &self.as_ref();
     let s: *const hs::hs_database = s.as_ref();
     let s: usize = unsafe { mem::transmute(s) };
-    let data: usize = data_pointer as usize;
-    let scratch: *mut hs::hs_scratch = scratch.as_mut();
+    let scratch: *mut Scratch = scratch.get_mut();
     let scratch: usize = scratch as usize;
 
     let scan_task = task::spawn_blocking(move || {
+      let scratch: Pin<&mut Scratch> = Pin::new(unsafe { &mut *(scratch as *mut Scratch) });
       let mut matcher: Pin<Box<SliceMatcher>> =
         Box::into_pin(unsafe { Box::from_raw(ctx as *mut SliceMatcher) });
+      let parent_slice = matcher.parent_slice();
       HyperscanError::from_native(unsafe {
         hs::hs_scan(
           s as *const hs::hs_database,
-          data as *const c_char,
-          data_len,
+          parent_slice.as_ptr(),
+          parent_slice.len(),
           flags.into_native(),
-          scratch as *mut hs::hs_scratch,
+          scratch.get_mut().as_mut(),
           Some(match_slice_ref),
           mem::transmute(matcher.as_mut().get_mut()),
         )
@@ -226,7 +227,7 @@ impl Database {
     self: Pin<&Self>,
     data: VectoredByteSlices<'data>,
     flags: ScanFlags,
-    scratch: &mut Scratch,
+    scratch: Pin<&mut Scratch>,
     mut f: F,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanError>>+'data {
     /* NB: while static arrays take up no extra runtime space, a ref to a
@@ -250,12 +251,14 @@ impl Database {
     let data: usize = data as usize;
     let lengths: *const c_uint = lengths.as_ptr();
     let lengths: usize = lengths as usize;
-    let scratch: *mut hs::hs_scratch = scratch.as_mut();
+    let scratch: *mut Scratch = scratch.get_mut();
     let scratch: usize = scratch as usize;
 
     let scan_task = task::spawn_blocking(move || {
+      let scratch: Pin<&mut Scratch> = Pin::new(unsafe { &mut *(scratch as *mut Scratch) });
       let mut matcher: Pin<Box<VectoredSliceMatcher>> =
         Box::into_pin(unsafe { Box::from_raw(ctx as *mut VectoredSliceMatcher) });
+      eprintln!("egad!");
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
           s as *const hs::hs_database,
@@ -263,7 +266,7 @@ impl Database {
           lengths as *const c_uint,
           data_len,
           flags.into_native(),
-          scratch as *mut hs::hs_scratch,
+          scratch.get_mut().as_mut(),
           Some(match_slice_vectored_ref),
           mem::transmute(matcher.as_mut().get_mut()),
         )

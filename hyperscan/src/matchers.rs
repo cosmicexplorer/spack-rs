@@ -133,6 +133,17 @@ impl<'a> VectoredByteSlices<'a> {
   }
 }
 
+impl<'a> From<&'a [ByteSlice<'a>]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [ByteSlice<'a>]) -> Self { Self(x) }
+}
+
+impl<'a> From<&'a [&'a [u8]]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [&'a [u8]]) -> Self {
+    let x: &'a [ByteSlice<'a>] = unsafe { mem::transmute(x) };
+    Self(x)
+  }
+}
+
 /// <expression index {0}>
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -275,6 +286,9 @@ pub mod contiguous_slice {
       (s, matches_rx)
     }
 
+    #[inline]
+    pub(crate) fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
+
     #[inline(always)]
     pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
       self.parent_slice.index_range(range).unwrap()
@@ -386,6 +400,7 @@ pub mod vectored_slice {
       flags,
       context,
     } = MatchEvent::coerce_args(id, from, to, flags, context);
+    eprintln!("oh dear!");
     let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
       MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
     let matched_substring = slice_matcher.index_range(range);
@@ -394,6 +409,12 @@ pub mod vectored_slice {
       source: matched_substring,
       flags,
     };
+    dbg!(&m);
+    dbg!(m
+      .source
+      .iter()
+      .map(|s| s.decode_utf8().unwrap())
+      .collect::<Vec<_>>());
 
     let result = slice_matcher.handle_match(&m);
     if result == MatchResult::Continue {
