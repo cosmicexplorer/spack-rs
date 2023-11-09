@@ -219,7 +219,7 @@ impl MatchResult {
 }
 
 #[derive(Debug)]
-struct MatchEvent {
+pub(crate) struct MatchEvent {
   pub id: ExpressionIndex,
   pub range: ops::Range<usize>,
   pub flags: ScanFlags,
@@ -335,14 +335,6 @@ pub mod contiguous_slice {
     }
 
     result.into_native()
-  }
-
-  #[cfg(test)]
-  mod test {
-    use super::*;
-
-    #[test]
-    fn test_index() {}
   }
 }
 

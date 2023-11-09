@@ -68,6 +68,8 @@ pub struct Scratch<'db> {
 }
 
 impl<'db> Scratch<'db> {
+  pub fn pinned_db(self: Pin<&Self>) -> Pin<&'db Database> { self.db }
+
   pub fn alloc(db: Pin<&'db Database>) -> Result<Self, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
@@ -94,8 +96,8 @@ impl<'db> Scratch<'db> {
     })
   }
 
-  pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
+  fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
+    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.get_mut().as_mut()) })
   }
 
   fn db_ptr(&self) -> *const hs::hs_database {
@@ -300,7 +302,7 @@ impl<'db> Scratch<'db> {
 }
 
 impl<'db> ops::Drop for Scratch<'db> {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
+  fn drop(&mut self) { Pin::new(self).try_drop().unwrap(); }
 }
 
 impl<'db> Clone for Scratch<'db> {

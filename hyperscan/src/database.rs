@@ -11,7 +11,7 @@ use crate::{
   state::Platform,
 };
 
-use std::{ops, os::raw::c_uint, ptr};
+use std::{ops, os::raw::c_uint, pin::Pin, ptr};
 
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
@@ -162,11 +162,11 @@ impl Database {
     Ok(Self(db))
   }
 
-  pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_database(self.as_mut()) })
+  fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
+    HyperscanError::from_native(unsafe { hs::hs_free_database(self.get_mut().as_mut()) })
   }
 }
 
 impl ops::Drop for Database {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
+  fn drop(&mut self) { Pin::new(self).try_drop().unwrap(); }
 }

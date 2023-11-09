@@ -23,6 +23,8 @@ pub mod flags;
 
 pub mod state;
 
+pub mod stream;
+
 pub mod expression;
 
 pub mod database;
