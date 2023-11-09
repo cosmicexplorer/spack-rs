@@ -20,7 +20,7 @@ use crate::{
 use async_stream::try_stream;
 use futures_core::stream::Stream;
 use once_cell::sync::Lazy;
-use tokio::task;
+use tokio::{task};
 
 use std::{mem, ops, pin::Pin, ptr};
 
@@ -60,16 +60,49 @@ impl AsRef<hs::hs_platform_info> for Platform {
   fn as_ref(&self) -> &hs::hs_platform_info { &self.0 }
 }
 
-pub trait HandleOps {
-  type Container;
+pub trait Ops {
   type Err;
-  fn try_clone(&self) -> Result<Self::Container, Self::Err>;
 }
 
-pub trait ResourceOps: HandleOps {
+pub trait HandleOps: Ops {
+  type OClone;
+  async fn try_clone(&self) -> Result<Self::OClone, Self::Err>;
+  /* fn sync_clone(&self) -> Result<Self::OClone, Self::Err> */
+  /* where */
+  /* Self: Send, */
+  /* Self::Err: fmt::Debug, */
+  /* Self::OClone: Send+fmt::Debug, */
+  /* { */
+  /* let (tx, rx) = oneshot::channel(); */
+  /* let s: *const Self = self; */
+  /* let s = s as usize; */
+  /* task::spawn(async move { */
+  /* let s: &mut Self = unsafe { &mut *(s as *mut Self) }; */
+  /* tx.send(s.try_clone().await).unwrap() */
+  /* }); */
+  /* rx.blocking_recv().unwrap() */
+  /* } */
+}
+
+pub trait ResourceOps: Ops {
+  type OOpen;
   type Params;
-  fn try_open(p: Self::Params) -> Result<Self::Container, Self::Err>;
-  fn try_drop(&mut self) -> Result<(), Self::Err>;
+  async fn try_open(p: Self::Params) -> Result<Self::OOpen, Self::Err>;
+  async fn try_drop(&mut self) -> Result<(), Self::Err>;
+  /* fn sync_drop(&mut self) -> Result<(), Self::Err> */
+  /* where */
+  /* Self: Send, */
+  /* Self::Err: fmt::Debug, */
+  /* { */
+  /* let (tx, rx) = oneshot::channel(); */
+  /* let s: *mut Self = self; */
+  /* let s = s as usize; */
+  /* task::spawn(async move { */
+  /* let s: &mut Self = unsafe { &mut *s }; */
+  /* tx.send(s.try_drop().await).unwrap() */
+  /* }); */
+  /* rx.blocking_recv().unwrap() */
+  /* } */
 }
 
 #[derive(Debug)]
@@ -78,11 +111,14 @@ pub struct Scratch<'db> {
   db: Pin<&'db Database>,
 }
 
-impl<'db> HandleOps for Scratch<'db> {
-  type Container = Self;
+impl<'db> Ops for Scratch<'db> {
   type Err = HyperscanError;
+}
 
-  fn try_clone(&self) -> Result<Self, HyperscanError> {
+impl<'db> HandleOps for Scratch<'db> {
+  type OClone = Self;
+
+  async fn try_clone(&self) -> Result<Scratch<'db>, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })?;
     Ok(Self {
@@ -93,9 +129,10 @@ impl<'db> HandleOps for Scratch<'db> {
 }
 
 impl<'db> ResourceOps for Scratch<'db> {
+  type OOpen = Self;
   type Params = Pin<&'db Database>;
 
-  fn try_open(db: Pin<&'db Database>) -> Result<Self, HyperscanError> {
+  async fn try_open(db: Pin<&'db Database>) -> Result<Scratch<'db>, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
       hs::hs_alloc_scratch(db.get_ref().as_ref(), &mut scratch_ptr)
@@ -106,7 +143,7 @@ impl<'db> ResourceOps for Scratch<'db> {
     })
   }
 
-  fn try_drop(&mut self) -> Result<(), HyperscanError> {
+  async fn try_drop(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
   }
 }
@@ -166,7 +203,7 @@ impl<'db> Scratch<'db> {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
@@ -250,7 +287,7 @@ impl<'db> Scratch<'db> {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::VECTORED)?;
   ///
-  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
@@ -322,11 +359,21 @@ impl<'db> Scratch<'db> {
 }
 
 impl<'db> ops::Drop for Scratch<'db> {
-  fn drop(&mut self) { Pin::new(self).try_drop().unwrap(); }
+  fn drop(&mut self) {
+    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) }).unwrap();
+  }
 }
 
 impl<'db> Clone for Scratch<'db> {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
+  fn clone(&self) -> Self {
+    let mut scratch_ptr = ptr::null_mut();
+    HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })
+      .unwrap();
+    Self {
+      inner: scratch_ptr,
+      db: self.db,
+    }
+  }
 }
 
 impl<'db> AsRef<hs::hs_scratch> for Scratch<'db> {
@@ -336,3 +383,5 @@ impl<'db> AsRef<hs::hs_scratch> for Scratch<'db> {
 impl<'db> AsMut<hs::hs_scratch> for Scratch<'db> {
   fn as_mut(&mut self) -> &mut hs::hs_scratch { unsafe { &mut *self.inner } }
 }
+
+unsafe impl<'db> Send for Scratch<'db> {}

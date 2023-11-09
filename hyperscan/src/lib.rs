@@ -13,6 +13,9 @@
 #![feature(const_pin)]
 #![feature(trait_alias)]
 #![feature(const_maybe_uninit_zeroed)]
+#![feature(async_fn_in_trait)]
+#![feature(impl_trait_projections)]
+#![allow(incomplete_features)]
 
 #[allow(unused, non_camel_case_types, clippy::all)]
 mod bindings;

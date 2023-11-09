@@ -9,11 +9,11 @@ use crate::{
   flags::ScanFlags,
   hs,
   matchers::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult},
-  state::{HandleOps, ResourceOps, Scratch},
+  state::{HandleOps, Ops, ResourceOps, Scratch},
 };
 
-use displaydoc::Display;
-use thiserror::Error;
+
+
 use tokio::{sync::mpsc, task};
 
 use std::{
@@ -26,7 +26,7 @@ use std::{
 };
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StreamMatch {
   pub id: ExpressionIndex,
   pub range: ops::Range<usize>,
@@ -35,6 +35,11 @@ pub struct StreamMatch {
 
 pub trait StreamScanner {
   fn stream_scan(&mut self, m: &StreamMatch) -> MatchResult;
+}
+
+pub trait StreamOps: HandleOps {
+  async fn try_reset(&mut self) -> Result<(), Self::Err>;
+  async fn try_reset_and_copy(&self) -> Result<Self::OClone, Self::Err>;
 }
 
 pub(crate) struct StreamMatcher<S> {
@@ -50,12 +55,29 @@ impl<S: StreamScanner> StreamMatcher<S> {
   pub fn handle_match(&mut self, m: &StreamMatch) -> MatchResult { (self.handler).stream_scan(m) }
 }
 
-impl<S: Clone> Clone for StreamMatcher<S> {
-  fn clone(&self) -> Self {
-    Self {
+impl<S: Ops> Ops for StreamMatcher<S> {
+  type Err = S::Err;
+}
+
+impl<S: HandleOps<OClone=S>> HandleOps for StreamMatcher<S> {
+  type OClone = Self;
+
+  async fn try_clone(&self) -> Result<Self, Self::Err> {
+    Ok(Self {
       matches_tx: self.matches_tx.clone(),
-      handler: self.handler.clone(),
-    }
+      handler: self.handler.try_clone().await?,
+    })
+  }
+}
+
+impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
+  async fn try_reset(&mut self) -> Result<(), Self::Err> { self.handler.try_reset().await }
+
+  async fn try_reset_and_copy(&self) -> Result<Self::OClone, Self::Err> {
+    Ok(Self {
+      matches_tx: self.matches_tx.clone(),
+      handler: self.handler.try_reset_and_copy().await?,
+    })
   }
 }
 
@@ -204,16 +226,14 @@ impl<'db> AsMut<hs::hs_stream> for LiveStream<'db> {
   fn as_mut(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.inner } }
 }
 
-pub trait StreamOps: ResourceOps {
-  fn try_reset(&mut self) -> Result<(), Self::Err>;
-  fn try_reset_and_copy(&self) -> Result<Self::Container, Self::Err>;
+impl<'db> Ops for LiveStream<'db> {
+  type Err = HyperscanError;
 }
 
 impl<'db> HandleOps for LiveStream<'db> {
-  type Container = Self;
-  type Err = HyperscanError;
+  type OClone = Self;
 
-  fn try_clone(&self) -> Result<Self, HyperscanError> {
+  async fn try_clone(&self) -> Result<Self, HyperscanError> {
     let mut stream_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe { hs::hs_copy_stream(&mut stream_ptr, self.as_ref()) })?;
     Ok(Self {
@@ -224,9 +244,10 @@ impl<'db> HandleOps for LiveStream<'db> {
 }
 
 impl<'db> ResourceOps for LiveStream<'db> {
+  type OOpen = Self;
   type Params = (ScanFlags, &'db Database);
 
-  fn try_open(p: (ScanFlags, &'db Database)) -> Result<Self, HyperscanError> {
+  async fn try_open(p: (ScanFlags, &'db Database)) -> Result<Self, HyperscanError> {
     let (flags, db) = p;
     let mut stream_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
@@ -238,7 +259,7 @@ impl<'db> ResourceOps for LiveStream<'db> {
     })
   }
 
-  fn try_drop(&mut self) -> Result<(), HyperscanError> {
+  async fn try_drop(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
       hs::hs_close_stream(self.as_mut(), ptr::null_mut(), None, ptr::null_mut())
     })
@@ -246,7 +267,7 @@ impl<'db> ResourceOps for LiveStream<'db> {
 }
 
 impl<'db> StreamOps for LiveStream<'db> {
-  fn try_reset(&mut self) -> Result<(), HyperscanError> {
+  async fn try_reset(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
       hs::hs_reset_stream(
         self.as_mut(),
@@ -258,7 +279,7 @@ impl<'db> StreamOps for LiveStream<'db> {
     })
   }
 
-  fn try_reset_and_copy(&self) -> Result<Self, HyperscanError> {
+  async fn try_reset_and_copy(&self) -> Result<Self, HyperscanError> {
     let mut to = mem::MaybeUninit::<hs::hs_stream>::uninit();
     HyperscanError::from_native(unsafe {
       hs::hs_reset_and_copy_stream(
@@ -276,13 +297,13 @@ impl<'db> StreamOps for LiveStream<'db> {
   }
 }
 
-impl<'db> ops::Drop for LiveStream<'db> {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
-}
+/* impl<'db> ops::Drop for LiveStream<'db> { */
+/* fn drop(&mut self) { self.try_drop().unwrap(); } */
+/* } */
 
-impl<'db> Clone for LiveStream<'db> {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-}
+/* impl<'db> Clone for LiveStream<'db> { */
+/* fn clone(&self) -> Self { self.try_clone().unwrap() } */
+/* } */
 
 pub struct StreamSink<'db, S> {
   live: LiveStream<'db>,
@@ -290,24 +311,176 @@ pub struct StreamSink<'db, S> {
   matcher: StreamMatcher<S>,
 }
 
-impl<'db, S: Clone> HandleOps for StreamSink<'db, S> {
-  type Container = Self;
-  type Err = HyperscanError;
+impl<'db, S: Ops> Ops for StreamSink<'db, S> {
+  type Err = S::Err;
+}
 
-  fn try_clone(&self) -> Result<Self, HyperscanError> {
+impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
+  type OOpen = Self;
+  type Params = (ScanFlags, &'db Database, mpsc::Sender<StreamMatch>);
+
+  async fn try_open(
+    p: (ScanFlags, &'db Database, mpsc::Sender<StreamMatch>),
+  ) -> Result<Self, Self::Err> {
+    let (flags, db, tx) = p;
+    let live = LiveStream::try_open((flags, db)).await?;
+    let scratch = Arc::new(Scratch::try_open(Pin::new(db)).await?);
+    let matcher = StreamMatcher {
+      matches_tx: tx,
+      handler: AcceptMatches::try_open(()).await?,
+    };
     Ok(Self {
-      live: self.live.try_clone()?,
+      live,
+      scratch,
+      matcher,
+    })
+  }
+
+  async fn try_drop(&mut self) -> Result<(), Self::Err> {
+    let s: *mut Self = self;
+    let s = s as usize;
+
+    task::spawn_blocking(move || {
+      let Self {
+        live,
+        scratch,
+        matcher,
+      } = unsafe { &mut *(s as *mut Self) };
+      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher = matcher as usize;
+
+      HyperscanError::from_native(unsafe {
+        hs::hs_close_stream(
+          live.as_mut(),
+          Arc::make_mut(scratch).as_mut(),
+          Some(match_slice_stream),
+          matcher as *mut c_void,
+        )
+      })
+    })
+    .await
+    .unwrap()?;
+
+    Ok(())
+  }
+}
+
+impl<'db, S: HandleOps<OClone=S, Err=HyperscanError>> HandleOps for StreamSink<'db, S> {
+  type OClone = Self;
+
+  async fn try_clone(&self) -> Result<Self, S::Err> {
+    Ok(Self {
+      live: self.live.try_clone().await?,
       scratch: self.scratch.clone(),
-      matcher: self.matcher.clone(),
+      matcher: self.matcher.try_clone().await?,
+    })
+  }
+}
+
+impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
+  async fn try_reset(&mut self) -> Result<(), Self::Err> {
+    let s: *mut Self = self;
+    let s = s as usize;
+
+    task::spawn_blocking(move || {
+      let Self {
+        live,
+        scratch,
+        matcher,
+      } = unsafe { &mut *(s as *mut Self) };
+      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher = matcher as usize;
+
+      HyperscanError::from_native(unsafe {
+        hs::hs_reset_stream(
+          live.as_mut(),
+          /* FIXME: pass in ScanFlags!!!! */
+          ScanFlags::default().into_native(),
+          Arc::make_mut(scratch).as_mut(),
+          Some(match_slice_stream),
+          matcher as *mut c_void,
+        )
+      })
+    })
+    .await
+    .unwrap()?;
+
+    self.matcher.try_reset().await?;
+    Ok(())
+  }
+
+  async fn try_reset_and_copy(&self) -> Result<Self, Self::Err> {
+    let s: *const Self = self;
+    let s = s as usize;
+
+    let to = task::spawn_blocking(move || {
+      let Self {
+        live,
+        scratch,
+        matcher,
+      } = unsafe { &mut *(s as *mut Self) };
+      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher = matcher as usize;
+
+      let mut to = mem::MaybeUninit::<hs::hs_stream>::uninit();
+      HyperscanError::from_native(unsafe {
+        hs::hs_reset_and_copy_stream(
+          to.as_mut_ptr(),
+          live.as_ref(),
+          Arc::make_mut(scratch).as_mut(),
+          Some(match_slice_stream),
+          matcher as *mut c_void,
+        )
+      })?;
+      Ok::<_, Self::Err>(to.as_mut_ptr() as usize)
+    })
+    .await
+    .unwrap()?;
+    let live = LiveStream {
+      inner: to as *mut hs::hs_stream,
+      _ph: PhantomData,
+    };
+
+    let matcher = self.matcher.try_reset_and_copy().await?;
+
+    Ok(Self {
+      live,
+      scratch: self.scratch.clone(),
+      matcher,
     })
   }
 }
 
 #[derive(Clone)]
-struct AcceptMatches;
+pub struct AcceptMatches;
 
 impl StreamScanner for AcceptMatches {
   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+}
+
+impl Ops for AcceptMatches {
+  type Err = HyperscanError;
+}
+
+impl HandleOps for AcceptMatches {
+  type OClone = Self;
+
+  async fn try_clone(&self) -> Result<Self, Self::Err> { Ok(self.clone()) }
+}
+
+impl ResourceOps for AcceptMatches {
+  type OOpen = Self;
+  type Params = ();
+
+  async fn try_open(_p: ()) -> Result<Self, Self::Err> { Ok(Self) }
+
+  async fn try_drop(&mut self) -> Result<(), Self::Err> { Ok(()) }
+}
+
+impl StreamOps for AcceptMatches {
+  async fn try_reset(&mut self) -> Result<(), Self::Err> { Ok(()) }
+
+  async fn try_reset_and_copy(&self) -> Result<Self, Self::Err> { Ok(self.clone()) }
 }
 
 impl<'db> StreamSink<'db, AcceptMatches> {
@@ -346,9 +519,54 @@ impl<'db> StreamSink<'db, AcceptMatches> {
   }
 }
 
+///```
+/// # #[allow(warnings)]
+/// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, flags::*, matchers::*, state::*, stream::*};
+/// use futures_util::StreamExt;
+///
+/// let expr = Expression::new("a+")?;
+/// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+///
+/// let flags = ScanFlags::default();
+/// let Streamer { mut sink, rx } = Streamer::try_open((flags, &db, 32)).await?;
+/// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
+///
+/// let msg = "aardvark";
+/// sink.scan(msg.as_bytes().into(), flags).await?;
+/// sink.try_drop().await?;
+/// std::mem::drop(sink);
+///
+/// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
+/// assert_eq!(results, vec!["a", "aa", "aardva"]);
+///
+/// # Ok(())
+/// # })}
+/// ```
 pub struct Streamer<'db, S> {
   pub sink: StreamSink<'db, S>,
   pub rx: mpsc::Receiver<StreamMatch>,
+}
+
+impl<'db, S: Ops<Err=HyperscanError>> Ops for Streamer<'db, S> {
+  type Err = HyperscanError;
+}
+
+impl<'db> ResourceOps for Streamer<'db, AcceptMatches> {
+  type OOpen = Self;
+  type Params = (ScanFlags, &'db Database, usize);
+
+  async fn try_open(p: (ScanFlags, &'db Database, usize)) -> Result<Self, HyperscanError> {
+    let (flags, db, n) = p;
+    let (tx, rx) = mpsc::channel(n);
+    let sink = StreamSink::try_open((flags, db, tx)).await?;
+    Ok(Self { sink, rx })
+  }
+
+  async fn try_drop(&mut self) -> Result<(), HyperscanError> {
+    self.sink.try_drop().await?;
+    Ok(())
+  }
 }
 
 /* impl<'db, 'code> Stream<'db, 'code> { */

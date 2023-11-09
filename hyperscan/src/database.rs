@@ -45,7 +45,7 @@ impl Database {
   /// let mode = Mode::BLOCK;
   /// let db = Database::compile(&expr, flags, mode)?;
   ///
-  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let scratch = Pin::new(&mut scratch);
   ///
   /// let data = ByteSlice(b"hello");
@@ -99,7 +99,7 @@ impl Database {
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::try_open(Pin::new(&db))?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
@@ -170,3 +170,6 @@ impl Database {
 impl ops::Drop for Database {
   fn drop(&mut self) { Pin::new(self).try_drop().unwrap(); }
 }
+
+unsafe impl Send for Database {}
+unsafe impl Sync for Database {}
