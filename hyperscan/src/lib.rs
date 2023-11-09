@@ -29,4 +29,4 @@ pub mod database;
 
 pub mod matchers;
 
-pub(crate) use bindings as hs;
+pub(crate) use bindings::root as hs;

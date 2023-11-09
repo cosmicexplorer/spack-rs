@@ -375,6 +375,7 @@ impl ops::BitAnd for ExtFlags {
   fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
 }
 
+
 impl ops::BitAndAssign for ExtFlags {
   fn bitand_assign(&mut self, rhs: Self) {
     use ops::BitAnd;

@@ -6,17 +6,17 @@
 use crate::flags::ScanFlags;
 
 use displaydoc::Display;
-use parking_lot::Mutex;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use std::{
   cmp,
-  collections::VecDeque,
   future::Future,
   mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
-  ptr, slice,
-  task::{Context, Poll, Waker},
+  ptr, slice, str,
+  task::{ready, Context, Poll, Waker},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -34,6 +34,9 @@ impl<'a> ByteSlice<'a> {
 
   #[inline(always)]
   pub(crate) const fn len(&self) -> c_uint { self.0.len() as c_uint }
+
+  #[inline]
+  pub fn decode_utf8(&self) -> Result<&'a str, str::Utf8Error> { str::from_utf8(&self.0) }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -224,9 +227,10 @@ impl MatchEvent {
   ) -> Option<Pin<&'a mut T>> {
     match context {
       None => None,
-      Some(c) => Some(Pin::new_unchecked(&mut *mem::transmute::<_, *mut T>(
-        c.as_ptr(),
-      ))),
+      Some(c) => Some(Pin::new_unchecked(&mut *mem::transmute::<
+        *mut c_void,
+        *mut T,
+      >(c.as_ptr()))),
     }
   }
 }
@@ -245,27 +249,23 @@ pub mod contiguous_slice {
 
   pub(crate) struct SliceMatcher<'data, 'code> {
     parent_slice: ByteSlice<'data>,
-    matched_slices_queue: Mutex<VecDeque<Match<'data>>>,
+    matches_tx: mpsc::Sender<Match<'data>>,
     handler: &'code mut dyn Scanner<'data>,
-    wakers: Mutex<Vec<Waker>>,
   }
 
   impl<'data, 'code> SliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<F: Scanner<'data>>(parent_slice: ByteSlice<'data>, f: &'code mut F) -> Self {
-      Self {
+    pub fn new<const N: usize, F: Scanner<'data>>(
+      parent_slice: ByteSlice<'data>,
+      f: &'code mut F,
+    ) -> (Self, mpsc::Receiver<Match<'data>>) {
+      let (matches_tx, matches_rx) = mpsc::channel(N);
+      let s = Self {
         parent_slice,
-        matched_slices_queue: Mutex::new(VecDeque::new()),
+        matches_tx,
         handler: f,
-        wakers: Mutex::new(Vec::new()),
-      }
-    }
-
-    #[inline(always)]
-    pub fn pop(&mut self) -> Option<Match<'data>> { self.matched_slices_queue.lock().pop_front() }
-
-    pub fn pop_rest(&mut self) -> Vec<Match<'data>> {
-      self.matched_slices_queue.lock().drain(..).collect()
+      };
+      (s, matches_rx)
     }
 
     #[inline(always)]
@@ -274,31 +274,10 @@ pub mod contiguous_slice {
     }
 
     #[inline(always)]
-    pub fn push_new_match(&mut self, m: Match<'data>) {
-      self.matched_slices_queue.lock().push_back(m);
-      for waker in self.wakers.lock().drain(..) {
-        waker.wake();
-      }
-    }
+    pub fn push_new_match(&self, m: Match<'data>) { self.matches_tx.blocking_send(m).unwrap(); }
 
     #[inline(always)]
     pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
-
-    #[inline(always)]
-    pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
-  }
-
-  impl<'data, 'code> Future for SliceMatcher<'data, 'code> {
-    type Output = Match<'data>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-      if let Some(m) = self.pop() {
-        Poll::Ready(m)
-      } else {
-        self.push_waker(cx.waker().clone());
-        Poll::Pending
-      }
-    }
   }
 
   pub(crate) unsafe extern "C" fn match_slice_ref(
@@ -322,11 +301,14 @@ pub mod contiguous_slice {
       source: matched_substring,
       flags,
     };
+    dbg!(m.source.decode_utf8().unwrap());
 
     let result = slice_matcher.handle_match(&m);
+    dbg!(m.source.decode_utf8().unwrap());
     if result == MatchResult::Continue {
       slice_matcher.push_new_match(m);
     }
+    eprintln!("ok");
 
     result.into_native()
   }
@@ -354,32 +336,24 @@ pub mod vectored_slice {
 
   pub(crate) struct VectoredSliceMatcher<'data, 'code> {
     parent_slices: VectoredByteSlices<'data>,
-    matched_slices_queue: Mutex<VecDeque<VectoredMatch<'data>>>,
+    matches_rx: mpsc::Receiver<VectoredMatch<'data>>,
+    matches_tx: mpsc::Sender<VectoredMatch<'data>>,
     handler: &'code mut dyn VectorScanner<'data>,
-    wakers: Mutex<Vec<Waker>>,
   }
 
   impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<F: VectorScanner<'data>>(
+    pub fn new<const N: usize, F: VectorScanner<'data>>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
     ) -> Self {
+      let (matches_tx, matches_rx) = mpsc::channel(N);
       Self {
         parent_slices,
-        matched_slices_queue: Mutex::new(VecDeque::new()),
+        matches_rx,
+        matches_tx,
         handler: f,
-        wakers: Mutex::new(Vec::new()),
       }
-    }
-
-    #[inline(always)]
-    pub fn pop(&mut self) -> Option<VectoredMatch<'data>> {
-      self.matched_slices_queue.lock().pop_front()
-    }
-
-    pub fn pop_rest(&mut self) -> Vec<VectoredMatch<'data>> {
-      self.matched_slices_queue.lock().drain(..).collect()
     }
 
     pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
@@ -387,30 +361,15 @@ pub mod vectored_slice {
     }
 
     #[inline(always)]
-    pub fn push_new_match(&mut self, m: VectoredMatch<'data>) {
-      self.matched_slices_queue.lock().push_back(m);
-      for waker in self.wakers.lock().drain(..) {
-        waker.wake();
-      }
+    pub fn push_new_match(&self, m: VectoredMatch<'data>) {
+      self.matches_tx.blocking_send(m).unwrap();
     }
 
     #[inline(always)]
     pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
 
-    #[inline(always)]
-    pub fn push_waker(&mut self, w: Waker) { self.wakers.lock().push(w); }
-  }
-
-  impl<'data, 'code> Future for VectoredSliceMatcher<'data, 'code> {
-    type Output = VectoredMatch<'data>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-      if let Some(m) = self.pop() {
-        Poll::Ready(m)
-      } else {
-        self.push_waker(cx.waker().clone());
-        Poll::Pending
-      }
+    pub fn recv_stream(self) -> ReceiverStream<VectoredMatch<'data>> {
+      ReceiverStream::new(self.matches_rx)
     }
   }
 

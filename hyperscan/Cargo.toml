@@ -10,6 +10,7 @@ authors.workspace       = true
 [package.metadata.spack]
 env_label               = "hyperscan-runtime-deps"
 spec                    = "hyperscan@v5.4.2"
+cxx                     = "c++17"
 
 [package.metadata.spack.bindgen]
 # TODO: generated doc comments for one of the exported functions get parsed as doctests which
@@ -32,10 +33,14 @@ tokio                   = { workspace = true, features = ["macros"] }
 async-stream.workspace  = true
 displaydoc.workspace    = true
 futures-core.workspace  = true
-indexmap.workspace      = true
+futures-util.workspace  = true
 num_enum.workspace      = true
 once_cell.workspace     = true
 parking_lot.workspace   = true
 static_assertions       = "1.1.0"
 thiserror.workspace     = true
-tokio.workspace         = true
+tokio                   = { workspace = true, features = ["rt", "sync"] }
+tokio-stream            = "0.1.14"
+
+[dev-dependencies]
+tokio-test.workspace    = true

@@ -21,6 +21,29 @@ use std::{
   ptr, str,
 };
 
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
+/// use hyperscan::{expression::*, flags::Flags};
+///
+/// let expr = Expression::new("(he)llo")?;
+/// let info = expr.info(Flags::default())?;
+/// assert_eq!(info, ExprInfo {
+///   min_width: ExprWidth::parse_min_width(0),
+///   max_width: ExprWidth::parse_max_width(0),
+///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
+///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+/// });
+/// let ext = ExprExt::default();
+/// let info = expr.ext_info(Flags::default(), &ext)?;
+/// assert_eq!(info, ExprInfo {
+///   min_width: ExprWidth::parse_min_width(0),
+///   max_width: ExprWidth::parse_max_width(0),
+///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
+///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+/// });
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone)]
 pub struct Expression(CString);
 
@@ -49,7 +72,7 @@ impl Expression {
   }
 
   pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
-    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::uninit();
+    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
     HyperscanError::copy_from_native_compile_error(
       unsafe {
@@ -71,7 +94,7 @@ impl Expression {
     flags: Flags,
     ext_flags: &ExprExt,
   ) -> Result<ExprInfo, HyperscanCompileError> {
-    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::uninit();
+    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
     HyperscanError::copy_from_native_compile_error(
       unsafe {
