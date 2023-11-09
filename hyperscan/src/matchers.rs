@@ -30,7 +30,10 @@ impl<'a> ByteSlice<'a> {
   pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
   #[inline(always)]
-  pub(crate) const fn len(&self) -> c_uint { self.0.len() as c_uint }
+  pub const fn len(&self) -> usize { self.0.len() }
+
+  #[inline(always)]
+  pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
 
   #[inline]
   pub fn decode_utf8(&self) -> Result<&'a str, str::Utf8Error> { str::from_utf8(&self.0) }
@@ -57,7 +60,10 @@ impl<'a> VectoredByteSlices<'a> {
   }
 
   #[inline(always)]
-  pub(crate) const fn len(&self) -> c_uint { self.0.len() as c_uint }
+  pub const fn len(&self) -> usize { self.0.len() }
+
+  #[inline(always)]
+  pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
 
   fn find_index_at(
     &self,

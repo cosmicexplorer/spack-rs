@@ -132,7 +132,7 @@ impl<'db> Scratch<'db> {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*, error::*};
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
@@ -158,11 +158,18 @@ impl<'db> Scratch<'db> {
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
+  ///   .as_mut()
   ///   .scan(b"imbibe".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
+  ///
+  /// let ret = scratch
+  ///   .scan(b"abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
+  ///   .try_for_each(|_| async { Ok(()) })
+  ///   .await;
+  /// assert!(matches![ret, Err(HyperscanError::ScanTerminated)]);
   /// # Ok(())
   /// # })}
   /// ```
@@ -185,7 +192,7 @@ impl<'db> Scratch<'db> {
         hs::hs_scan(
           scratch.db_ptr(),
           parent_slice.as_ptr(),
-          parent_slice.len(),
+          parent_slice.native_len(),
           flags.into_native(),
           scratch.get_mut().as_mut(),
           Some(match_slice_ref),
@@ -269,13 +276,12 @@ impl<'db> Scratch<'db> {
       let mut matcher: Pin<Box<VectoredSliceMatcher>> = Self::from_vectored_ctx(ctx);
       let parent_slices = matcher.parent_slices();
       let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
-      eprintln!("egad!");
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
           scratch.db_ptr(),
           data_pointers.as_ptr(),
           lengths.as_ptr(),
-          parent_slices.len(),
+          parent_slices.native_len(),
           flags.into_native(),
           scratch.get_mut().as_mut(),
           Some(match_slice_vectored_ref),
