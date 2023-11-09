@@ -92,6 +92,13 @@ impl<'db, 'code> CompressedStream<'db, 'code> {
     Pin::new(scratch)
   }
 
+  fn ref_matcher_context(&self) -> *mut c_void {
+    let matcher: *const StreamMatcher = &self.matcher;
+    let matcher: *mut StreamMatcher = unsafe { mem::transmute(matcher) };
+    let matcher = matcher as usize;
+    matcher as *mut c_void
+  }
+
   #[inline]
   pub fn as_mut_ptr(&mut self) -> *mut c_char { self.buf.as_mut_ptr() }
 
@@ -118,10 +125,23 @@ impl<'db, 'code> CompressedStream<'db, 'code> {
     })
   }
 
-  pub fn expand_and_reset(&self, flags: ScanFlags) -> Result<Stream<'db, 'code>, HyperscanError> {
-    let mut s = self.expand()?;
-    Pin::new(&mut s).try_reset(flags)?;
-    Ok(s)
+  pub fn expand_and_reset(&self) -> Result<Stream<'db, 'code>, HyperscanError> {
+    let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_reset_and_expand_stream(
+        stream.as_mut_ptr(),
+        self.as_ptr(),
+        self.space(),
+        self.pin_scratch().get_mut().as_mut(),
+        Some(match_slice_stream),
+        self.ref_matcher_context(),
+      )
+    })?;
+    Ok(Stream {
+      inner: stream.as_mut_ptr(),
+      scratch: self.pin_scratch(),
+      matcher: self.matcher.clone(),
+    })
   }
 }
 
@@ -259,40 +279,36 @@ impl<'db, 'code> Stream<'db, 'code> {
 
   fn try_drop(mut self: Pin<&mut Self>) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
-      let matcher_context = self.ref_matcher_context();
       hs::hs_close_stream(
         self.as_mut().stream_ptr(),
-        self.scratch_ptr(),
+        self.as_mut().scratch_ptr(),
         Some(match_slice_stream),
-        matcher_context,
+        self.ref_matcher_context(),
       )
     })
   }
 
   pub fn try_reset(mut self: Pin<&mut Self>, flags: ScanFlags) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
-      let matcher_context = self.ref_matcher_context();
       hs::hs_reset_stream(
         self.as_mut().stream_ptr(),
         flags.into_native(),
-        self.scratch_ptr(),
+        self.as_mut().scratch_ptr(),
         Some(match_slice_stream),
-        matcher_context,
+        self.ref_matcher_context(),
       )
     })
   }
 
   pub fn try_reset_and_clone(&self) -> Result<Self, HyperscanError> {
     let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit();
-    let matcher_context = self.ref_matcher_context();
-    let scratch: *mut hs::hs_scratch = unsafe { mem::transmute(self.ref_scratch_ptr()) };
     HyperscanError::from_native(unsafe {
       hs::hs_reset_and_copy_stream(
         stream.as_mut_ptr(),
         self.as_ref(),
-        scratch,
+        self.pin_scratch().get_mut().as_mut(),
         Some(match_slice_stream),
-        matcher_context,
+        self.ref_matcher_context(),
       )
     })?;
     Ok(Self {
