@@ -20,13 +20,13 @@ use crate::{
 
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use futures_util::{pin_mut, StreamExt};
+
 use tokio::task;
-use tokio_stream::wrappers::ReceiverStream;
+
 
 use std::{
   mem, ops,
-  os::raw::{c_char, c_uint, c_void},
+  os::raw::{c_char, c_uint},
   pin::Pin,
   ptr,
 };
@@ -102,6 +102,40 @@ impl Database {
     Ok(Self(db))
   }
 
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::pin::Pin;
+  ///
+  /// let a_expr = Expression::new("a+")?;
+  /// let b_expr = Expression::new("b+")?;
+  /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
+  ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
+  ///   .with_ids(&[ExprId(1), ExprId(2)]);
+  ///
+  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  ///
+  /// let scan_flags = ScanFlags::default();
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan(b"aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["a", "aa", "aardva"]);
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan(b"imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["imb", "imbib"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
@@ -188,63 +222,61 @@ impl Database {
     }
   }
 
-  /* pub fn scan_vector<'data, F: VectorScanner<'data>>( */
-  /* &self, */
-  /* data: VectoredByteSlices<'data>, */
-  /* flags: ScanFlags, */
-  /* scratch: &mut Scratch, */
-  /* mut f: F, */
-  /* ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanError>>+'data
-   * { */
-  /* /\* NB: while static arrays take up no extra runtime space, a ref to a
-   * slice */
-  /* * takes up more than pointer space! *\/ */
-  /* static_assertions::assert_eq_size!([u8; 4], u32); */
-  /* static_assertions::assert_eq_size!(&u8, *const u8); */
-  /* static_assertions::const_assert_ne!(mem::size_of::<&[u8]>(),
-   * mem::size_of::<*const u8>()); */
+  pub(crate) fn scan_vector<'data, F: VectorScanner<'data>>(
+    self: Pin<&Self>,
+    data: VectoredByteSlices<'data>,
+    flags: ScanFlags,
+    scratch: &mut Scratch,
+    mut f: F,
+  ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanError>>+'data {
+    /* NB: while static arrays take up no extra runtime space, a ref to a
+    slice
+    * takes up more than pointer space! */
+    static_assertions::assert_eq_size!([u8; 4], u32);
+    static_assertions::assert_eq_size!(&u8, *const u8);
+    static_assertions::const_assert_ne!(mem::size_of::<&[u8]>(), mem::size_of::<*const u8>());
 
-  /* let data_len = data.len(); */
-  /* let (data_pointers, lengths) = data.pointers_and_lengths(); */
+    let data_len = data.len();
+    let (data_pointers, lengths) = data.pointers_and_lengths();
 
-  /* let f: &'static mut u8 = unsafe { mem::transmute(&mut f) }; */
-  /* let mut matcher = VectoredSliceMatcher::new::<F>(data, unsafe {
-   * mem::transmute(f) }); */
+    let (matcher, mut matches_rx) = VectoredSliceMatcher::new::<32, _>(data, &mut f);
+    let ctx: *mut VectoredSliceMatcher = Box::into_raw(Box::new(matcher));
+    let ctx: usize = ctx as usize;
 
-  /* let s: &hs::hs_database = self.as_ref(); */
-  /* let s: usize = unsafe { mem::transmute(s) }; */
-  /* let data: *const *const c_char = data_pointers.as_ptr(); */
-  /* let data: usize = unsafe { mem::transmute(data) }; */
-  /* let scratch: &mut hs::hs_scratch = scratch.as_mut(); */
-  /* let scratch: usize = unsafe { mem::transmute(scratch) }; */
+    let s: &Self = &self.as_ref();
+    let s: *const hs::hs_database = s.as_ref();
+    let s: usize = unsafe { mem::transmute(s) };
+    let data: *const *const c_char = data_pointers.as_ptr();
+    let data: usize = data as usize;
+    let lengths: *const c_uint = lengths.as_ptr();
+    let lengths: usize = lengths as usize;
+    let scratch: *mut hs::hs_scratch = scratch.as_mut();
+    let scratch: usize = scratch as usize;
 
-  /* let ctx: usize = unsafe { mem::transmute(&mut matcher) }; */
-  /* let scan_task = task::spawn_blocking(move || { */
-  /* HyperscanError::from_native(unsafe { */
-  /* hs::hs_scan_vector( */
-  /* s as *const hs::hs_database, */
-  /* data as *const *const c_char, */
-  /* lengths.as_ptr(), */
-  /* data_len, */
-  /* flags.into_native(), */
-  /* scratch as *mut hs::hs_scratch, */
-  /* Some(match_slice_vectored_ref), */
-  /* ctx as *mut c_void, */
-  /* ) */
-  /* }) */
-  /* }); */
+    let scan_task = task::spawn_blocking(move || {
+      let mut matcher: Pin<Box<VectoredSliceMatcher>> =
+        Box::into_pin(unsafe { Box::from_raw(ctx as *mut VectoredSliceMatcher) });
+      HyperscanError::from_native(unsafe {
+        hs::hs_scan_vector(
+          s as *const hs::hs_database,
+          data as *const *const c_char,
+          lengths as *const c_uint,
+          data_len,
+          flags.into_native(),
+          scratch as *mut hs::hs_scratch,
+          Some(match_slice_vectored_ref),
+          mem::transmute(matcher.as_mut().get_mut()),
+        )
+      })
+    });
 
-  /* try_stream! { */
-  /* let mut matcher = Pin::new(&mut matcher); */
-  /* while !scan_task.is_finished() { */
-  /* yield matcher.as_mut().await; */
-  /* } */
-  /* for m in matcher.pop_rest().into_iter() { */
-  /* yield m; */
-  /* } */
-  /* scan_task.await.unwrap()?; */
-  /* } */
-  /* } */
+    try_stream! {
+      while let Some(m) = matches_rx.recv().await {
+        yield m;
+      }
+      scan_task.await.unwrap()?;
+    }
+  }
 
   pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe { hs::hs_free_database(self.as_mut()) })

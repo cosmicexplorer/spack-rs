@@ -7,7 +7,7 @@ use crate::flags::ScanFlags;
 
 use displaydoc::Display;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+
 
 use std::{
   cmp,
@@ -16,7 +16,6 @@ use std::{
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr, slice, str,
-  task::{ready, Context, Poll, Waker},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -37,6 +36,14 @@ impl<'a> ByteSlice<'a> {
 
   #[inline]
   pub fn decode_utf8(&self) -> Result<&'a str, str::Utf8Error> { str::from_utf8(&self.0) }
+}
+
+impl<'a> From<&'a [u8]> for ByteSlice<'a> {
+  fn from(x: &'a [u8]) -> Self { Self(x) }
+}
+
+impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
+  fn from(x: &'a [u8; N]) -> Self { Self(x.as_ref()) }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -304,11 +311,9 @@ pub mod contiguous_slice {
     dbg!(m.source.decode_utf8().unwrap());
 
     let result = slice_matcher.handle_match(&m);
-    dbg!(m.source.decode_utf8().unwrap());
     if result == MatchResult::Continue {
       slice_matcher.push_new_match(m);
     }
-    eprintln!("ok");
 
     result.into_native()
   }
@@ -336,7 +341,6 @@ pub mod vectored_slice {
 
   pub(crate) struct VectoredSliceMatcher<'data, 'code> {
     parent_slices: VectoredByteSlices<'data>,
-    matches_rx: mpsc::Receiver<VectoredMatch<'data>>,
     matches_tx: mpsc::Sender<VectoredMatch<'data>>,
     handler: &'code mut dyn VectorScanner<'data>,
   }
@@ -346,14 +350,14 @@ pub mod vectored_slice {
     pub fn new<const N: usize, F: VectorScanner<'data>>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
-    ) -> Self {
+    ) -> (Self, mpsc::Receiver<VectoredMatch<'data>>) {
       let (matches_tx, matches_rx) = mpsc::channel(N);
-      Self {
+      let s = Self {
         parent_slices,
-        matches_rx,
         matches_tx,
         handler: f,
-      }
+      };
+      (s, matches_rx)
     }
 
     pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
@@ -361,16 +365,12 @@ pub mod vectored_slice {
     }
 
     #[inline(always)]
-    pub fn push_new_match(&self, m: VectoredMatch<'data>) {
+    pub fn push_new_match(&mut self, m: VectoredMatch<'data>) {
       self.matches_tx.blocking_send(m).unwrap();
     }
 
     #[inline(always)]
     pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
-
-    pub fn recv_stream(self) -> ReceiverStream<VectoredMatch<'data>> {
-      ReceiverStream::new(self.matches_rx)
-    }
   }
 
   pub(crate) unsafe extern "C" fn match_slice_vectored_ref(

@@ -119,7 +119,7 @@ impl Expression {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct ExprId(c_uint);
+pub struct ExprId(pub c_uint);
 
 #[derive(Debug, Clone)]
 pub struct ExpressionSet<'a> {
@@ -141,17 +141,19 @@ impl<'a> ExpressionSet<'a> {
     }
   }
 
-  pub fn with_flags(&mut self, flags: &[Flags]) {
+  pub fn with_flags(mut self, flags: &[Flags]) -> Self {
     assert_eq!(self.ptrs.len(), flags.len());
     self.flags = Some(flags.iter().cloned().collect());
+    self
   }
 
-  pub fn with_ids(&mut self, ids: &[ExprId]) {
+  pub fn with_ids(mut self, ids: &[ExprId]) -> Self {
     assert_eq!(self.ptrs.len(), ids.len());
     self.ids = Some(ids.iter().cloned().collect());
+    self
   }
 
-  pub fn with_exts(&mut self, exts: &[Option<&'a ExprExt>]) {
+  pub fn with_exts(mut self, exts: &[Option<&'a ExprExt>]) -> Self {
     assert_eq!(self.ptrs.len(), exts.len());
     self.exts = Some(
       exts
@@ -162,6 +164,7 @@ impl<'a> ExpressionSet<'a> {
         })
         .collect(),
     );
+    self
   }
 
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {

@@ -9,9 +9,9 @@ use crate::{
   flags::{CpuFeatures, ScanFlags, TuneFamily},
   hs,
   matchers::{
-    contiguous_slice::{match_slice_ref, Match, Scanner, SliceMatcher},
+    contiguous_slice::{Match, Scanner},
     vectored_slice::{
-      match_slice_vectored_ref, VectorScanner, VectoredMatch, VectoredSliceMatcher,
+      VectorScanner, VectoredMatch,
     },
     ByteSlice, VectoredByteSlices,
   },
@@ -96,6 +96,40 @@ impl<'db> Scratch<'db> {
     HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
   }
 
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::pin::Pin;
+  ///
+  /// let a_expr = Expression::new("a+")?;
+  /// let b_expr = Expression::new("b+")?;
+  /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
+  ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
+  ///   .with_ids(&[ExprId(1), ExprId(2)]);
+  ///
+  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::alloc(Pin::new(&db))?;
+  ///
+  /// let scan_flags = ScanFlags::default();
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan(b"aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["a", "aa", "aardva"]);
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan(b"imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["imb", "imbib"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
   pub fn scan<'data, F: Scanner<'data>>(
     &mut self,
     data: ByteSlice<'data>,
@@ -106,6 +140,18 @@ impl<'db> Scratch<'db> {
       unsafe { &mut *(self as *mut Self as *mut cell::UnsafeCell<Self>) };
     let db: Pin<&'db Database> = unsafe { &*s.get() }.db.as_ref();
     db.scan_matches(data, flags, unsafe { &mut *s.get() }, f)
+  }
+
+  pub fn scan_vectored<'data, F: VectorScanner<'data>>(
+    &mut self,
+    data: VectoredByteSlices<'data>,
+    flags: ScanFlags,
+    f: F,
+  ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanError>>+'data {
+    let s: &mut cell::UnsafeCell<Self> =
+      unsafe { &mut *(self as *mut Self as *mut cell::UnsafeCell<Self>) };
+    let db: Pin<&'db Database> = unsafe { &*s.get() }.db.as_ref();
+    db.scan_vector(data, flags, unsafe { &mut *s.get() }, f)
   }
 }
 
