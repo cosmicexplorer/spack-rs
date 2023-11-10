@@ -157,7 +157,7 @@ impl<'db> Scratch<'db> {
     Ok(unsafe { n.assume_init() })
   }
 
-  fn db_ptr(&self) -> *const hs::hs_database {
+  pub(crate) fn db_ptr(&self) -> *const hs::hs_database {
     let db: &Database = &self.db.as_ref();
     db.as_ref()
   }
@@ -385,3 +385,4 @@ impl<'db> AsMut<hs::hs_scratch> for Scratch<'db> {
 }
 
 unsafe impl<'db> Send for Scratch<'db> {}
+unsafe impl<'db> Sync for Scratch<'db> {}

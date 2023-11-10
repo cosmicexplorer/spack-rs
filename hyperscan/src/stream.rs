@@ -12,7 +12,8 @@ use crate::{
   state::{HandleOps, Ops, ResourceOps, Scratch},
 };
 
-
+use displaydoc::Display;
+use thiserror::Error;
 use tokio::{sync::mpsc, task};
 
 use std::{
@@ -29,9 +30,8 @@ use std::{
 pub struct InputIndex(pub u32);
 
 ///```
-/// # #[allow(warnings)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, matchers::*, state::*, stream::*};
+/// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
 /// let expr = Expression::new("a+")?;
@@ -81,7 +81,7 @@ pub trait StreamOps: HandleOps {
   async fn try_reset_and_copy(&self) -> Result<Self::OClone, Self::Err>;
 }
 
-pub(crate) struct StreamMatcher<S> {
+pub struct StreamMatcher<S> {
   pub matches_tx: mpsc::Sender<StreamMatch>,
   pub handler: S,
   pub cur_idx: InputIndex,
@@ -118,6 +118,16 @@ impl<S: HandleOps<OClone=S>> HandleOps for StreamMatcher<S> {
   }
 }
 
+impl<S: Clone> Clone for StreamMatcher<S> {
+  fn clone(&self) -> Self {
+    Self {
+      matches_tx: self.matches_tx.clone(),
+      handler: self.handler.clone(),
+      cur_idx: self.cur_idx,
+    }
+  }
+}
+
 impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
   async fn try_reset(&mut self) -> Result<(), Self::Err> {
     self.handler.try_reset().await?;
@@ -134,142 +144,185 @@ impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
   }
 }
 
-/* pub struct CompressedStream<'db, 'code> { */
-/* buf: Vec<c_char>, */
-/* scratch: Pin<&'db mut Scratch<'db>>, */
-/* matcher: StreamMatcher<'code>, */
-/* } */
+pub struct CompressedStream<'db, S> {
+  pub buf: Vec<c_char>,
+  pub scratch: Arc<Scratch<'db>>,
+  pub matcher: Arc<StreamMatcher<S>>,
+}
 
-/* impl<'db, 'code> CompressedStream<'db, 'code> { */
-/* pub fn reserve(&mut self, limit: usize) { */
-/* if limit <= self.space() { */
-/* return; */
-/* } */
-/* let additional = limit - self.space(); */
-/* self.buf.reserve(additional); */
-/* } */
+impl<'db, S: Send+Sync> CompressedStream<'db, S> {
+  pub(crate) async fn compress(
+    into: CompressReserveBehavior,
+    live: &LiveStream<'db>,
+    scratch: &Arc<Scratch<'db>>,
+    matcher: &Arc<StreamMatcher<S>>,
+  ) -> Result<Self, CompressionError> {
+    let live: *const LiveStream<'db> = live;
+    let live = live as usize;
 
-/* fn ref_scratch_ptr(&self) -> *mut Scratch { */
-/* let scratch: &Scratch<'db> = self.scratch.as_ref().get_ref(); */
-/* let scratch: *const Scratch = scratch; */
-/* let scratch: *mut Scratch = unsafe { mem::transmute(scratch) }; */
-/* scratch */
-/* } */
+    let buf = task::spawn_blocking(move || {
+      let live: *const LiveStream<'db> = unsafe { &*(live as *const LiveStream<'db>) };
 
-/* fn pin_scratch(&self) -> Pin<&'db mut Scratch<'db>> { */
-/* let scratch: *mut Scratch<'db> = unsafe {
- * mem::transmute(self.ref_scratch_ptr()) }; */
-/* let scratch: &'db mut Scratch<'db> = unsafe { &mut *scratch }; */
-/* Pin::new(scratch) */
-/* } */
+      let mut required_space = mem::MaybeUninit::<usize>::zeroed();
+      assert_eq!(
+        Err(HyperscanError::InsufficientSpace),
+        HyperscanError::from_native(unsafe {
+          hs::hs_compress_stream(
+            (&*live).as_ref(),
+            ptr::null_mut(),
+            0,
+            required_space.as_mut_ptr(),
+          )
+        })
+      );
+      let mut required_space = unsafe { required_space.assume_init() };
 
-/* fn ref_matcher_context(&self) -> *mut c_void { */
-/* let matcher: *const StreamMatcher = &self.matcher; */
-/* let matcher: *mut StreamMatcher = unsafe { mem::transmute(matcher) }; */
-/* let matcher = matcher as usize; */
-/* matcher as *mut c_void */
-/* } */
+      match into.reserve(required_space) {
+        ReserveResponse::NoSpace(_) => Err(CompressionError::NoSpace(required_space)),
+        ReserveResponse::MadeSpace(mut buf) => {
+          HyperscanError::from_native(unsafe {
+            hs::hs_compress_stream(
+              (&*live).as_ref(),
+              buf.as_mut_ptr(),
+              required_space,
+              &mut required_space,
+            )
+          })?;
+          Ok(buf)
+        },
+      }
+    })
+    .await
+    .unwrap()?;
 
-/* #[inline] */
-/* pub fn as_mut_ptr(&mut self) -> *mut c_char { self.buf.as_mut_ptr() } */
+    Ok(Self {
+      buf,
+      scratch: scratch.clone(),
+      matcher: matcher.clone(),
+    })
+  }
 
-/* #[inline] */
-/* pub fn as_ptr(&self) -> *const c_char { self.buf.as_ptr() } */
+  pub async fn expand(&self) -> Result<StreamSink<'db, S>, HyperscanError> {
+    let s: *const Self = self;
+    let s = s as usize;
 
-/* #[inline] */
-/* pub fn space(&self) -> usize { self.buf.capacity() } */
+    let inner: *mut hs::hs_stream = task::spawn_blocking(move || {
+      let Self { scratch, buf, .. } = unsafe { &*(s as *const Self) };
+      let mut inner = ptr::null_mut();
+      HyperscanError::from_native(unsafe {
+        hs::hs_expand_stream(scratch.db_ptr(), &mut inner, buf.as_ptr(), buf.capacity())
+      })?;
+      Ok::<_, HyperscanError>(inner as usize)
+    })
+    .await
+    .unwrap()? as *mut hs::hs_stream;
 
-/* /\* pub fn expand(&self) -> Result<Stream<'db, 'code>, HyperscanError> {
- * *\/ */
-/* /\*   let mut inner = ptr::null_mut(); *\/ */
-/* /\*   HyperscanError::from_native(unsafe { *\/ */
-/* /\*     hs::hs_expand_stream( *\/ */
-/* /\*       self.pin_scratch().into_ref().pinned_db().get_ref().as_ref(),
- * *\/ */
-/* /\*       &mut inner, *\/ */
-/* /\*       self.as_ptr(), *\/ */
-/* /\*       self.space(), *\/ */
-/* /\*     ) *\/ */
-/* /\*   })?; *\/ */
-/* /\*   Ok(Stream { *\/ */
-/* /\*     inner, *\/ */
-/* /\*     scratch: self.pin_scratch(), *\/ */
-/* /\*     matcher: self.matcher.clone(), *\/ */
-/* /\*   }) *\/ */
-/* /\* } *\/ */
+    let live = LiveStream {
+      inner,
+      _ph: PhantomData,
+    };
+    Ok(StreamSink {
+      live,
+      scratch: self.scratch.clone(),
+      matcher: self.matcher.clone(),
+    })
+  }
+}
 
-/* /\* pub fn expand_and_reset(&self) -> Result<Stream<'db, 'code>,
- * HyperscanError> { *\/ */
-/* /\*   let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit(); *\/ */
-/* /\*   HyperscanError::from_native(unsafe { *\/ */
-/* /\*     hs::hs_reset_and_expand_stream( *\/ */
-/* /\*       stream.as_mut_ptr(), *\/ */
-/* /\*       self.as_ptr(), *\/ */
-/* /\*       self.space(), *\/ */
-/* /\*       self.pin_scratch().get_mut().as_mut(), *\/ */
-/* /\*       Some(match_slice_stream), *\/ */
-/* /\*       self.ref_matcher_context(), *\/ */
-/* /\*     ) *\/ */
-/* /\*   })?; *\/ */
-/* /\*   Ok(Stream { *\/ */
-/* /\*     inner: stream.as_mut_ptr(), *\/ */
-/* /\*     scratch: self.pin_scratch(), *\/ */
-/* /\*     matcher: self.matcher.clone(), *\/ */
-/* /\*   }) *\/ */
-/* /\* } *\/ */
-/* } */
+impl<'db> CompressedStream<'db, AcceptMatches> {
+  pub async fn expand_and_reset(&self) -> Result<StreamSink<'db, AcceptMatches>, HyperscanError> {
+    let s: *const Self = self;
+    let s = s as usize;
 
-/* pub enum CompressReserveBehavior<'db, 'code> { */
-/* NewBuf, */
-/* ExpandBuf(CompressedStream<'db, 'code>), */
-/* FixedSizeBuf(CompressedStream<'db, 'code>), */
-/* } */
+    let mut scratch = self.scratch.clone();
+    let p_scratch: *mut hs::hs_scratch = Arc::make_mut(&mut scratch).as_mut();
+    let p_scratch = p_scratch as usize;
 
-/* pub(crate) enum ReserveResponse<'db, 'code> { */
-/* MadeSpace(CompressedStream<'db, 'code>), */
-/* NoSpace(CompressedStream<'db, 'code>), */
-/* } */
+    let mut matcher = self.matcher.clone();
+    let p_matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(&mut matcher);
+    let p_matcher_n = p_matcher as usize;
 
-/* impl<'db, 'code> CompressReserveBehavior<'db, 'code> { */
-/* pub(crate) fn reserve( */
-/* self, */
-/* scratch: Pin<&'db mut Scratch<'db>>, */
-/* matcher: &StreamMatcher<'code>, */
-/* n: usize, */
-/* ) -> ReserveResponse<'db, 'code> { */
-/* match self { */
-/* Self::NewBuf => ReserveResponse::MadeSpace(CompressedStream { */
-/* buf: Vec::with_capacity(n), */
-/* scratch, */
-/* matcher: matcher.clone(), */
-/* }), */
-/* Self::ExpandBuf(mut buf) => { */
-/* buf.reserve(n); */
-/* ReserveResponse::MadeSpace(buf) */
-/* }, */
-/* Self::FixedSizeBuf(buf) => { */
-/* if buf.space() <= n { */
-/* ReserveResponse::NoSpace(buf) */
-/* } else { */
-/* ReserveResponse::MadeSpace(buf) */
-/* } */
-/* }, */
-/* } */
-/* } */
-/* } */
+    let inner: *mut hs::hs_stream = task::spawn_blocking(move || {
+      let Self { buf, .. } = unsafe { &*(s as *const Self) };
 
-/* #[derive(Debug, Display, Error)] */
-/* pub enum CompressionError { */
-/* /// other error: {0} */
-/* Other(#[from] HyperscanError), */
-/* /// not enough space for {0} in buf */
-/* NoSpace(usize), */
-/* } */
+      let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit();
+      HyperscanError::from_native(unsafe {
+        hs::hs_reset_and_expand_stream(
+          stream.as_mut_ptr(),
+          buf.as_ptr(),
+          buf.capacity(),
+          p_scratch as *mut hs::hs_scratch,
+          Some(match_slice_stream),
+          p_matcher_n as *mut c_void,
+        )
+      })?;
+      Ok::<_, HyperscanError>(stream.as_mut_ptr() as usize)
+    })
+    .await
+    .unwrap()? as *mut hs::hs_stream;
+
+    let live = LiveStream {
+      inner,
+      _ph: PhantomData,
+    };
+
+    unsafe { &mut *p_matcher }.try_reset().await?;
+    Ok(StreamSink {
+      live,
+      scratch,
+      matcher,
+    })
+  }
+}
+
+pub enum CompressReserveBehavior {
+  NewBuf,
+  ExpandBuf(Vec<c_char>),
+  FixedSizeBuf(Vec<c_char>),
+}
+
+pub(crate) enum ReserveResponse {
+  MadeSpace(Vec<c_char>),
+  NoSpace(Vec<c_char>),
+}
+
+impl CompressReserveBehavior {
+  pub(crate) fn reserve(self, n: usize) -> ReserveResponse {
+    match self {
+      Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)),
+      Self::ExpandBuf(mut buf) => {
+        if n > buf.capacity() {
+          let additional = n - buf.capacity();
+          buf.reserve(additional);
+        }
+        ReserveResponse::MadeSpace(buf)
+      },
+      Self::FixedSizeBuf(buf) => {
+        if buf.capacity() <= n {
+          ReserveResponse::NoSpace(buf)
+        } else {
+          ReserveResponse::MadeSpace(buf)
+        }
+      },
+    }
+  }
+}
+
+#[derive(Debug, Display, Error)]
+pub enum CompressionError {
+  /// other error: {0}
+  Other(#[from] HyperscanError),
+  /// not enough space for {0} in buf
+  NoSpace(usize),
+}
 
 pub struct LiveStream<'db> {
   inner: *mut hs::hs_stream,
   _ph: PhantomData<&'db u8>,
 }
+
+unsafe impl<'db> Send for LiveStream<'db> {}
+unsafe impl<'db> Sync for LiveStream<'db> {}
 
 impl<'db> AsRef<hs::hs_stream> for LiveStream<'db> {
   fn as_ref(&self) -> &hs::hs_stream { unsafe { &*self.inner } }
@@ -350,18 +403,10 @@ impl<'db> StreamOps for LiveStream<'db> {
   }
 }
 
-/* impl<'db> ops::Drop for LiveStream<'db> { */
-/* fn drop(&mut self) { self.try_drop().unwrap(); } */
-/* } */
-
-/* impl<'db> Clone for LiveStream<'db> { */
-/* fn clone(&self) -> Self { self.try_clone().unwrap() } */
-/* } */
-
 pub struct StreamSink<'db, S> {
   live: LiveStream<'db>,
   scratch: Arc<Scratch<'db>>,
-  matcher: StreamMatcher<S>,
+  matcher: Arc<StreamMatcher<S>>,
 }
 
 impl<'db, S: Ops> Ops for StreamSink<'db, S> {
@@ -378,11 +423,11 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
     let (flags, db, tx) = p;
     let live = LiveStream::try_open((flags, db)).await?;
     let scratch = Arc::new(Scratch::try_open(Pin::new(db)).await?);
-    let matcher = StreamMatcher {
+    let matcher = Arc::new(StreamMatcher {
       matches_tx: tx,
       handler: AcceptMatches::try_open(()).await?,
       cur_idx: InputIndex(0),
-    };
+    });
     Ok(Self {
       live,
       scratch,
@@ -400,7 +445,7 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
-      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(matcher);
       let matcher = matcher as usize;
 
       HyperscanError::from_native(unsafe {
@@ -426,7 +471,7 @@ impl<'db, S: HandleOps<OClone=S, Err=HyperscanError>> HandleOps for StreamSink<'
     Ok(Self {
       live: self.live.try_clone().await?,
       scratch: self.scratch.clone(),
-      matcher: self.matcher.try_clone().await?,
+      matcher: self.matcher.clone(),
     })
   }
 }
@@ -442,7 +487,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
-      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(matcher);
       let matcher = matcher as usize;
 
       HyperscanError::from_native(unsafe {
@@ -459,7 +504,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
     .await
     .unwrap()?;
 
-    self.matcher.try_reset().await?;
+    Arc::make_mut(&mut self.matcher).try_reset().await?;
     Ok(())
   }
 
@@ -473,7 +518,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
-      let matcher: *mut StreamMatcher<AcceptMatches> = matcher;
+      let matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(matcher);
       let matcher = matcher as usize;
 
       let mut to = mem::MaybeUninit::<hs::hs_stream>::uninit();
@@ -495,7 +540,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
       _ph: PhantomData,
     };
 
-    let matcher = self.matcher.try_reset_and_copy().await?;
+    let matcher = Arc::new(self.matcher.try_reset_and_copy().await?);
 
     Ok(Self {
       live,
@@ -554,6 +599,7 @@ impl<'db> StreamSink<'db, AcceptMatches> {
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
+      let matcher = Arc::make_mut(matcher);
       let p_matcher: *mut StreamMatcher<AcceptMatches> = matcher;
       let p_matcher = p_matcher as usize;
       HyperscanError::from_native(unsafe {
@@ -575,10 +621,53 @@ impl<'db> StreamSink<'db, AcceptMatches> {
   }
 }
 
+impl<'db, S: Send+Sync> StreamSink<'db, S> {
+  ///```
+  /// # fn main() -> Result<(), eyre::Report> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
+  /// use futures_util::StreamExt;
+  ///
+  /// let expr = Expression::new("a+")?;
+  /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+  ///
+  /// let flags = ScanFlags::default();
+  /// let Streamer { mut sink, mut rx } = Streamer::try_open((flags, &db, 32)).await?;
+  ///
+  /// let buf = sink.compress(CompressReserveBehavior::NewBuf).await?;
+  /// sink.try_drop().await?;
+  /// std::mem::drop(sink);
+  ///
+  /// let msg = "aardvark";
+  /// let mut sink = buf.expand().await?;
+  /// sink.scan(msg.as_bytes().into(), flags).await?;
+  /// sink.try_drop().await?;
+  /// std::mem::drop(sink);
+  ///
+  /// // Although there are further senders in Arc shared pointers,
+  /// // we cut them off here in order to ensure our stream terminates.
+  /// rx.close();
+  /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
+  /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
+  /// assert_eq!(results, vec!["a", "aa", "aardva"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub async fn compress(
+    &self,
+    into: CompressReserveBehavior,
+  ) -> Result<CompressedStream<'db, S>, CompressionError> {
+    let Self {
+      live,
+      scratch,
+      matcher,
+    } = self;
+    CompressedStream::compress(into, live, scratch, matcher).await
+  }
+}
+
 ///```
-/// # #[allow(warnings)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, matchers::*, state::*, stream::*};
+/// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
 /// let expr = Expression::new("a+")?;
@@ -625,200 +714,6 @@ impl<'db> ResourceOps for Streamer<'db, AcceptMatches> {
     Ok(())
   }
 }
-
-/* impl<'db, 'code> Stream<'db, 'code> { */
-/* pub fn open<const N: usize, F: StreamScanner>( */
-/* scratch: Pin<&'db mut Scratch<'db>>, */
-/* flags: ScanFlags, */
-/* f: &'code mut F, */
-/* ) -> Result<(Self, mpsc::Receiver<StreamMatch>), HyperscanError> { */
-/* let (matches_tx, matches_rx) = mpsc::channel(N); */
-/* let mut stream_ptr = ptr::null_mut(); */
-/* let db: Pin<&'db Database> = scratch.as_ref().pinned_db(); */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_open_stream(db.get_ref().as_ref(), flags.into_native(), &mut
- * stream_ptr) */
-/* })?; */
-/* let matcher = StreamMatcher { */
-/* matches_tx, */
-/* handler: f, */
-/* }; */
-/* let s = Self { */
-/* inner: stream_ptr, */
-/* scratch, */
-/* matcher, */
-/* }; */
-/* Ok((s, matches_rx)) */
-/* } */
-
-/* fn ref_scratch_ptr(&self) -> *mut Scratch { */
-/* let scratch: &Scratch<'db> = self.scratch.as_ref().get_ref(); */
-/* let scratch: *const Scratch = scratch; */
-/* let scratch: *mut Scratch = unsafe { mem::transmute(scratch) }; */
-/* scratch */
-/* } */
-
-/* fn pin_scratch(&self) -> Pin<&'db mut Scratch<'db>> { */
-/* let scratch: *mut Scratch<'db> = unsafe {
- * mem::transmute(self.ref_scratch_ptr()) }; */
-/* let scratch: &'db mut Scratch<'db> = unsafe { &mut *scratch }; */
-/* Pin::new(scratch) */
-/* } */
-
-/* fn ref_matcher_context(&self) -> *mut c_void { */
-/* let matcher: *const StreamMatcher = &self.matcher; */
-/* let matcher: *mut StreamMatcher = unsafe { mem::transmute(matcher) }; */
-/* let matcher = matcher as usize; */
-/* matcher as *mut c_void */
-/* } */
-
-/* fn stream_ptr(self: Pin<&mut Self>) -> *mut hs::hs_stream {
- * self.get_mut().as_mut() } */
-
-/* fn scratch_ptr(mut self: Pin<&mut Self>) -> *mut hs::hs_scratch { */
-/* self.scratch.as_mut().get_mut().as_mut() */
-/* } */
-
-/* pub fn scan( */
-/* mut self: Pin<&mut Self>, */
-/* data: ByteSlice<'_>, */
-/* flags: ScanFlags, */
-/* ) -> Result<(), HyperscanError> { */
-/* HyperscanError::from_native(unsafe { */
-/* let matcher_context = self.ref_matcher_context(); */
-/* hs::hs_scan_stream( */
-/* self.as_mut().stream_ptr(), */
-/* data.as_ptr(), */
-/* data.native_len(), */
-/* flags.into_native(), */
-/* self.scratch_ptr(), */
-/* Some(match_slice_stream), */
-/* matcher_context, */
-/* ) */
-/* }) */
-/* } */
-
-/* pub fn try_clone(&self) -> Result<Self, HyperscanError> { */
-/* let mut stream_ptr = ptr::null_mut(); */
-/* HyperscanError::from_native(unsafe { hs::hs_copy_stream(&mut stream_ptr,
- * self.as_ref()) })?; */
-/* Ok(Self { */
-/* inner: stream_ptr, */
-/* scratch: self.pin_scratch(), */
-/* matcher: self.matcher.clone(), */
-/* }) */
-/* } */
-
-/* fn try_drop(mut self: Pin<&mut Self>) -> Result<(), HyperscanError> { */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_close_stream( */
-/* self.as_mut().stream_ptr(), */
-/* self.as_mut().scratch_ptr(), */
-/* Some(match_slice_stream), */
-/* self.ref_matcher_context(), */
-/* ) */
-/* }) */
-/* } */
-
-/* pub fn try_reset(mut self: Pin<&mut Self>, flags: ScanFlags) -> Result<(),
- * HyperscanError> { */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_reset_stream( */
-/* self.as_mut().stream_ptr(), */
-/* flags.into_native(), */
-/* self.as_mut().scratch_ptr(), */
-/* Some(match_slice_stream), */
-/* self.ref_matcher_context(), */
-/* ) */
-/* }) */
-/* } */
-
-/* pub fn try_reset_and_clone(&self) -> Result<Self, HyperscanError> { */
-/* let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit(); */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_reset_and_copy_stream( */
-/* stream.as_mut_ptr(), */
-/* self.as_ref(), */
-/* self.pin_scratch().get_mut().as_mut(), */
-/* Some(match_slice_stream), */
-/* self.ref_matcher_context(), */
-/* ) */
-/* })?; */
-/* Ok(Self { */
-/* inner: stream.as_mut_ptr(), */
-/* scratch: self.pin_scratch(), */
-/* matcher: self.matcher.clone(), */
-/* }) */
-/* } */
-
-/* #[inline] */
-/* pub fn required_compress_space(&self) -> Result<usize, HyperscanError> { */
-/* let mut used_space = mem::MaybeUninit::<usize>::uninit(); */
-/* assert_eq!( */
-/* Err(HyperscanError::InsufficientSpace), */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_compress_stream(self.as_ref(), ptr::null_mut(), 0,
- * used_space.as_mut_ptr()) */
-/* }) */
-/* ); */
-/* Ok(unsafe { used_space.assume_init() }) */
-/* } */
-
-/* pub fn compress_into( */
-/* &self, */
-/* buf: CompressReserveBehavior<'db, 'code>, */
-/* ) -> Result<CompressedStream<'db, 'code>, CompressionError> { */
-/* let mut used_space = self.required_compress_space()?; */
-/* let mut buf = match buf.reserve(self.pin_scratch(), &self.matcher,
- * used_space) { */
-/* ReserveResponse::NoSpace(_) => return
- * Err(CompressionError::NoSpace(used_space)), */
-/* ReserveResponse::MadeSpace(buf) => buf, */
-/* }; */
-/* assert!(used_space <= buf.space()); */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_compress_stream( */
-/* self.as_ref(), */
-/* buf.as_mut_ptr(), */
-/* buf.space(), */
-/* &mut used_space, */
-/* ) */
-/* })?; */
-/* Ok(buf) */
-/* } */
-/* } */
-
-/* impl<'db, 'code> AsRef<hs::hs_stream> for Stream<'db, 'code> { */
-/* fn as_ref(&self) -> &hs::hs_stream { unsafe { &*self.inner } } */
-/* } */
-
-/* impl<'db, 'code> AsMut<hs::hs_stream> for Stream<'db, 'code> { */
-/* fn as_mut(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.inner } } */
-/* } */
-
-/* impl<'db, 'code> Clone for Stream<'db, 'code> { */
-/* fn clone(&self) -> Self { self.try_clone().unwrap() } */
-/* } */
-
-/* impl<'db, 'code> ops::Drop for Stream<'db, 'code> { */
-/* fn drop(&mut self) { Pin::new(self).try_drop().unwrap(); } */
-/* } */
-
-/* pub struct MatchStream<'db, 'code> { */
-/* stream: Stream<'db, 'code>, */
-/* recv: mpsc::Receiver<StreamMatch>, */
-/* } */
-
-/* impl<'db, 'code> MatchStream<'db, 'code> { */
-/* pub fn open<const N: usize, F: StreamScanner>( */
-/* scratch: Pin<&'db mut Scratch<'db>>, */
-/* flags: ScanFlags, */
-/* f: &'code mut F, */
-/* ) -> Result<Self, HyperscanError> { */
-/* let (stream, recv) = Stream::open::<N, F>(scratch, flags, f)?; */
-/* Ok(Self { stream, recv }) */
-/* } */
-/* } */
 
 unsafe extern "C" fn match_slice_stream(
   id: c_uint,

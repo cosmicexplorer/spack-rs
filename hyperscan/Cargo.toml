@@ -43,4 +43,5 @@ tokio                   = { workspace = true, features = ["rt", "sync"] }
 tokio-stream            = "0.1.14"
 
 [dev-dependencies]
+eyre.workspace          = true
 tokio-test.workspace    = true
