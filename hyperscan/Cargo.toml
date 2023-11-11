@@ -37,7 +37,7 @@ futures-util.workspace  = true
 num_enum.workspace      = true
 once_cell.workspace     = true
 parking_lot.workspace   = true
-static_assertions       = "1.1.0"
+static_assertions.workspace = true
 thiserror.workspace     = true
 tokio                   = { workspace = true, features = ["rt", "sync"] }
 tokio-stream            = "0.1.14"

@@ -955,6 +955,18 @@ pub mod root {
       );
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK3re23RE29pattern_cEv"]
+      pub fn RE2_pattern_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK3re23RE27error_cEv"]
+      pub fn RE2_error_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK3re23RE211error_arg_cEv"]
+      pub fn RE2_error_arg_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE211ProgramSizeEv"]
       pub fn RE2_ProgramSize(this: *const root::re2::RE2) -> ::std::os::raw::c_int;
     }
@@ -1203,6 +1215,15 @@ pub mod root {
         });
         __bindgen_bitfield_unit
       }
+
+      #[inline]
+      pub unsafe fn pattern_c(&self) -> *const ::std::os::raw::c_char { RE2_pattern_c(self) }
+
+      #[inline]
+      pub unsafe fn error_c(&self) -> *const ::std::os::raw::c_char { RE2_error_c(self) }
+
+      #[inline]
+      pub unsafe fn error_arg_c(&self) -> *const ::std::os::raw::c_char { RE2_error_arg_c(self) }
 
       #[inline]
       pub unsafe fn ProgramSize(&self) -> ::std::os::raw::c_int { RE2_ProgramSize(self) }

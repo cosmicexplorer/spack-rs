@@ -12,11 +12,14 @@
 #[allow(unused, improper_ctypes)]
 mod bindings;
 
-use bindings::root::re2;
+pub mod error;
+use error::{CompileError, RE2ErrorCode};
+
+pub(crate) use bindings::root::re2;
 
 use abseil::StringView;
 
-use std::{mem, ptr};
+use std::{ffi::CStr, mem, ops, os::raw::c_char, ptr};
 
 #[derive(
   Default,
@@ -184,36 +187,82 @@ impl Default for Options {
 }
 
 ///```
-/// use abseil::StringView;
-/// use re2::RE2;
+/// # fn main() -> Result<(), re2::error::CompileError> {
+/// use re2::{RE2, error::*};
 ///
-/// let r = RE2::new(&StringView::from_str(".he"));
-/// assert!(r.full_match(&StringView::from_str("the")));
-/// assert!(!r.partial_match(&StringView::from_str("hello")));
-/// assert!(r.partial_match(&StringView::from_str("othello")));
-/// assert!(r.partial_match(&StringView::from_str("the")));
+/// let r = RE2::new(".he")?;
+/// assert!(r.full_match("the"));
+/// assert!(!r.partial_match("hello"));
+/// assert!(r.partial_match("othello"));
+/// assert!(r.partial_match("the"));
+///
+/// assert_eq!(
+///   CompileError {
+///     message: Some("missing ): as(df".to_string()),
+///     arg: Some("as(df".to_string()),
+///     code: RE2ErrorCode::MissingParen,
+///   },
+///   RE2::new("as(df").err().unwrap(),
+/// );
+/// # Ok(())
+/// # }
 /// ```
 #[repr(transparent)]
 pub struct RE2(pub re2::RE2);
 
 impl RE2 {
-  pub fn new(pattern: &StringView) -> Self {
-    /* NB: mem::transmute is currently needed (but always safe) because we
-     * duplicate any native bindings across each crate. */
-    Self(unsafe { re2::RE2::new2(mem::transmute(pattern.0)) })
+  fn parse_c_str(p: *const c_char) -> Option<String> {
+    if p.is_null() {
+      return None;
+    }
+    let c_str = unsafe { CStr::from_ptr(p) };
+    Some(c_str.to_string_lossy().to_string())
   }
 
-  pub fn new_with_options(pattern: &StringView, options: Options) -> Self {
-    Self(unsafe { re2::RE2::new3(mem::transmute(pattern.0), &options.into_native()) })
+  fn check_error_state(&self) -> Result<(), CompileError> {
+    RE2ErrorCode::from_native(self.0.error_code_()).map_err(|code| CompileError {
+      message: Self::parse_c_str(unsafe { self.0.error_c() }),
+      arg: Self::parse_c_str(unsafe { self.0.error_arg_c() }),
+      code,
+    })
+  }
+
+  pub fn new(pattern: impl AsRef<str>) -> Result<Self, CompileError> {
+    let pattern = StringView::from_str(pattern.as_ref());
+    /* NB: mem::transmute is currently needed (but always safe) because we
+     * duplicate any native bindings across each crate. */
+    let ret = Self(unsafe { re2::RE2::new2(mem::transmute(pattern.0)) });
+    ret.check_error_state()?;
+    Ok(ret)
+  }
+
+  pub fn new_with_options(
+    pattern: impl AsRef<str>,
+    options: Options,
+  ) -> Result<Self, CompileError> {
+    let pattern = StringView::from_str(pattern.as_ref());
+    let ret = Self(unsafe { re2::RE2::new3(mem::transmute(pattern.0), &options.into_native()) });
+    ret.check_error_state()?;
+    Ok(ret)
   }
 
   #[inline]
-  pub fn full_match(&self, text: &StringView) -> bool {
+  pub fn full_match(&self, text: impl AsRef<str>) -> bool {
+    let text = StringView::from_str(text.as_ref());
     unsafe { re2::RE2_FullMatchN(mem::transmute(text.0), &self.0, ptr::null(), 0) }
   }
 
   #[inline]
-  pub fn partial_match(&self, text: &StringView) -> bool {
+  pub fn partial_match(&self, text: impl AsRef<str>) -> bool {
+    let text = StringView::from_str(text.as_ref());
     unsafe { re2::RE2_PartialMatchN(mem::transmute(text.0), &self.0, ptr::null(), 0) }
+  }
+}
+
+impl ops::Drop for RE2 {
+  fn drop(&mut self) {
+    unsafe {
+      /* self.0.destruct(); */
+    }
   }
 }
