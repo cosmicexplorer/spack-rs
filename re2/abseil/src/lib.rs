@@ -14,63 +14,83 @@ mod bindings;
 
 use bindings::root::absl::lts_20230125 as absl;
 
-use std::{cmp, fmt, hash, mem, slice, str};
+use std::{cmp, fmt, hash, marker::PhantomData, mem, ops, slice, str};
 
 ///```
 /// use abseil::StringView;
 ///
 /// let s = StringView::from_str("a");
 ///
+/// assert_eq!(s, StringView::from_str("a"));
 /// assert_eq!(s.as_str(), "a");
 /// assert_eq!(&format!("{}", &s), "a");
 /// assert_eq!(&format!("{:?}", &s), "\"a\"");
 /// ```
+#[derive(Copy, Clone)]
 #[repr(transparent)]
-pub struct StringView(pub absl::string_view);
+pub struct StringView<'a> {
+  pub inner: absl::string_view,
+  _ph: PhantomData<&'a u8>,
+}
 
-impl StringView {
-  /* FIXME: make this return &Self or something to avoid use-after-free!!! */
+impl<'a> StringView<'a> {
   #[inline]
-  pub const fn from_str(s: &str) -> Self {
-    Self(absl::string_view {
-      ptr_: unsafe { mem::transmute(s.as_bytes().as_ptr()) },
-      length_: s.len(),
-    })
+  pub const fn from_str(s: &'a str) -> Self {
+    Self {
+      inner: absl::string_view {
+        ptr_: unsafe { mem::transmute(s.as_bytes().as_ptr()) },
+        length_: s.len(),
+      },
+      _ph: PhantomData,
+    }
   }
 
   #[inline]
-  pub const fn as_str(&self) -> &str {
-    let Self(absl::string_view { ptr_, length_ }) = self;
-    let span: &[u8] = unsafe { slice::from_raw_parts(mem::transmute(*ptr_), *length_) };
+  pub const fn as_str(&self) -> &'a str {
+    let Self {
+      inner: absl::string_view { ptr_, length_ },
+      ..
+    } = self;
+    let span: &'a [u8] = unsafe { slice::from_raw_parts(mem::transmute(*ptr_), *length_) };
     unsafe { str::from_utf8_unchecked(span) }
   }
 }
 
-impl fmt::Display for StringView {
+impl<'a> AsRef<str> for StringView<'a> {
+  fn as_ref(&self) -> &str { self.as_str() }
+}
+
+impl<'a> ops::Deref for StringView<'a> {
+  type Target = str;
+
+  fn deref(&self) -> &str { self.as_str() }
+}
+
+impl<'a> fmt::Display for StringView<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.as_str()) }
 }
 
-impl fmt::Debug for StringView {
+impl<'a> fmt::Debug for StringView<'a> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "\"{}\"", self.as_str()) }
 }
 
-impl cmp::PartialEq for StringView {
+impl<'a> cmp::PartialEq for StringView<'a> {
   fn eq(&self, other: &Self) -> bool { self.as_str().eq(other.as_str()) }
 }
 
-impl cmp::Eq for StringView {}
+impl<'a> cmp::Eq for StringView<'a> {}
 
-impl cmp::PartialOrd for StringView {
+impl<'a> cmp::PartialOrd for StringView<'a> {
   fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
     self.as_str().partial_cmp(other.as_str())
   }
 }
 
-impl cmp::Ord for StringView {
+impl<'a> cmp::Ord for StringView<'a> {
   fn cmp(&self, other: &Self) -> cmp::Ordering { self.as_str().cmp(other.as_str()) }
 }
 
-impl hash::Hash for StringView {
+impl<'a> hash::Hash for StringView<'a> {
   fn hash<H>(&self, state: &mut H)
   where H: hash::Hasher {
     self.as_str().hash(state);

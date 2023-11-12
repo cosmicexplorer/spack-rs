@@ -227,11 +227,27 @@ impl RE2 {
     })
   }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::RE2;
+  /// use std::ffi::CStr;
+  ///
+  /// let r = RE2::from_c_str(CStr::from_bytes_with_nul(b".he\0").unwrap())?;
+  /// assert!(r.full_match("the"));
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn from_c_str(pattern: &CStr) -> Result<Self, CompileError> {
+    let ret = Self(unsafe { re2::RE2::new(pattern.as_ptr()) });
+    ret.check_error_state()?;
+    Ok(ret)
+  }
+
   pub fn new(pattern: impl AsRef<str>) -> Result<Self, CompileError> {
     let pattern = StringView::from_str(pattern.as_ref());
     /* NB: mem::transmute is currently needed (but always safe) because we
      * duplicate any native bindings across each crate. */
-    let ret = Self(unsafe { re2::RE2::new2(mem::transmute(pattern.0)) });
+    let ret = Self(unsafe { re2::RE2::new2(mem::transmute(pattern.inner)) });
     ret.check_error_state()?;
     Ok(ret)
   }
@@ -241,7 +257,8 @@ impl RE2 {
     options: Options,
   ) -> Result<Self, CompileError> {
     let pattern = StringView::from_str(pattern.as_ref());
-    let ret = Self(unsafe { re2::RE2::new3(mem::transmute(pattern.0), &options.into_native()) });
+    let ret =
+      Self(unsafe { re2::RE2::new3(mem::transmute(pattern.inner), &options.into_native()) });
     ret.check_error_state()?;
     Ok(ret)
   }
@@ -249,20 +266,21 @@ impl RE2 {
   #[inline]
   pub fn full_match(&self, text: impl AsRef<str>) -> bool {
     let text = StringView::from_str(text.as_ref());
-    unsafe { re2::RE2_FullMatchN(mem::transmute(text.0), &self.0, ptr::null(), 0) }
+    unsafe { re2::RE2_FullMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
   }
 
   #[inline]
   pub fn partial_match(&self, text: impl AsRef<str>) -> bool {
     let text = StringView::from_str(text.as_ref());
-    unsafe { re2::RE2_PartialMatchN(mem::transmute(text.0), &self.0, ptr::null(), 0) }
+    unsafe { re2::RE2_PartialMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
   }
 }
 
-impl ops::Drop for RE2 {
-  fn drop(&mut self) {
-    unsafe {
-      /* self.0.destruct(); */
-    }
-  }
-}
+/* FIXME: why does this SIGABRT??? */
+/* impl ops::Drop for RE2 { */
+/* fn drop(&mut self) { */
+/* unsafe { */
+/* self.0.destruct(); */
+/* } */
+/* } */
+/* } */
