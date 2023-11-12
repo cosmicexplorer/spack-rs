@@ -72,11 +72,11 @@ impl RE2ErrorCode {
   }
 }
 
-/// compile error({code}): {message:?}({arg:?})
+/// compile error({code}): {message}({arg})
 #[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
 pub struct CompileError {
-  pub message: Option<String>,
-  pub arg: Option<String>,
+  pub message: String,
+  pub arg: String,
   #[source]
   pub code: RE2ErrorCode,
 }

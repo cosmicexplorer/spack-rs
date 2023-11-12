@@ -36,10 +36,11 @@ pub struct StringView<'a> {
 impl<'a> StringView<'a> {
   #[inline]
   pub const fn from_str(s: &'a str) -> Self {
+    let b = s.as_bytes();
     Self {
       inner: absl::string_view {
-        ptr_: unsafe { mem::transmute(s.as_bytes().as_ptr()) },
-        length_: s.len(),
+        ptr_: unsafe { mem::transmute(b.as_ptr()) },
+        length_: b.len(),
       },
       _ph: PhantomData,
     }

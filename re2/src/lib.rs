@@ -19,7 +19,7 @@ pub(crate) use bindings::root::re2;
 
 use abseil::StringView;
 
-use std::{ffi::CStr, mem, ops, os::raw::c_char, ptr};
+use std::{ffi::CStr, mem, os::raw::c_char, ptr, str};
 
 #[derive(
   Default,
@@ -198,8 +198,8 @@ impl Default for Options {
 ///
 /// assert_eq!(
 ///   CompileError {
-///     message: Some("missing ): as(df".to_string()),
-///     arg: Some("as(df".to_string()),
+///     message: "missing ): as(df".to_string(),
+///     arg: "as(df".to_string(),
 ///     code: RE2ErrorCode::MissingParen,
 ///   },
 ///   RE2::new("as(df").err().unwrap(),
@@ -211,36 +211,27 @@ impl Default for Options {
 pub struct RE2(pub re2::RE2);
 
 impl RE2 {
-  fn parse_c_str(p: *const c_char) -> Option<String> {
+  #[inline]
+  fn parse_c_str<'a>(p: *const c_char) -> Result<Option<&'a str>, str::Utf8Error> {
     if p.is_null() {
-      return None;
+      return Ok(None);
     }
-    let c_str = unsafe { CStr::from_ptr(p) };
-    Some(c_str.to_string_lossy().to_string())
+    let c_str: &'a CStr = unsafe { CStr::from_ptr(p) };
+    Ok(Some(c_str.to_str()?))
   }
 
   fn check_error_state(&self) -> Result<(), CompileError> {
-    RE2ErrorCode::from_native(self.0.error_code_()).map_err(|code| CompileError {
-      message: Self::parse_c_str(unsafe { self.0.error_c() }),
-      arg: Self::parse_c_str(unsafe { self.0.error_arg_c() }),
-      code,
+    RE2ErrorCode::from_native(self.0.error_code_()).map_err(|code| {
+      let message = Self::parse_c_str(unsafe { self.0.error_c() })
+        .unwrap()
+        .unwrap()
+        .to_string();
+      let arg = Self::parse_c_str(unsafe { self.0.error_arg_c() })
+        .unwrap()
+        .unwrap()
+        .to_string();
+      CompileError { message, arg, code }
     })
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::RE2;
-  /// use std::ffi::CStr;
-  ///
-  /// let r = RE2::from_c_str(CStr::from_bytes_with_nul(b".he\0").unwrap())?;
-  /// assert!(r.full_match("the"));
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn from_c_str(pattern: &CStr) -> Result<Self, CompileError> {
-    let ret = Self(unsafe { re2::RE2::new(pattern.as_ptr()) });
-    ret.check_error_state()?;
-    Ok(ret)
   }
 
   pub fn new(pattern: impl AsRef<str>) -> Result<Self, CompileError> {
@@ -261,6 +252,37 @@ impl RE2 {
       Self(unsafe { re2::RE2::new3(mem::transmute(pattern.inner), &options.into_native()) });
     ret.check_error_state()?;
     Ok(ret)
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// let o: Options = CannedOptions::POSIX.into();
+  /// let r = re2::RE2::new_with_options(".he", o)?;
+  /// assert_eq!(o, r.options());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn options(&self) -> Options { self.0.options_.into() }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new(".he")?;
+  /// assert_eq!(".he", r.pattern());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn pattern(&self) -> &str {
+    Self::parse_c_str(unsafe { self.0.pattern_c() })
+      .unwrap()
+      .unwrap()
+  }
+
+  pub fn expensive_clone(&self) -> Self {
+    Self::new_with_options(self.pattern(), self.options()).unwrap()
   }
 
   #[inline]

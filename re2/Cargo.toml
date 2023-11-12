@@ -9,6 +9,7 @@ authors.workspace       = true
 
 [package.metadata.spack]
 env_label               = "re2-runtime-deps"
+# FIXME: RE2 construction raises an exception if cxxstd=17 is used???
 spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared cxxstd=14"
 cxx                     = "c++14"
 
