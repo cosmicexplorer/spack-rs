@@ -22,8 +22,9 @@ pub(crate) use bindings::root::{absl as rebound_absl, re2};
 use abseil::StringView;
 
 use std::{
+  cmp,
   ffi::CStr,
-  mem,
+  fmt, hash, mem,
   os::raw::{c_char, c_void},
   ptr, slice, str,
 };
@@ -210,12 +211,12 @@ impl<'a> From<StringView<'a>> for rebound_absl::lts_20230125::string_view {
 /// assert!(r.partial_match("the"));
 ///
 /// assert_eq!(
+///   RE2::new("as(df").err().unwrap(),
 ///   CompileError {
 ///     message: "missing ): as(df".to_string(),
 ///     arg: "as(df".to_string(),
 ///     code: RE2ErrorCode::MissingParen,
 ///   },
-///   RE2::new("as(df").err().unwrap(),
 /// );
 /// # Ok(())
 /// # }
@@ -271,6 +272,7 @@ impl RE2 {
   /// let o: Options = CannedOptions::POSIX.into();
   /// let r = re2::RE2::new_with_options(".he", o)?;
   /// assert_eq!(o, r.options());
+  /// assert_ne!(o, Options::default());
   /// # Ok(())
   /// # }
   /// ```
@@ -430,6 +432,53 @@ unsafe extern "C" fn parse_str(str_: *const c_char, n: usize, dest: *mut c_void)
   let dest = dest as usize as *mut &str;
   dest.write(s);
   true
+}
+
+impl fmt::Debug for RE2 {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "RE2(pattern=<{}>, options={:?})",
+      self.pattern(),
+      self.options()
+    )
+  }
+}
+
+impl cmp::PartialEq for RE2 {
+  fn eq(&self, other: &Self) -> bool {
+    self.pattern().eq(other.pattern()) && self.options().eq(&other.options())
+  }
+}
+
+impl cmp::Eq for RE2 {}
+
+impl hash::Hash for RE2 {
+  fn hash<H>(&self, state: &mut H)
+  where H: hash::Hasher {
+    self.pattern().hash(state);
+    self.options().hash(state);
+  }
+}
+
+impl cmp::PartialOrd for RE2 {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    let p = self.pattern().partial_cmp(other.pattern())?;
+    if p != cmp::Ordering::Equal {
+      return Some(p);
+    }
+    self.options().partial_cmp(&other.options())
+  }
+}
+
+impl cmp::Ord for RE2 {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    let p = self.pattern().cmp(other.pattern());
+    if p != cmp::Ordering::Equal {
+      return p;
+    }
+    self.options().cmp(&other.options())
+  }
 }
 
 /* FIXME: why does this SIGABRT??? */
