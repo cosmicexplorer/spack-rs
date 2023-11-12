@@ -17,7 +17,7 @@ mod bindings;
 pub mod error;
 use error::{CompileError, RE2ErrorCode};
 
-pub(crate) use bindings::root::{absl as rebound_absl, re2};
+pub(crate) use bindings::root::{absl::lts_20230125::string_view as re2_string_view, re2};
 
 use abseil::StringView;
 
@@ -196,8 +196,17 @@ impl Default for Options {
 
 /* NB: mem::transmute is currently needed (but always safe) because we
  * duplicate any native bindings across each crate. */
-impl<'a> From<StringView<'a>> for rebound_absl::lts_20230125::string_view {
+impl<'a> From<StringView<'a>> for re2_string_view {
   fn from(x: StringView<'a>) -> Self { unsafe { mem::transmute(x.inner) } }
+}
+
+impl<'a> From<re2_string_view> for StringView<'a> {
+  fn from(x: re2_string_view) -> Self {
+    Self {
+      inner: unsafe { mem::transmute(x) },
+      _ph: std::marker::PhantomData,
+    }
+  }
 }
 
 ///```
@@ -226,24 +235,15 @@ pub struct RE2(pub re2::RE2);
 
 impl RE2 {
   #[inline]
-  fn parse_c_str<'a>(p: *const c_char) -> Result<Option<&'a str>, str::Utf8Error> {
-    if p.is_null() {
-      return Ok(None);
-    }
-    let c_str: &'a CStr = unsafe { CStr::from_ptr(p) };
-    Ok(Some(c_str.to_str()?))
+  fn parse_c_str<'a>(p: *const c_char) -> &'a str {
+    assert!(!p.is_null());
+    unsafe { str::from_utf8_unchecked(CStr::from_ptr(p).to_bytes()) }
   }
 
   fn check_error_state(&self) -> Result<(), CompileError> {
     RE2ErrorCode::from_native(self.0.error_code_()).map_err(|code| {
-      let message = Self::parse_c_str(unsafe { self.0.error_c() })
-        .unwrap()
-        .unwrap()
-        .to_string();
-      let arg = Self::parse_c_str(unsafe { self.0.error_arg_c() })
-        .unwrap()
-        .unwrap()
-        .to_string();
+      let message = Self::parse_c_str(unsafe { self.0.error_c() }).to_string();
+      let arg = Self::parse_c_str(unsafe { self.0.error_arg_c() }).to_string();
       CompileError { message, arg, code }
     })
   }
@@ -287,11 +287,7 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn pattern(&self) -> &str {
-    Self::parse_c_str(unsafe { self.0.pattern_c() })
-      .unwrap()
-      .unwrap()
-  }
+  pub fn pattern(&self) -> &str { Self::parse_c_str(unsafe { self.0.pattern_c() }) }
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
@@ -354,6 +350,7 @@ impl RE2 {
       }
       unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
     };
+
     if unsafe {
       re2::RE2_FullMatchN(
         StringView::from_str(text).into(),
@@ -412,6 +409,7 @@ impl RE2 {
       }
       unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
     };
+
     if unsafe {
       re2::RE2_PartialMatchN(
         StringView::from_str(text).into(),
@@ -420,6 +418,151 @@ impl RE2 {
         argv_ref.len() as i32,
       )
     } {
+      Some(unsafe { mem::MaybeUninit::array_assume_init(args) })
+    } else {
+      None
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// let mut s = "the king's men";
+  /// assert!(r.consume(&mut s));
+  /// assert_eq!(s, " king's men");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn consume(&self, text: &mut &str) -> bool {
+    let mut text_arg: re2_string_view = StringView::from_str(*text).into();
+    if unsafe { re2::RE2_ConsumeN(&mut text_arg, &self.0, ptr::null(), 0) } {
+      let text_arg: StringView<'_> = text_arg.into();
+      *text = text_arg.as_str();
+      true
+    } else {
+      false
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// let mut s = "the king's men";
+  /// let [s1] = r.consume_capturing(&mut s).unwrap();
+  /// assert_eq!(s1, "th");
+  /// assert_eq!(s, " king's men");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn consume_capturing<'a, const N: usize>(&self, text: &mut &'a str) -> Option<[&'a str; N]> {
+    if N > self.num_captures() {
+      return None;
+    }
+    let mut args: [mem::MaybeUninit<&'a str>; N] = mem::MaybeUninit::uninit_array();
+    let argv: [re2::RE2_Arg; N] = {
+      let mut argv: [mem::MaybeUninit<re2::RE2_Arg>; N] = mem::MaybeUninit::uninit_array();
+      for (a, arg) in args.iter_mut().zip(argv.iter_mut()) {
+        arg.write(re2::RE2_Arg {
+          arg_: a.as_mut_ptr() as usize as *mut c_void,
+          parser_: Some(parse_str),
+        });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv) }
+    };
+    let argv_ref: [*const re2::RE2_Arg; N] = {
+      let mut argv_ref: [mem::MaybeUninit<*const re2::RE2_Arg>; N] =
+        mem::MaybeUninit::uninit_array();
+      for (a, arg) in argv.iter().zip(argv_ref.iter_mut()) {
+        arg.write(unsafe { mem::transmute(a) });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
+    };
+
+    let mut text_arg: re2_string_view = StringView::from_str(*text).into();
+    if unsafe {
+      re2::RE2_ConsumeN(
+        &mut text_arg,
+        &self.0,
+        argv_ref.as_ptr(),
+        argv_ref.len() as i32,
+      )
+    } {
+      let text_arg: StringView<'_> = text_arg.into();
+      *text = text_arg.as_str();
+      Some(unsafe { mem::MaybeUninit::array_assume_init(args) })
+    } else {
+      None
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// let mut s = "all of the king's men";
+  /// assert!(r.find_and_consume(&mut s));
+  /// assert_eq!(s, " king's men");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn find_and_consume(&self, text: &mut &str) -> bool {
+    let mut text_arg: re2_string_view = StringView::from_str(*text).into();
+    if unsafe { re2::RE2_FindAndConsumeN(&mut text_arg, &self.0, ptr::null(), 0) } {
+      let text_arg: StringView<'_> = text_arg.into();
+      *text = text_arg.as_str();
+      true
+    } else {
+      false
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// let mut s = "all of the king's men";
+  /// let [s1] = r.find_and_consume_capturing(&mut s).unwrap();
+  /// assert_eq!(s1, "th");
+  /// assert_eq!(s, " king's men");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn find_and_consume_capturing<'a, const N: usize>(
+    &self,
+    text: &mut &'a str,
+  ) -> Option<[&'a str; N]> {
+    if N > self.num_captures() {
+      return None;
+    }
+    let mut args: [mem::MaybeUninit<&'a str>; N] = mem::MaybeUninit::uninit_array();
+    let argv: [re2::RE2_Arg; N] = {
+      let mut argv: [mem::MaybeUninit<re2::RE2_Arg>; N] = mem::MaybeUninit::uninit_array();
+      for (a, arg) in args.iter_mut().zip(argv.iter_mut()) {
+        arg.write(re2::RE2_Arg {
+          arg_: a.as_mut_ptr() as usize as *mut c_void,
+          parser_: Some(parse_str),
+        });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv) }
+    };
+    let argv_ref: [*const re2::RE2_Arg; N] = {
+      let mut argv_ref: [mem::MaybeUninit<*const re2::RE2_Arg>; N] =
+        mem::MaybeUninit::uninit_array();
+      for (a, arg) in argv.iter().zip(argv_ref.iter_mut()) {
+        arg.write(unsafe { mem::transmute(a) });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
+    };
+
+    let mut text_arg: re2_string_view = StringView::from_str(*text).into();
+    if unsafe {
+      re2::RE2_FindAndConsumeN(
+        &mut text_arg,
+        &self.0,
+        argv_ref.as_ptr(),
+        argv_ref.len() as i32,
+      )
+    } {
+      let text_arg: StringView<'_> = text_arg.into();
+      *text = text_arg.as_str();
       Some(unsafe { mem::MaybeUninit::array_assume_init(args) })
     } else {
       None

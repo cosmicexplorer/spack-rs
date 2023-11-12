@@ -30,7 +30,7 @@ use std::{cmp, fmt, hash, marker::PhantomData, mem, ops, slice, str};
 #[repr(transparent)]
 pub struct StringView<'a> {
   pub inner: absl::string_view,
-  _ph: PhantomData<&'a u8>,
+  pub _ph: PhantomData<&'a u8>,
 }
 
 impl<'a> StringView<'a> {
