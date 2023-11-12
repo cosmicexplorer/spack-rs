@@ -955,16 +955,19 @@ pub mod root {
       );
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE29pattern_cEv"]
-      pub fn RE2_pattern_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+      #[link_name = "\u{1}_ZNK3re23RE212pattern_viewEv"]
+      pub fn RE2_pattern_view(this: *const root::re2::RE2)
+        -> root::absl::lts_20230125::string_view;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE27error_cEv"]
-      pub fn RE2_error_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+      #[link_name = "\u{1}_ZNK3re23RE210error_viewEv"]
+      pub fn RE2_error_view(this: *const root::re2::RE2) -> root::absl::lts_20230125::string_view;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE211error_arg_cEv"]
-      pub fn RE2_error_arg_c(this: *const root::re2::RE2) -> *const ::std::os::raw::c_char;
+      #[link_name = "\u{1}_ZNK3re23RE214error_arg_viewEv"]
+      pub fn RE2_error_arg_view(
+        this: *const root::re2::RE2,
+      ) -> root::absl::lts_20230125::string_view;
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE211ProgramSizeEv"]
@@ -1217,13 +1220,19 @@ pub mod root {
       }
 
       #[inline]
-      pub unsafe fn pattern_c(&self) -> *const ::std::os::raw::c_char { RE2_pattern_c(self) }
+      pub unsafe fn pattern_view(&self) -> root::absl::lts_20230125::string_view {
+        RE2_pattern_view(self)
+      }
 
       #[inline]
-      pub unsafe fn error_c(&self) -> *const ::std::os::raw::c_char { RE2_error_c(self) }
+      pub unsafe fn error_view(&self) -> root::absl::lts_20230125::string_view {
+        RE2_error_view(self)
+      }
 
       #[inline]
-      pub unsafe fn error_arg_c(&self) -> *const ::std::os::raw::c_char { RE2_error_arg_c(self) }
+      pub unsafe fn error_arg_view(&self) -> root::absl::lts_20230125::string_view {
+        RE2_error_arg_view(self)
+      }
 
       #[inline]
       pub unsafe fn ProgramSize(&self) -> ::std::os::raw::c_int { RE2_ProgramSize(self) }

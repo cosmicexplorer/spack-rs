@@ -74,10 +74,10 @@ pub mod versions {
     use super::hex;
 
     pub const RE2_PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/re2-patches-3.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/re2-patches-5.tar.gz";
     pub const RE2_PATCHES_SHA256SUM: [u8; 32] =
-      hex!("ee335ec81dcf4d5aadfa364fd9aefb19f6e3c44b05264a14b89724799bacd4a3");
-    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-re2-patches-3";
+      hex!("3e29b91c30ad8c6cf6d7b491a2eeaaeafba6625c7aa88ccde66e604743dfd15b");
+    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-re2-patches-5";
   }
 
   /// The most recently released version of spack.

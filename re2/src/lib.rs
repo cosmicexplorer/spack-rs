@@ -22,9 +22,7 @@ pub(crate) use bindings::root::{absl::lts_20230125::string_view as re2_string_vi
 use abseil::StringView;
 
 use std::{
-  cmp,
-  ffi::CStr,
-  fmt, hash, mem,
+  cmp, fmt, hash, mem,
   os::raw::{c_char, c_void},
   ptr, slice, str,
 };
@@ -235,15 +233,23 @@ pub struct RE2(pub re2::RE2);
 
 impl RE2 {
   #[inline]
-  fn parse_c_str<'a>(p: *const c_char) -> &'a str {
-    assert!(!p.is_null());
-    unsafe { str::from_utf8_unchecked(CStr::from_ptr(p).to_bytes()) }
+  fn parse_string_view<'a>(s: re2_string_view) -> &'a str {
+    let s: StringView<'a> = s.into();
+    s.as_str()
   }
 
+  fn check_error_code(&self) -> Result<(), RE2ErrorCode> {
+    RE2ErrorCode::from_native(self.0.error_code_())
+  }
+
+  fn error(&self) -> &str { Self::parse_string_view(unsafe { self.0.error_view() }) }
+
+  fn error_arg(&self) -> &str { Self::parse_string_view(unsafe { self.0.error_arg_view() }) }
+
   fn check_error_state(&self) -> Result<(), CompileError> {
-    RE2ErrorCode::from_native(self.0.error_code_()).map_err(|code| {
-      let message = Self::parse_c_str(unsafe { self.0.error_c() }).to_string();
-      let arg = Self::parse_c_str(unsafe { self.0.error_arg_c() }).to_string();
+    self.check_error_code().map_err(|code| {
+      let message = self.error().to_string();
+      let arg = self.error_arg().to_string();
       CompileError { message, arg, code }
     })
   }
@@ -287,7 +293,7 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn pattern(&self) -> &str { Self::parse_c_str(unsafe { self.0.pattern_c() }) }
+  pub fn pattern(&self) -> &str { Self::parse_string_view(unsafe { self.0.pattern_view() }) }
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
@@ -301,6 +307,13 @@ impl RE2 {
   #[inline]
   pub fn num_captures(&self) -> usize { self.0.num_captures_ as usize }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new(".he")?;
+  /// assert_eq!(r, r.expensive_clone());
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn expensive_clone(&self) -> Self {
     Self::new_with_options(self.pattern(), self.options()).unwrap()
   }
