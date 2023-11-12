@@ -17,7 +17,7 @@ mod bindings;
 pub mod error;
 use error::{CompileError, RE2ErrorCode};
 
-pub(crate) use bindings::root::re2;
+pub(crate) use bindings::root::{absl as rebound_absl, re2};
 
 use abseil::StringView;
 
@@ -193,6 +193,12 @@ impl Default for Options {
   }
 }
 
+/* NB: mem::transmute is currently needed (but always safe) because we
+ * duplicate any native bindings across each crate. */
+impl<'a> From<StringView<'a>> for rebound_absl::lts_20230125::string_view {
+  fn from(x: StringView<'a>) -> Self { unsafe { mem::transmute(x.inner) } }
+}
+
 ///```
 /// # fn main() -> Result<(), re2::error::CompileError> {
 /// use re2::{RE2, error::*};
@@ -243,9 +249,7 @@ impl RE2 {
 
   pub fn new(pattern: impl AsRef<str>) -> Result<Self, CompileError> {
     let pattern = StringView::from_str(pattern.as_ref());
-    /* NB: mem::transmute is currently needed (but always safe) because we
-     * duplicate any native bindings across each crate. */
-    let ret = Self(unsafe { re2::RE2::new2(mem::transmute(pattern.inner)) });
+    let ret = Self(unsafe { re2::RE2::new2(pattern.into()) });
     ret.check_error_state()?;
     Ok(ret)
   }
@@ -255,8 +259,7 @@ impl RE2 {
     options: Options,
   ) -> Result<Self, CompileError> {
     let pattern = StringView::from_str(pattern.as_ref());
-    let ret =
-      Self(unsafe { re2::RE2::new3(mem::transmute(pattern.inner), &options.into_native()) });
+    let ret = Self(unsafe { re2::RE2::new3(pattern.into(), &options.into_native()) });
     ret.check_error_state()?;
     Ok(ret)
   }
@@ -314,7 +317,7 @@ impl RE2 {
   #[inline]
   pub fn full_match(&self, text: &str) -> bool {
     let text = StringView::from_str(text);
-    unsafe { re2::RE2_FullMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
+    unsafe { re2::RE2_FullMatchN(text.into(), &self.0, ptr::null(), 0) }
   }
 
   ///```
@@ -351,7 +354,7 @@ impl RE2 {
     };
     if unsafe {
       re2::RE2_FullMatchN(
-        mem::transmute(StringView::from_str(text).inner),
+        StringView::from_str(text).into(),
         &self.0,
         argv_ref.as_ptr(),
         argv_ref.len() as i32,
@@ -366,7 +369,7 @@ impl RE2 {
   #[inline]
   pub fn partial_match(&self, text: &str) -> bool {
     let text = StringView::from_str(text);
-    unsafe { re2::RE2_PartialMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
+    unsafe { re2::RE2_PartialMatchN(text.into(), &self.0, ptr::null(), 0) }
   }
 
   ///```
@@ -409,7 +412,7 @@ impl RE2 {
     };
     if unsafe {
       re2::RE2_PartialMatchN(
-        mem::transmute(StringView::from_str(text).inner),
+        StringView::from_str(text).into(),
         &self.0,
         argv_ref.as_ptr(),
         argv_ref.len() as i32,
