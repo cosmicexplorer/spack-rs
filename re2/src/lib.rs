@@ -8,6 +8,8 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_array_assume_init)]
 
 #[allow(unused, improper_ctypes)]
 mod bindings;
@@ -19,7 +21,12 @@ pub(crate) use bindings::root::re2;
 
 use abseil::StringView;
 
-use std::{ffi::CStr, mem, os::raw::c_char, ptr, str};
+use std::{
+  ffi::CStr,
+  mem,
+  os::raw::{c_char, c_void},
+  ptr, slice, str,
+};
 
 #[derive(
   Default,
@@ -281,21 +288,145 @@ impl RE2 {
       .unwrap()
   }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new(".he")?;
+  /// assert_eq!(0, r.num_captures());
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// assert_eq!(1, r.num_captures());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn num_captures(&self) -> usize { self.0.num_captures_ as usize }
+
   pub fn expensive_clone(&self) -> Self {
     Self::new_with_options(self.pattern(), self.options()).unwrap()
   }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new(".he")?;
+  /// assert!(r.full_match("the"));
+  /// # Ok(())
+  /// # }
+  /// ```
   #[inline]
-  pub fn full_match(&self, text: impl AsRef<str>) -> bool {
-    let text = StringView::from_str(text.as_ref());
+  pub fn full_match(&self, text: &str) -> bool {
+    let text = StringView::from_str(text);
     unsafe { re2::RE2_FullMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
   }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// assert_eq!(1, r.num_captures());
+  /// let [s] = r.full_match_capturing("the").unwrap();
+  /// assert_eq!(s, "th");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn full_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
+    if N > self.num_captures() {
+      return None;
+    }
+    let mut args: [mem::MaybeUninit<&'a str>; N] = mem::MaybeUninit::uninit_array();
+    let argv: [re2::RE2_Arg; N] = {
+      let mut argv: [mem::MaybeUninit<re2::RE2_Arg>; N] = mem::MaybeUninit::uninit_array();
+      for (a, arg) in args.iter_mut().zip(argv.iter_mut()) {
+        arg.write(re2::RE2_Arg {
+          arg_: a.as_mut_ptr() as usize as *mut c_void,
+          parser_: Some(parse_str),
+        });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv) }
+    };
+    let argv_ref: [*const re2::RE2_Arg; N] = {
+      let mut argv_ref: [mem::MaybeUninit<*const re2::RE2_Arg>; N] =
+        mem::MaybeUninit::uninit_array();
+      for (a, arg) in argv.iter().zip(argv_ref.iter_mut()) {
+        arg.write(unsafe { mem::transmute(a) });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
+    };
+    if unsafe {
+      re2::RE2_FullMatchN(
+        mem::transmute(StringView::from_str(text).inner),
+        &self.0,
+        argv_ref.as_ptr(),
+        argv_ref.len() as i32,
+      )
+    } {
+      Some(unsafe { mem::MaybeUninit::array_assume_init(args) })
+    } else {
+      None
+    }
+  }
+
   #[inline]
-  pub fn partial_match(&self, text: impl AsRef<str>) -> bool {
-    let text = StringView::from_str(text.as_ref());
+  pub fn partial_match(&self, text: &str) -> bool {
+    let text = StringView::from_str(text);
     unsafe { re2::RE2_PartialMatchN(mem::transmute(text.inner), &self.0, ptr::null(), 0) }
   }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("(.h)e")?;
+  /// assert_eq!(1, r.num_captures());
+  /// let [s] = r.partial_match_capturing("othello").unwrap();
+  /// assert_eq!(s, "th");
+  ///
+  /// // Ensure it uses the same memory (no copying):
+  /// let data = "this is the source string";
+  /// let [s] = r.partial_match_capturing(data).unwrap();
+  /// assert_eq!(s, "th");
+  /// assert_eq!(s.as_bytes().as_ptr(), data[8..].as_bytes().as_ptr());
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn partial_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
+    if N > self.num_captures() {
+      return None;
+    }
+    let mut args: [mem::MaybeUninit<&'a str>; N] = mem::MaybeUninit::uninit_array();
+    let argv: [re2::RE2_Arg; N] = {
+      let mut argv: [mem::MaybeUninit<re2::RE2_Arg>; N] = mem::MaybeUninit::uninit_array();
+      for (a, arg) in args.iter_mut().zip(argv.iter_mut()) {
+        arg.write(re2::RE2_Arg {
+          arg_: a.as_mut_ptr() as usize as *mut c_void,
+          parser_: Some(parse_str),
+        });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv) }
+    };
+    let argv_ref: [*const re2::RE2_Arg; N] = {
+      let mut argv_ref: [mem::MaybeUninit<*const re2::RE2_Arg>; N] =
+        mem::MaybeUninit::uninit_array();
+      for (a, arg) in argv.iter().zip(argv_ref.iter_mut()) {
+        arg.write(unsafe { mem::transmute(a) });
+      }
+      unsafe { mem::MaybeUninit::array_assume_init(argv_ref) }
+    };
+    if unsafe {
+      re2::RE2_PartialMatchN(
+        mem::transmute(StringView::from_str(text).inner),
+        &self.0,
+        argv_ref.as_ptr(),
+        argv_ref.len() as i32,
+      )
+    } {
+      Some(unsafe { mem::MaybeUninit::array_assume_init(args) })
+    } else {
+      None
+    }
+  }
+}
+
+unsafe extern "C" fn parse_str(str_: *const c_char, n: usize, dest: *mut c_void) -> bool {
+  let s = str::from_utf8_unchecked(slice::from_raw_parts(mem::transmute(str_), n));
+  let dest = dest as usize as *mut &str;
+  dest.write(s);
+  true
 }
 
 /* FIXME: why does this SIGABRT??? */
