@@ -599,6 +599,13 @@ pub mod root {
       );
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN3re213StringWrapperC1EONSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE"]
+      pub fn StringWrapper_StringWrapper1(
+        this: *mut root::re2::StringWrapper,
+        s: *mut root::std::string,
+      );
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN3re213StringWrapperD1Ev"]
       pub fn StringWrapper_StringWrapper_destructor(this: *mut root::re2::StringWrapper);
     }
@@ -617,6 +624,13 @@ pub mod root {
       pub unsafe fn new(s: root::absl::lts_20230125::string_view) -> Self {
         let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
         StringWrapper_StringWrapper(__bindgen_tmp.as_mut_ptr(), s);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn new1(s: *mut root::std::string) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        StringWrapper_StringWrapper1(__bindgen_tmp.as_mut_ptr(), s);
         __bindgen_tmp.assume_init()
       }
 
@@ -1132,6 +1146,12 @@ pub mod root {
       pub fn RE2_QuoteMeta(unquoted: root::absl::lts_20230125::string_view) -> root::std::string;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE210QuoteMetaWEN4absl12lts_2023012511string_viewE"]
+      pub fn RE2_QuoteMetaW(
+        unquote: root::absl::lts_20230125::string_view,
+      ) -> root::re2::StringWrapper;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE218PossibleMatchRangeEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEES7_i"]
       pub fn RE2_PossibleMatchRange(
         this: *const root::re2::RE2,
@@ -1399,6 +1419,13 @@ pub mod root {
         unquoted: root::absl::lts_20230125::string_view,
       ) -> root::std::string {
         RE2_QuoteMeta(unquoted)
+      }
+
+      #[inline]
+      pub unsafe fn QuoteMetaW(
+        unquote: root::absl::lts_20230125::string_view,
+      ) -> root::re2::StringWrapper {
+        RE2_QuoteMetaW(unquote)
       }
 
       #[inline]

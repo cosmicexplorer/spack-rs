@@ -211,7 +211,7 @@ impl<'a> From<re2_string_view> for StringView<'a> {
 
 ///```
 /// let s = re2::StringWrapper::new("asdf");
-/// assert_eq!(s.as_ref(), "asdf");
+/// assert_eq!(s.as_str(), "asdf");
 /// ```
 pub struct StringWrapper(pub re2::StringWrapper);
 
@@ -219,10 +219,9 @@ impl StringWrapper {
   pub fn new(s: &str) -> Self {
     Self(unsafe { re2::StringWrapper::new(StringView::from_str(s).into()) })
   }
-}
 
-impl AsRef<str> for StringWrapper {
-  fn as_ref(&self) -> &str {
+  #[inline]
+  pub fn as_str(&self) -> &str {
     let sv: StringView<'_> = unsafe { self.0.view() }.into();
     sv.as_str()
   }
@@ -623,7 +622,7 @@ impl RE2 {
   /// let r = RE2::new(".he")?;
   /// let mut s = StringWrapper::new("all the king's men");
   /// assert!(r.replace(&mut s, "duh"));
-  /// assert_eq!(s.as_ref(), "all duh king's men");
+  /// assert_eq!(s.as_str(), "all duh king's men");
   /// # Ok(())
   /// # }
   /// ```
@@ -641,7 +640,7 @@ impl RE2 {
   ///   "all the king's horses and all the king's men");
   /// assert_eq!(2, r.global_replace(&mut s, "duh"));
   /// assert_eq!(
-  ///   s.as_ref(),
+  ///   s.as_str(),
   ///   "all duh king's horses and all duh king's men",
   /// );
   /// # Ok(())
@@ -650,6 +649,35 @@ impl RE2 {
   pub fn global_replace(&self, s: &mut StringWrapper, rewrite: &str) -> usize {
     let rewrite = StringView::from_str(rewrite);
     (unsafe { re2::RE2_GlobalReplace(s.as_mut(), &self.0, rewrite.into()) }) as usize
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// let r = RE2::new("(.h)e")?;
+  /// let mut s = StringWrapper::new("");
+  /// assert!(r.extract("all the king's men", r"\1a", &mut s));
+  /// assert_eq!(s.as_str(), "tha");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn extract(&self, text: &str, rewrite: &str, out: &mut StringWrapper) -> bool {
+    let text = StringView::from_str(text);
+    let rewrite = StringView::from_str(rewrite);
+    unsafe { re2::RE2_Extract(text.into(), &self.0, rewrite.into(), out.as_mut()) }
+  }
+
+  ///```
+  /// let q = re2::RE2::quote_meta("1.5-1.8?");
+  /// assert_eq!(q.as_str(), r"1\.5\-1\.8\?");
+  /// ```
+  pub fn quote_meta(pattern: &str) -> StringWrapper {
+    let pattern = StringView::from_str(pattern);
+    let mut w = StringWrapper::new("");
+    /* FIXME: no need for std::string&& ctor or QuoteMetaW method! */
+    *w.as_mut() = unsafe { re2::RE2_QuoteMeta(pattern.into()) };
+    w
   }
 }
 
