@@ -17,7 +17,9 @@ mod bindings;
 pub mod error;
 use error::{CompileError, RE2ErrorCode};
 
-pub(crate) use bindings::root::{absl::lts_20230125::string_view as re2_string_view, re2};
+pub(crate) use bindings::root::{
+  absl::lts_20230125::string_view as re2_string_view, re2, std::string as re2_string,
+};
 
 use abseil::StringView;
 
@@ -206,6 +208,38 @@ impl<'a> From<re2_string_view> for StringView<'a> {
     }
   }
 }
+
+///```
+/// let s = re2::StringWrapper::new("asdf");
+/// assert_eq!(s.as_ref(), "asdf");
+/// ```
+pub struct StringWrapper(pub re2::StringWrapper);
+
+impl StringWrapper {
+  pub fn new(s: &str) -> Self {
+    Self(unsafe { re2::StringWrapper::new(StringView::from_str(s).into()) })
+  }
+}
+
+impl AsRef<str> for StringWrapper {
+  fn as_ref(&self) -> &str {
+    let sv: StringView<'_> = unsafe { self.0.view() }.into();
+    sv.as_str()
+  }
+}
+
+impl AsMut<re2_string> for StringWrapper {
+  fn as_mut(&mut self) -> &mut re2_string { unsafe { mem::transmute(self.0.get_mutable()) } }
+}
+
+/* FIXME: why does this SIGSEGV???? */
+/* impl ops::Drop for StringWrapper { */
+/* fn drop(&mut self) { */
+/* unsafe { */
+/* self.0.destruct(); */
+/* } */
+/* } */
+/* } */
 
 ///```
 /// # fn main() -> Result<(), re2::error::CompileError> {
@@ -580,6 +614,22 @@ impl RE2 {
     } else {
       None
     }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// let r = RE2::new(".he")?;
+  /// let mut s = StringWrapper::new("all the king's men");
+  /// assert!(r.replace(&mut s, "duh"));
+  /// assert_eq!(s.as_ref(), "all duh king's men");
+  /// # Ok(())
+  /// # }
+  ///```
+  pub fn replace(&self, s: &mut StringWrapper, rewrite: &str) -> bool {
+    let rewrite = StringView::from_str(rewrite);
+    unsafe { re2::RE2_Replace(s.as_mut(), &self.0, rewrite.into()) }
   }
 }
 

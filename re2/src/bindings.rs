@@ -551,6 +551,80 @@ pub mod root {
     }
     #[repr(C)]
     #[derive(Debug)]
+    pub struct StringWrapper {
+      pub inner_: root::std::string,
+    }
+    #[test]
+    fn bindgen_test_layout_StringWrapper() {
+      const UNINIT: ::std::mem::MaybeUninit<StringWrapper> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<StringWrapper>(),
+        32usize,
+        concat!("Size of: ", stringify!(StringWrapper))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<StringWrapper>(),
+        8usize,
+        concat!("Alignment of ", stringify!(StringWrapper))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).inner_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringWrapper),
+          "::",
+          stringify!(inner_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK3re213StringWrapper4viewEv"]
+      pub fn StringWrapper_view(
+        this: *const root::re2::StringWrapper,
+      ) -> root::absl::lts_20230125::string_view;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re213StringWrapper11get_mutableB5cxx11Ev"]
+      pub fn StringWrapper_get_mutable(
+        this: *mut root::re2::StringWrapper,
+      ) -> *mut root::std::string;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re213StringWrapperC1EN4absl12lts_2023012511string_viewE"]
+      pub fn StringWrapper_StringWrapper(
+        this: *mut root::re2::StringWrapper,
+        s: root::absl::lts_20230125::string_view,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re213StringWrapperD1Ev"]
+      pub fn StringWrapper_StringWrapper_destructor(this: *mut root::re2::StringWrapper);
+    }
+    impl StringWrapper {
+      #[inline]
+      pub unsafe fn view(&self) -> root::absl::lts_20230125::string_view {
+        StringWrapper_view(self)
+      }
+
+      #[inline]
+      pub unsafe fn get_mutable(&mut self) -> *mut root::std::string {
+        StringWrapper_get_mutable(self)
+      }
+
+      #[inline]
+      pub unsafe fn new(s: root::absl::lts_20230125::string_view) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        StringWrapper_StringWrapper(__bindgen_tmp.as_mut_ptr(), s);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn destruct(&mut self) { StringWrapper_StringWrapper_destructor(self) }
+    }
+    #[repr(C)]
+    #[derive(Debug)]
     pub struct RE2 {
       pub pattern_: *const root::std::string,
       pub options_: root::re2::RE2_Options,
