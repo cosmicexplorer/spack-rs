@@ -626,10 +626,30 @@ impl RE2 {
   /// assert_eq!(s.as_ref(), "all duh king's men");
   /// # Ok(())
   /// # }
-  ///```
+  /// ```
   pub fn replace(&self, s: &mut StringWrapper, rewrite: &str) -> bool {
     let rewrite = StringView::from_str(rewrite);
     unsafe { re2::RE2_Replace(s.as_mut(), &self.0, rewrite.into()) }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// let r = RE2::new(".he")?;
+  /// let mut s = StringWrapper::new(
+  ///   "all the king's horses and all the king's men");
+  /// assert_eq!(2, r.global_replace(&mut s, "duh"));
+  /// assert_eq!(
+  ///   s.as_ref(),
+  ///   "all duh king's horses and all duh king's men",
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn global_replace(&self, s: &mut StringWrapper, rewrite: &str) -> usize {
+    let rewrite = StringView::from_str(rewrite);
+    (unsafe { re2::RE2_GlobalReplace(s.as_mut(), &self.0, rewrite.into()) }) as usize
   }
 }
 
