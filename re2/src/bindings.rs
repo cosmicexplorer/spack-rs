@@ -2339,6 +2339,31 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7replaceEPNS_13StringWrapperENS_10StringViewE"]
+      pub fn RE2Wrapper_replace(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        inout: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper14global_replaceEPNS_13StringWrapperENS_10StringViewE"]
+      pub fn RE2Wrapper_global_replace(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        inout: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+      ) -> usize;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7extractENS_10StringViewES1_PNS_13StringWrapperE"]
+      pub fn RE2Wrapper_extract(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+        rewrite: root::re2_c_bindings::StringView,
+        out: *mut root::re2_c_bindings::StringWrapper,
+      ) -> bool;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperC1ENS_10StringViewERKN3re23RE27OptionsE"]
       pub fn RE2Wrapper_RE2Wrapper(
         this: *mut root::re2_c_bindings::RE2Wrapper,
@@ -2438,6 +2463,34 @@ pub mod root {
         n: usize,
       ) -> bool {
         RE2Wrapper_find_and_consume_n(self, text, captures, n)
+      }
+
+      #[inline]
+      pub unsafe fn replace(
+        &self,
+        inout: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+      ) -> bool {
+        RE2Wrapper_replace(self, inout, rewrite)
+      }
+
+      #[inline]
+      pub unsafe fn global_replace(
+        &self,
+        inout: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+      ) -> usize {
+        RE2Wrapper_global_replace(self, inout, rewrite)
+      }
+
+      #[inline]
+      pub unsafe fn extract(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        rewrite: root::re2_c_bindings::StringView,
+        out: *mut root::re2_c_bindings::StringWrapper,
+      ) -> bool {
+        RE2Wrapper_extract(self, text, rewrite, out)
       }
 
       #[inline]

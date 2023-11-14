@@ -91,9 +91,14 @@ public:
   bool partial_match(StringView text) const;
   bool partial_match_n(StringView text, StringView captures[], size_t n) const;
   bool consume(StringView *text) const;
-  bool consume_n(StringView* text, StringView captures[], size_t n) const;
+  bool consume_n(StringView *text, StringView captures[], size_t n) const;
   bool find_and_consume(StringView *text) const;
-  bool find_and_consume_n(StringView* text, StringView captures[], size_t n) const;
+  bool find_and_consume_n(StringView *text, StringView captures[],
+                          size_t n) const;
+
+  bool replace(StringWrapper *inout, StringView rewrite) const;
+  size_t global_replace(StringWrapper *inout, StringView rewrite) const;
+  bool extract(StringView text, StringView rewrite, StringWrapper* out) const;
 
 private:
   re2::RE2 *re_;

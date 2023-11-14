@@ -169,4 +169,23 @@ bool RE2Wrapper::find_and_consume_n(StringView *text, StringView captures[],
   return ret;
 }
 
+bool RE2Wrapper::replace(StringWrapper *inout, const StringView rewrite) const {
+  return re2::RE2::Replace(inout->get_mutable(), *re_,
+                           rewrite.into_absl_view());
+}
+
+size_t RE2Wrapper::global_replace(StringWrapper *inout,
+                                  const StringView rewrite) const {
+  int ret = re2::RE2::GlobalReplace(inout->get_mutable(), *re_,
+                                    rewrite.into_absl_view());
+  assert(ret >= 0);
+  return ret;
+}
+
+bool RE2Wrapper::extract(const StringView text, const StringView rewrite,
+                         StringWrapper *out) const {
+  return re2::RE2::Extract(text.into_absl_view(), *re_,
+                           rewrite.into_absl_view(), out->get_mutable());
+}
+
 } /* namespace re2_c_bindings */
