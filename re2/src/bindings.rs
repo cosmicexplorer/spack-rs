@@ -2370,6 +2370,28 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12match_singleENS_10StringViewEmmN3re23RE26AnchorE"]
+      pub fn RE2Wrapper_match_single(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+        startpos: usize,
+        endpos: usize,
+        re_anchor: root::re2::RE2_Anchor,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper13match_routineENS_10StringViewEmmN3re23RE26AnchorEPS1_m"]
+      pub fn RE2Wrapper_match_routine(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+        startpos: usize,
+        endpos: usize,
+        re_anchor: root::re2::RE2_Anchor,
+        submatch_args: *mut root::re2_c_bindings::StringView,
+        nsubmatch: usize,
+      ) -> bool;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperC1ENS_10StringViewERKN3re23RE27OptionsE"]
       pub fn RE2Wrapper_RE2Wrapper(
         this: *mut root::re2_c_bindings::RE2Wrapper,
@@ -2500,6 +2522,38 @@ pub mod root {
         out: *mut root::re2_c_bindings::StringWrapper,
       ) -> bool {
         RE2Wrapper_extract(self, text, rewrite, out)
+      }
+
+      #[inline]
+      pub unsafe fn match_single(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        startpos: usize,
+        endpos: usize,
+        re_anchor: root::re2::RE2_Anchor,
+      ) -> bool {
+        RE2Wrapper_match_single(self, text, startpos, endpos, re_anchor)
+      }
+
+      #[inline]
+      pub unsafe fn match_routine(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        startpos: usize,
+        endpos: usize,
+        re_anchor: root::re2::RE2_Anchor,
+        submatch_args: *mut root::re2_c_bindings::StringView,
+        nsubmatch: usize,
+      ) -> bool {
+        RE2Wrapper_match_routine(
+          self,
+          text,
+          startpos,
+          endpos,
+          re_anchor,
+          submatch_args,
+          nsubmatch,
+        )
       }
 
       #[inline]

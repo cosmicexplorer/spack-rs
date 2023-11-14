@@ -5,6 +5,8 @@
 
 use crate::re2;
 
+use std::os::raw::c_uint;
+
 #[derive(
   Default,
   Debug,
@@ -168,4 +170,33 @@ impl Default for Options {
       one_line: false,
     }
   }
+}
+
+#[derive(
+  Debug,
+  Default,
+  Copy,
+  Clone,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Hash,
+  num_enum::TryFromPrimitive,
+  num_enum::IntoPrimitive,
+)]
+#[repr(u32)]
+pub enum Anchor {
+  /// unanchored
+  #[default]
+  Unanchored = re2::RE2_Anchor_UNANCHORED,
+  /// anchored at start
+  AnchorStart = re2::RE2_Anchor_ANCHOR_START,
+  /// anchored at both start and end
+  AnchorBoth = re2::RE2_Anchor_ANCHOR_BOTH,
+}
+
+impl Anchor {
+  #[inline]
+  pub fn into_native(self) -> c_uint { self.into() }
 }

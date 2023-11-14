@@ -80,3 +80,9 @@ pub struct CompileError {
   #[source]
   pub code: RE2ErrorCode,
 }
+
+/// rewrite error: {message}
+#[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
+pub struct RewriteError {
+  pub message: String,
+}

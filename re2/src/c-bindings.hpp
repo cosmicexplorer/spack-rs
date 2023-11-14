@@ -37,7 +37,7 @@ public:
 
   StringView as_view() const;
   std::string *get_mutable() {
-    if (inner_ == nullptr) {
+    if (!inner_) {
       inner_ = new std::string();
     }
     return inner_;
@@ -78,7 +78,7 @@ public:
   void clear();
 
   StringView pattern() const noexcept;
-  const re2::RE2::Options& options() const noexcept;
+  const re2::RE2::Options &options() const noexcept;
 
   re2::RE2::ErrorCode error_code() const noexcept;
   StringView error() const noexcept;
@@ -99,7 +99,13 @@ public:
 
   bool replace(StringWrapper *inout, StringView rewrite) const;
   size_t global_replace(StringWrapper *inout, StringView rewrite) const;
-  bool extract(StringView text, StringView rewrite, StringWrapper* out) const;
+  bool extract(StringView text, StringView rewrite, StringWrapper *out) const;
+
+  bool match_single(StringView text, size_t startpos, size_t endpos,
+                    re2::RE2::Anchor re_anchor) const;
+  bool match_routine(StringView text, size_t startpos, size_t endpos,
+                     re2::RE2::Anchor re_anchor, StringView submatch_args[],
+                     size_t nsubmatch) const;
 
 private:
   re2::RE2 *re_;

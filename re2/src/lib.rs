@@ -12,6 +12,8 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(const_maybe_uninit_uninit_array)]
 #![feature(const_maybe_uninit_array_assume_init)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 
 #[allow(unused, improper_ctypes)]
 mod bindings;
@@ -20,7 +22,7 @@ pub mod error;
 use error::{CompileError, RE2ErrorCode};
 
 pub mod options;
-use options::Options;
+use options::{Anchor, Options};
 
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
@@ -28,7 +30,6 @@ use std::{
   cmp, fmt, hash,
   marker::PhantomData,
   mem::{self, MaybeUninit},
-  num::NonZeroUsize,
   ops,
   os::raw::c_char,
   ptr, slice, str,
@@ -83,7 +84,7 @@ impl<'a> StringView<'a> {
   pub const fn from_str(s: &'a str) -> Self { Self::from_slice(s.as_bytes()) }
 
   #[inline]
-  const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
+  pub const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
 
   #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
@@ -651,7 +652,7 @@ impl RE2 {
   /// let r = RE2::from_str(".he")?;
   /// let mut s = StringWrapper::from_view(StringView::from_str(
   ///   "all the king's horses and all the king's men"));
-  /// assert_eq!(2, r.global_replace(&mut s, "duh").unwrap().get());
+  /// assert_eq!(2, r.global_replace(&mut s, "duh"));
   /// assert_eq!(
   ///   s.as_view().as_str(),
   ///   "all duh king's horses and all duh king's men",
@@ -660,13 +661,13 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn global_replace(&self, text: &mut StringWrapper, rewrite: &str) -> Option<NonZeroUsize> {
+  pub fn global_replace(&self, text: &mut StringWrapper, rewrite: &str) -> usize {
     let rewrite = StringView::from_str(rewrite);
-    NonZeroUsize::new(unsafe {
+    unsafe {
       self
         .0
         .global_replace(text.as_mut_native(), rewrite.into_native())
-    })
+    }
   }
 
   ///```
@@ -691,6 +692,77 @@ impl RE2 {
         out.as_mut_native(),
       )
     }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, options::*};
+  ///
+  /// let r = RE2::from_str("(foo)|(bar)baz")?;
+  /// let msg = "barbazbla";
+  ///
+  /// assert!(r.match_no_captures(msg, 0..msg.len(), Anchor::Unanchored));
+  /// assert!(r.match_no_captures(msg, 0..msg.len(), Anchor::AnchorStart));
+  /// assert!(!r.match_no_captures(msg, 0..msg.len(), Anchor::AnchorBoth));
+  /// assert!(r.match_no_captures(msg, 0..6, Anchor::AnchorBoth));
+  /// assert!(!r.match_no_captures(msg, 1..msg.len(), Anchor::Unanchored));
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn match_no_captures(&self, text: &str, range: ops::Range<usize>, anchor: Anchor) -> bool {
+    let text = StringView::from_str(text);
+    let ops::Range { start, end } = range;
+
+    unsafe {
+      self
+        .0
+        .match_single(text.into_native(), start, end, anchor.into_native())
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, options::*};
+  ///
+  /// let r = RE2::from_str("(foo)|(bar)baz")?;
+  /// let msg = "barbazbla";
+  ///
+  /// let [s1, s2, s3, s4] = r.match_routine::<3>(msg, 0..msg.len(), Anchor::Unanchored).unwrap();
+  /// assert_eq!(s1, "barbaz");
+  /// assert_eq!(s2, "");
+  /// assert_eq!(s3, "bar");
+  /// assert_eq!(s4, "");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn match_routine<'a, const N: usize>(
+    &self,
+    text: &'a str,
+    range: ops::Range<usize>,
+    anchor: Anchor,
+  ) -> Option<[&'a str; N + 1]> {
+    let text = StringView::from_str(text);
+    let ops::Range { start, end } = range;
+    let mut submatches = [StringView::empty().into_native(); N + 1];
+
+    if !unsafe {
+      self.0.match_routine(
+        text.into_native(),
+        start,
+        end,
+        anchor.into_native(),
+        submatches.as_mut_ptr(),
+        N + 1,
+      )
+    } {
+      return None;
+    }
+
+    let mut ret: [MaybeUninit<&'a str>; N + 1] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(submatches.into_iter()) {
+      output.write(unsafe { StringView::from_native(input) }.as_str());
+    }
+    Some(unsafe { MaybeUninit::array_assume_init(ret) })
   }
 }
 
@@ -753,7 +825,8 @@ impl cmp::Ord for RE2 {
 }
 
 impl hash::Hash for RE2 {
-  fn hash<H>(&self, state: &mut H) where H: hash::Hasher {
+  fn hash<H>(&self, state: &mut H)
+  where H: hash::Hasher {
     self.pattern().hash(state);
     self.options().hash(state);
   }

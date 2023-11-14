@@ -18,7 +18,7 @@ void StringWrapper::clear() {
 }
 
 StringView StringWrapper::as_view() const {
-  if (inner_ == nullptr) {
+  if (!inner_) {
     return StringView();
   }
   return StringView(inner_->data(), inner_->size());
@@ -190,6 +190,27 @@ bool RE2Wrapper::extract(const StringView text, const StringView rewrite,
                          StringWrapper *out) const {
   return re2::RE2::Extract(text.into_absl_view(), *re_,
                            rewrite.into_absl_view(), out->get_mutable());
+}
+
+bool RE2Wrapper::match_single(const StringView text, size_t startpos,
+                              size_t endpos, re2::RE2::Anchor re_anchor) const {
+  return re_->Match(text.into_absl_view(), startpos, endpos, re_anchor, nullptr,
+                    0);
+}
+
+bool RE2Wrapper::match_routine(const StringView text, size_t startpos,
+                               size_t endpos, re2::RE2::Anchor re_anchor,
+                               StringView submatch_args[],
+                               size_t nsubmatch) const {
+  std::vector<absl::string_view> submatches(nsubmatch);
+
+  bool ret = re_->Match(text.into_absl_view(), startpos, endpos, re_anchor,
+                        submatches.data(), submatches.size());
+
+  for (size_t i = 0; i < submatches.size(); ++i) {
+    submatch_args[i] = submatches[i];
+  }
+  return ret;
 }
 
 } /* namespace re2_c_bindings */
