@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #ifndef __RE2_C_BINDINGS_H__
@@ -28,22 +28,33 @@ class StringWrapper {
 public:
   StringWrapper();
   StringWrapper(StringView s);
-  StringWrapper(std::string &&s) : inner_(s) {}
-  ~StringWrapper();
+  StringWrapper(std::string *s) : inner_(s) {}
+
+  StringWrapper(StringWrapper &&rhs) : inner_(rhs.inner_) {}
+  StringWrapper(const StringWrapper &) = delete;
+  StringWrapper &operator=(const StringWrapper &) = delete;
+
+  void clear();
 
   StringView as_view() const;
-  std::string *get_mutable() { return &inner_; }
+  std::string *get_mutable() {
+    if (inner_ == nullptr) {
+      inner_ = new std::string();
+    }
+    return inner_;
+  }
 
 private:
-  std::string inner_;
+  std::string *inner_;
 };
 
 class RE2Wrapper {
 public:
-  static StringWrapper quote_meta(StringView pattern);
+  static void quote_meta(StringView pattern, StringWrapper* out);
 
   RE2Wrapper(StringView pattern, const re2::RE2::Options &options);
-  ~RE2Wrapper();
+
+  void clear();
 
   re2::RE2::ErrorCode error_code() const noexcept;
 
@@ -51,11 +62,15 @@ public:
   StringView error() const noexcept;
   StringView error_arg() const noexcept;
 
-  bool full_match_n(StringView text, StringView args[], size_t n) const;
-  bool partial_match_n(StringView text, StringView args[], size_t n) const;
+  size_t num_captures() const noexcept;
+
+  bool full_match(StringView text) const;
+  bool full_match_n(StringView text, StringView captures[], size_t n) const;
+  bool partial_match(StringView text) const;
+  bool partial_match_n(StringView text, StringView captures[], size_t n) const;
 
 private:
-  re2::RE2 re_;
+  re2::RE2 *re_;
 };
 
 } /* namespace re2_c_bindings */

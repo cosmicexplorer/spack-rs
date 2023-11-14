@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! ???
@@ -12,10 +12,12 @@ use tokio::task;
 async fn main() -> eyre::Result<()> {
   let prefixes = resolve_dependencies().await?;
 
+  println!("cargo:rerun-if-changed=src/c-bindings.cpp");
   task::spawn_blocking(|| {
     cc::Build::new()
       .cpp(true)
       .pic(true)
+      .std("c++20")
       .file("src/c-bindings.cpp")
       .include("src")
       .includes(
@@ -25,7 +27,7 @@ async fn main() -> eyre::Result<()> {
       )
       .try_compile("re2_c_bindings")
   })
-    .await??;
+  .await??;
 
   Ok(())
 }

@@ -1,82 +1,121 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "c-bindings.hpp"
 
+#include <cassert>
+
+#include <cstdio>
+#include <iostream>
+
 namespace re2_c_bindings {
+using re2_c_bindings::StringWrapper;
 
-StringWrapper::StringWrapper() : inner_() {}
-StringWrapper::StringWrapper(StringView s) : inner_(s.data_, s.len_) {}
-StringWrapper::~StringWrapper() {}
+StringWrapper::StringWrapper() : inner_(nullptr) {}
+StringWrapper::StringWrapper(StringView s)
+    : inner_(new std::string(s.data_, s.len_)) {}
 
-StringView StringWrapper::as_view() const {
-  return StringView(inner_.data(), inner_.size());
+void StringWrapper::clear() {
+  delete inner_;
+  inner_ = nullptr;
 }
 
-StringWrapper RE2Wrapper::quote_meta(const StringView pattern) {
-  return StringWrapper(
-      std::move(re2::RE2::QuoteMeta(pattern.into_absl_view())));
+StringView StringWrapper::as_view() const {
+  if (inner_ == nullptr) {
+    return StringView();
+  }
+  return StringView(inner_->data(), inner_->size());
+}
+
+void RE2Wrapper::quote_meta(const StringView pattern, StringWrapper *out) {
+  *out->get_mutable() =
+      std::move(re2::RE2::QuoteMeta(pattern.into_absl_view()));
 }
 
 RE2Wrapper::RE2Wrapper(StringView pattern, const re2::RE2::Options &options)
-    : re_(pattern.into_absl_view(), options) {}
+    : re_(new re2::RE2(pattern.into_absl_view(), options)) {}
 
-RE2Wrapper::~RE2Wrapper() {}
+void RE2Wrapper::clear() {
+  delete re_;
+  re_ = nullptr;
+}
 
 re2::RE2::ErrorCode RE2Wrapper::error_code() const noexcept {
-  return re_.error_code();
+  return re_->error_code();
 }
 
 StringView RE2Wrapper::pattern() const noexcept {
-  absl::string_view sv(re_.pattern());
+  absl::string_view sv(re_->pattern());
   return StringView(sv);
 }
 
 StringView RE2Wrapper::error() const noexcept {
-  absl::string_view sv(re_.error());
+  absl::string_view sv(re_->error());
   return StringView(sv);
 }
 
 StringView RE2Wrapper::error_arg() const noexcept {
-  absl::string_view sv(re_.error_arg());
+  absl::string_view sv(re_->error_arg());
   return StringView(sv);
+}
+
+size_t RE2Wrapper::num_captures() const noexcept {
+  int n = re_->NumberOfCapturingGroups();
+  assert(n >= 0);
+  return n;
+}
+
+bool RE2Wrapper::full_match(const StringView text) const {
+  return re2::RE2::FullMatchN(text.into_absl_view(), *re_, nullptr, 0);
 }
 
 static bool parse_string_view(const char *data, size_t len, void *dest) {
   StringView *dest_sv = reinterpret_cast<StringView *>(dest);
+  fprintf(stderr, "data=%p, len=%lu, dest=%p\n", data, len, dest);
   dest_sv->data_ = data;
   dest_sv->len_ = len;
   return true;
 }
 
-bool RE2Wrapper::full_match_n(StringView text, StringView args[],
-                              const size_t n) const {
-  std::vector<re2::RE2::Arg> argv_args;
-  std::vector<const re2::RE2::Arg *> argv;
+static std::vector<re2::RE2::Arg *> generate_n_args(StringView captures[],
+                                                    const size_t n) {
+  std::vector<re2::RE2::Arg *> argv;
 
   for (size_t i = 0; i < n; ++i) {
-    argv_args.emplace_back(&args[i], parse_string_view);
-    argv.push_back(&argv_args.at(i));
+    StringView *capture_output = &captures[i];
+    re2::RE2::Arg::Parser parser = parse_string_view;
+    const auto a = new re2::RE2::Arg(capture_output, parser);
+    argv.push_back(a);
   }
 
-  const auto tv = text.into_absl_view();
-  const int n2 = n;
-  return re2::RE2::FullMatchN(tv, re_, argv.data(), n2);
+  return argv;
 }
 
-bool RE2Wrapper::partial_match_n(StringView text, StringView args[],
-                                 const size_t n) const {
-  std::vector<re2::RE2::Arg> argv_args;
-  std::vector<const re2::RE2::Arg *> argv;
-
-  for (size_t i = 0; i < n; ++i) {
-    argv_args.emplace_back(&args[i], parse_string_view);
-    argv.push_back(&argv_args.at(i));
+static void free_n_args(std::vector<re2::RE2::Arg *> &&argv) {
+  for (auto p : argv) {
+    delete p;
   }
+}
 
-  const auto tv = text.into_absl_view();
-  const int n2 = n;
-  return re2::RE2::PartialMatchN(tv, re_, argv.data(), n2);
+bool RE2Wrapper::full_match_n(const StringView text, StringView captures[],
+                              const size_t n) const {
+  auto argv = generate_n_args(captures, n);
+  bool ret = re2::RE2::FullMatchN(text.into_absl_view(), *re_, argv.data(), n);
+  free_n_args(std::move(argv));
+  return ret;
+}
+
+bool RE2Wrapper::partial_match(const StringView text) const {
+  return re2::RE2::PartialMatchN(text.into_absl_view(), *re_, nullptr, 0);
+}
+
+bool RE2Wrapper::partial_match_n(const StringView text, StringView captures[],
+                                 const size_t n) const {
+  auto argv = generate_n_args(captures, n);
+  bool ret =
+      re2::RE2::PartialMatchN(text.into_absl_view(), *re_, argv.data(), n);
+  free_n_args(std::move(argv));
+  return ret;
 }
 
 } /* namespace re2_c_bindings */

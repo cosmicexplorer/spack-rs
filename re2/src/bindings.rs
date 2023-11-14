@@ -2012,9 +2012,9 @@ pub mod root {
       );
     }
     #[repr(C)]
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct StringWrapper {
-      pub inner_: root::std::string,
+      pub inner_: *mut root::std::string,
     }
     #[test]
     fn bindgen_test_layout_StringWrapper() {
@@ -2022,7 +2022,7 @@ pub mod root {
       let ptr = UNINIT.as_ptr();
       assert_eq!(
         ::std::mem::size_of::<StringWrapper>(),
-        32usize,
+        8usize,
         concat!("Size of: ", stringify!(StringWrapper))
       );
       assert_eq!(
@@ -2042,6 +2042,10 @@ pub mod root {
       );
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapper5clearEv"]
+      pub fn StringWrapper_clear(this: *mut root::re2_c_bindings::StringWrapper);
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings13StringWrapper7as_viewEv"]
       pub fn StringWrapper_as_view(
         this: *const root::re2_c_bindings::StringWrapper,
@@ -2058,11 +2062,10 @@ pub mod root {
         s: root::re2_c_bindings::StringView,
       );
     }
-    extern "C" {
-      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperD1Ev"]
-      pub fn StringWrapper_StringWrapper_destructor(this: *mut root::re2_c_bindings::StringWrapper);
-    }
     impl StringWrapper {
+      #[inline]
+      pub unsafe fn clear(&mut self) { StringWrapper_clear(self) }
+
       #[inline]
       pub unsafe fn as_view(&self) -> root::re2_c_bindings::StringView {
         StringWrapper_as_view(self)
@@ -2081,14 +2084,11 @@ pub mod root {
         StringWrapper_StringWrapper1(__bindgen_tmp.as_mut_ptr(), s);
         __bindgen_tmp.assume_init()
       }
-
-      #[inline]
-      pub unsafe fn destruct(&mut self) { StringWrapper_StringWrapper_destructor(self) }
     }
     #[repr(C)]
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2Wrapper {
-      pub re_: root::re2::RE2,
+      pub re_: *mut root::re2::RE2,
     }
     #[test]
     fn bindgen_test_layout_RE2Wrapper() {
@@ -2096,7 +2096,7 @@ pub mod root {
       let ptr = UNINIT.as_ptr();
       assert_eq!(
         ::std::mem::size_of::<RE2Wrapper>(),
-        152usize,
+        8usize,
         concat!("Size of: ", stringify!(RE2Wrapper))
       );
       assert_eq!(
@@ -2116,10 +2116,15 @@ pub mod root {
       );
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper10quote_metaENS_10StringViewE"]
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper10quote_metaENS_10StringViewEPNS_13StringWrapperE"]
       pub fn RE2Wrapper_quote_meta(
         pattern: root::re2_c_bindings::StringView,
-      ) -> root::re2_c_bindings::StringWrapper;
+        out: *mut root::re2_c_bindings::StringWrapper,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper5clearEv"]
+      pub fn RE2Wrapper_clear(this: *mut root::re2_c_bindings::RE2Wrapper);
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10error_codeEv"]
@@ -2146,12 +2151,30 @@ pub mod root {
       ) -> root::re2_c_bindings::StringView;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12num_capturesEv"]
+      pub fn RE2Wrapper_num_captures(this: *const root::re2_c_bindings::RE2Wrapper) -> usize;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10full_matchENS_10StringViewE"]
+      pub fn RE2Wrapper_full_match(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+      ) -> bool;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12full_match_nENS_10StringViewEPS1_m"]
       pub fn RE2Wrapper_full_match_n(
         this: *const root::re2_c_bindings::RE2Wrapper,
         text: root::re2_c_bindings::StringView,
-        args: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
         n: usize,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper13partial_matchENS_10StringViewE"]
+      pub fn RE2Wrapper_partial_match(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
       ) -> bool;
     }
     extern "C" {
@@ -2159,7 +2182,7 @@ pub mod root {
       pub fn RE2Wrapper_partial_match_n(
         this: *const root::re2_c_bindings::RE2Wrapper,
         text: root::re2_c_bindings::StringView,
-        args: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
         n: usize,
       ) -> bool;
     }
@@ -2171,17 +2194,17 @@ pub mod root {
         options: *const root::re2::RE2_Options,
       );
     }
-    extern "C" {
-      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperD1Ev"]
-      pub fn RE2Wrapper_RE2Wrapper_destructor(this: *mut root::re2_c_bindings::RE2Wrapper);
-    }
     impl RE2Wrapper {
       #[inline]
       pub unsafe fn quote_meta(
         pattern: root::re2_c_bindings::StringView,
-      ) -> root::re2_c_bindings::StringWrapper {
-        RE2Wrapper_quote_meta(pattern)
+        out: *mut root::re2_c_bindings::StringWrapper,
+      ) {
+        RE2Wrapper_quote_meta(pattern, out)
       }
+
+      #[inline]
+      pub unsafe fn clear(&mut self) { RE2Wrapper_clear(self) }
 
       #[inline]
       pub unsafe fn error_code(&self) -> root::re2::RE2_ErrorCode { RE2Wrapper_error_code(self) }
@@ -2198,23 +2221,36 @@ pub mod root {
       }
 
       #[inline]
+      pub unsafe fn num_captures(&self) -> usize { RE2Wrapper_num_captures(self) }
+
+      #[inline]
+      pub unsafe fn full_match(&self, text: root::re2_c_bindings::StringView) -> bool {
+        RE2Wrapper_full_match(self, text)
+      }
+
+      #[inline]
       pub unsafe fn full_match_n(
         &self,
         text: root::re2_c_bindings::StringView,
-        args: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
         n: usize,
       ) -> bool {
-        RE2Wrapper_full_match_n(self, text, args, n)
+        RE2Wrapper_full_match_n(self, text, captures, n)
+      }
+
+      #[inline]
+      pub unsafe fn partial_match(&self, text: root::re2_c_bindings::StringView) -> bool {
+        RE2Wrapper_partial_match(self, text)
       }
 
       #[inline]
       pub unsafe fn partial_match_n(
         &self,
         text: root::re2_c_bindings::StringView,
-        args: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
         n: usize,
       ) -> bool {
-        RE2Wrapper_partial_match_n(self, text, args, n)
+        RE2Wrapper_partial_match_n(self, text, captures, n)
       }
 
       #[inline]
@@ -2226,9 +2262,6 @@ pub mod root {
         RE2Wrapper_RE2Wrapper(__bindgen_tmp.as_mut_ptr(), pattern, options);
         __bindgen_tmp.assume_init()
       }
-
-      #[inline]
-      pub unsafe fn destruct(&mut self) { RE2Wrapper_RE2Wrapper_destructor(self) }
     }
   }
 }

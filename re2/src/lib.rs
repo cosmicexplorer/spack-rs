@@ -8,6 +8,10 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_array_assume_init)]
+#![feature(const_maybe_uninit_uninit_array)]
+#![feature(const_maybe_uninit_array_assume_init)]
 
 #[allow(unused, improper_ctypes)]
 mod bindings;
@@ -25,8 +29,9 @@ use indexmap::IndexMap;
 use std::{
   cmp, fmt, hash,
   marker::PhantomData,
-  mem,
-  os::raw::{c_char, c_void},
+  mem::{self, MaybeUninit},
+  ops,
+  os::raw::c_char,
   ptr, slice, str,
 };
 
@@ -37,7 +42,7 @@ use std::{
 /// let s = StringView::from_str("asdf");
 /// assert_eq!(s.as_str(), "asdf");
 /// assert_eq!(StringView::empty().as_str(), "");
-///```
+/// ```
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct StringView<'a> {
@@ -64,9 +69,12 @@ impl<'a> StringView<'a> {
   }
 
   #[inline]
+  pub(crate) const fn into_native(self) -> re2_c::StringView { self.inner }
+
+  #[inline]
   pub const fn from_slice(b: &'a [u8]) -> Self {
     let inner = re2_c::StringView {
-      data_: unsafe { mem::transmute(b.as_ptr()) },
+      data_: b.as_ptr() as *const c_char,
       len_: b.len(),
     };
     unsafe { Self::from_native(inner) }
@@ -125,57 +133,265 @@ impl<'a> hash::Hash for StringView<'a> {
   }
 }
 
-/* ///``` */
-/* /// let s = re2::StringWrapper::new("asdf"); */
-/* /// assert!(!s.is_empty()); */
-/* /// assert_eq!(4, s.len()); */
-/* /// // FIXME: BROKEN!!! */
-/* /// // assert_eq!(s.as_str(), "asdf"); */
-/* /// ``` */
-/* #[repr(transparent)] */
-/* pub struct StringWrapper(pub re2::StringWrapper); */
+///```
+/// use re2::*;
+///
+/// let s = StringWrapper::from_view(StringView::from_str("asdf"));
+/// assert_eq!(s.view().as_str(), "asdf");
+/// ```
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct StringWrapper(re2_c::StringWrapper);
 
-/* impl StringWrapper { */
-/* ///``` */
-/* /// let s = re2::StringWrapper::blank(); */
-/* /// assert!(s.is_empty()); */
-/* /// assert_eq!(s.as_str(), ""); */
-/* /// ``` */
-/* #[inline] */
-/* pub fn blank() -> Self { Self(unsafe { re2::StringWrapper::new() }) } */
+impl StringWrapper {
+  ///```
+  /// let s = re2::StringWrapper::blank();
+  /// assert_eq!(s.view().as_str(), "");
+  /// ```
+  #[inline]
+  pub fn blank() -> Self { Self(unsafe { re2_c::StringWrapper::new() }) }
 
-/* #[inline] */
-/* pub fn new(s: &str) -> Self { */
-/* let s: re2_string_view = StringView::from_str(s).into(); */
-/* Self(unsafe { re2::StringWrapper::new1(s) }) */
-/* } */
+  #[inline]
+  pub fn from_view(s: StringView<'_>) -> Self {
+    Self(unsafe { re2_c::StringWrapper::new1(s.into_native()) })
+  }
 
-/* #[inline] */
-/* pub fn is_empty(&self) -> bool { unsafe { self.0.empty() } } */
+  #[inline]
+  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringWrapper { &mut self.0 }
 
-/* #[inline] */
-/* pub fn len(&self) -> usize { unsafe { self.0.size() } } */
+  #[inline]
+  pub fn view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
+}
 
-/* #[inline] */
-/* pub fn as_str(&self) -> &str { */
-/* let sv: StringView<'_> = unsafe { self.0.view() }.into(); */
-/* sv.as_str() */
-/* } */
-/* } */
+impl ops::Drop for StringWrapper {
+  fn drop(&mut self) {
+    unsafe {
+      self.0.clear();
+    }
+  }
+}
 
-/* impl AsMut<re2_string> for StringWrapper { */
-/* fn as_mut(&mut self) -> &mut re2_string { unsafe {
- * mem::transmute(self.0.get_mutable()) } } */
-/* } */
+#[repr(transparent)]
+pub struct RE2(re2_c::RE2Wrapper);
 
-/* /\* FIXME: why does this SIGSEGV???? *\/ */
-/* /\* impl ops::Drop for StringWrapper { *\/ */
-/* /\* fn drop(&mut self) { *\/ */
-/* /\* unsafe { *\/ */
-/* /\* self.0.destruct(); *\/ */
-/* /\* } *\/ */
-/* /\* } *\/ */
-/* /\* } *\/ */
+impl RE2 {
+  ///```
+  /// use re2::*;
+  ///
+  /// let s = StringView::from_str("1.5-1.8?");
+  /// let q = RE2::quote_meta(s);
+  /// assert_eq!(q.view().as_str(), r"1\.5\-1\.8\?");
+  /// ```
+  pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
+    let mut out = StringWrapper::blank();
+    unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
+    out
+  }
+
+  #[inline]
+  fn check_error_code(&self) -> Result<(), RE2ErrorCode> {
+    RE2ErrorCode::from_native(unsafe { self.0.error_code() })
+  }
+
+  #[inline]
+  pub fn pattern(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.pattern()) } }
+
+  #[inline]
+  fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
+
+  #[inline]
+  fn error_arg(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error_arg()) } }
+
+  fn check_error(&self) -> Result<(), CompileError> {
+    self.check_error_code().map_err(|code| CompileError {
+      message: self.error().as_str().to_string(),
+      arg: self.error_arg().as_str().to_string(),
+      code,
+    })
+  }
+
+  ///```
+  /// use re2::{*, error::*};
+  ///
+  /// assert_eq!(
+  ///   RE2::from_str("a(sdf").err().unwrap(),
+  ///   CompileError {
+  ///     message: "missing ): a(sdf".to_string(),
+  ///     arg: "a(sdf".to_string(),
+  ///     code: RE2ErrorCode::MissingParen,
+  ///   },
+  /// );
+  /// ```
+  pub fn from_str(pattern: &str) -> Result<Self, CompileError> {
+    Self::compile(StringView::from_str(pattern), Options::default())
+  }
+
+  pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
+    let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
+    s.check_error()?;
+    Ok(s)
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::RE2;
+  /// assert_eq!(0, RE2::from_str("a.df")?.num_captures());
+  /// assert_eq!(1, RE2::from_str("a(.)df")?.num_captures());
+  /// assert_eq!(2, RE2::from_str("a((.)df)")?.num_captures());
+  /// assert_eq!(3, RE2::from_str("(?P<foo>a)((.)df)")?.num_captures());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a.df")?;
+  /// assert!(r.full_match("asdf"));
+  /// assert!(!r.full_match("asdfe"));
+  /// assert!(!r.full_match("basdf"));
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn full_match(&self, text: &str) -> bool {
+    let text = StringView::from_str(text);
+    unsafe { self.0.full_match(text.into_native()) }
+  }
+
+  #[inline]
+  const unsafe fn empty_result<'a, const N: usize>() -> [&'a str; N] {
+    let ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    MaybeUninit::array_assume_init(ret)
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// assert_eq!(2, r.num_captures());
+  ///
+  /// let msg = "asdf";
+  /// // The 0 case still works, but just calls .full_match():
+  /// assert!(r.full_match_capturing::<0>(msg).is_some());
+  ///
+  /// let [s1, s2] = r.full_match_capturing(msg).unwrap();
+  /// assert_eq!(s1, "s");
+  /// assert_eq!(s2, "f");
+  /// // The result isn't copied, it points to the same memory:
+  /// assert_eq!(s1.as_bytes().as_ptr(), msg[1..].as_bytes().as_ptr());
+  /// assert_eq!(s2.as_bytes().as_ptr(), msg[3..].as_bytes().as_ptr());
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn full_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
+    if N == 0 {
+      return if self.full_match(text) {
+        Some(unsafe { Self::empty_result() })
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let text = StringView::from_str(text);
+    let mut argv = [StringView::empty().into_native(); N];
+
+    if !unsafe {
+      self
+        .0
+        .full_match_n(text.into_native(), argv.as_mut_ptr(), N)
+    } {
+      return None;
+    }
+
+    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(unsafe { StringView::from_native(input) }.as_str());
+    }
+    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a.df")?;
+  /// assert!(r.partial_match("asdf"));
+  /// assert!(r.partial_match("asdfe"));
+  /// assert!(r.partial_match("basdf"));
+  /// assert!(!r.partial_match("ascf"));
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn partial_match(&self, text: &str) -> bool {
+    let text = StringView::from_str(text);
+    unsafe { self.0.partial_match(text.into_native()) }
+  }
+
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, options::*};
+  ///
+  /// let o: Options = CannedOptions::POSIX.into();
+  /// let p = StringView::from_str("a(.+)d(f)");
+  /// let r = RE2::compile(p, o)?;
+  /// assert_eq!(2, r.num_captures());
+  ///
+  /// let msg = "the asdf is withdfin me";
+  /// // The 0 case still works, but just calls .partial_match():
+  /// assert!(r.partial_match_capturing::<0>(msg).is_some());
+  ///
+  /// let [s1, s2] = r.partial_match_capturing(msg).unwrap();
+  /// assert_eq!(s1, "sdf is with");
+  /// assert_eq!(s2, "f");
+  /// // The result isn't copied, it points to the same memory:
+  /// assert_eq!(s1.as_bytes().as_ptr(), msg[5..].as_bytes().as_ptr());
+  /// assert_eq!(s2.as_bytes().as_ptr(), msg[17..].as_bytes().as_ptr());
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn partial_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
+    if N == 0 {
+      return if self.partial_match(text) {
+        Some(unsafe { Self::empty_result() })
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let text = StringView::from_str(text);
+    let mut argv = [StringView::empty().into_native(); N];
+
+    if !unsafe {
+      self
+        .0
+        .partial_match_n(text.into_native(), argv.as_mut_ptr(), N)
+    } {
+      return None;
+    }
+
+    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(unsafe { StringView::from_native(input) }.as_str());
+    }
+    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+  }
+
+}
+
+impl ops::Drop for RE2 {
+  fn drop(&mut self) {
+    unsafe {
+      self.0.clear();
+    }
+  }
+}
 
 /* #[repr(transparent)] */
 /* pub struct NamedGroup<'a> { */
