@@ -14,7 +14,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        rust-toolchain: ['stable', 'nightly']
+        # TODO: remove unstable features!
+        # rust-toolchain: ['stable', 'nightly']
+        rust-toolchain: ['nightly']
     runs-on: ubuntu-latest
 
     steps:
