@@ -9,17 +9,19 @@ authors.workspace       = true
 
 [package.metadata.spack]
 env_label               = "re2-runtime-deps"
-# FIXME: RE2 construction raises an exception if cxxstd=17 is used???
-spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared cxxstd=14"
-cxx                     = "c++14"
+# FIXME: RE2 construction raises an exception if anything but cxxstd=14 is used???
+spec                    = "re2@2023-11-01+shared+pic ^ abseil-cpp+shared cxxstd=20"
+cxx                     = "c++20"
 
 [package.metadata.spack.bindgen]
 process_comments        = true
-header_path             = "src/re2.hpp"
+header_path             = "src/c-bindings.hpp"
 output_path             = "src/bindings.rs"
 
-[package.metadata.spack.deps]
-re2                     = { type = "static", lib_names = ["re2"], allowlist = ["re2::.*"] }
+[package.metadata.spack.deps.re2]
+type                    = "dynamic"
+lib_names               = ["re2"]
+allowlist               = ["re2::.*", "re2_c_bindings::.*"]
 
 [package.metadata.spack.deps.abseil-cpp]
 type                    = "dynamic"
@@ -36,12 +38,12 @@ lib_names               = [
 allowlist               = []
 
 [build-dependencies]
+cc                      = "1"
 eyre.workspace          = true
 spack.workspace         = true
 tokio                   = { workspace = true, features = ["macros"] }
 
 [dependencies]
-abseil.workspace        = true
 displaydoc.workspace    = true
 indexmap.workspace      = true
 num_enum.workspace      = true

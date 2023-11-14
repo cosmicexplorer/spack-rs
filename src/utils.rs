@@ -413,10 +413,8 @@ pub mod prefix {
 }
 
 pub mod metadata {
-
   use crate::metadata_spec::spec;
   use super_process::{exe, sync::SyncInvocable};
-
 
   use displaydoc::Display;
   use indexmap::IndexMap;
@@ -548,7 +546,9 @@ pub mod metadata {
 
 /// High-level API for build scripts that consumes `[package.metadata.spack]`.
 pub mod declarative {
-  pub async fn resolve_dependencies() -> eyre::Result<()> {
+  use super::prefix;
+
+  pub async fn resolve_dependencies() -> eyre::Result<Vec<prefix::Prefix>> {
     use crate::{commands::*, subprocess::spack::SpackInvocation, utils::metadata};
 
 
@@ -577,9 +577,11 @@ pub mod declarative {
     .idempotent_env_create(env_instructions)
     .await?;
 
-    let bindings = bindgen::Builder::default();
-    let mut bindings = cxx::enable_hacky_bindgen_cpp_support(bindings, cur_recipe.cxx).await?;
-    /* cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?; */
+    let mut bindings =
+      cxx::enable_hacky_bindgen_cpp_support(bindgen::Builder::default(), cur_recipe.cxx).await?;
+
+    let mut dep_prefixes: Vec<prefix::Prefix> = Vec::new();
+
     /* Process each resolved dependency to hook it up into cargo. */
     for sub_dep in cur_recipe.sub_deps.iter() {
       let env = env.clone();
@@ -598,11 +600,14 @@ pub mod declarative {
       )
       .await?;
       bindings = bindings::include_dependency_headers(
-        prefix,
+        prefix.clone(),
         sub_dep.allowlist.iter().map(|s| s.as_str()),
         bindings,
       );
+      dep_prefixes.push(prefix);
     }
+
+    cxx::enable_stdcxx_runtime_link(cur_recipe.cxx);
 
     bindings = bindings
       .generate_comments(cur_recipe.bindgen_config.process_comments)
@@ -619,11 +624,15 @@ pub mod declarative {
       .generate()?
       .write_to_file(&cur_recipe.bindgen_config.output_path)?;
 
-    Ok(())
+    Ok(dep_prefixes)
   }
 
   pub mod bindings {
     use crate::utils::prefix;
+
+    use std::path::PathBuf;
+
+    pub fn get_include_subdir(prefix: prefix::Prefix) -> PathBuf { prefix.path.join("include") }
 
     pub fn include_dependency_headers<'a>(
       prefix: prefix::Prefix,
@@ -632,7 +641,7 @@ pub mod declarative {
     ) -> bindgen::Builder {
       /* FIXME: is there really not a more specific method than "clang_arg()"
        * to add an include search dir??? */
-      let mut bindings = bindings.clang_arg(format!("-I{}/include", prefix.path.display()));
+      let mut bindings = bindings.clang_arg(format!("-I{}", get_include_subdir(prefix).display()));
       for item in allowlist {
         bindings = bindings.allowlist_item(item);
       }
@@ -680,7 +689,6 @@ pub mod declarative {
       bindings: bindgen::Builder,
       cxx: spec::CxxSupport,
     ) -> eyre::Result<bindgen::Builder> {
-      dbg!(&cxx);
       let std_arg: &'static str = match cxx {
         // If no C++ support needed, exit early.
         spec::CxxSupport::None => return Ok(bindings),
@@ -695,6 +703,13 @@ pub mod declarative {
         .opaque_type("std::.*");
 
       Ok(bindings)
+    }
+
+    pub fn enable_stdcxx_runtime_link(cxx: spec::CxxSupport) {
+      match cxx {
+        spec::CxxSupport::None => (),
+        _ => println!("cargo:rustc-link-lib=stdc++"),
+      }
     }
   }
 }

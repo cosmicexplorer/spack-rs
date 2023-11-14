@@ -109,6 +109,13 @@ pub mod root {
     pub type basic_string_const_reverse_iterator = u8;
     pub type basic_string_reverse_iterator = u8;
     pub type basic_string___const_iterator = u8;
+    pub type basic_string___sv_type = u8;
+    pub type basic_string__If_sv = u8;
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct basic_string___sv_wrapper {
+      pub _address: u8,
+    }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct basic_string__Alloc_hider {
@@ -123,6 +130,14 @@ pub mod root {
       pub _bindgen_opaque_blob: u64,
     }
     pub type false_type = u8;
+    pub mod __detail {
+      #[allow(unused_imports)]
+      use self::super::super::super::root;
+    }
+    pub mod ranges {
+      #[allow(unused_imports)]
+      use self::super::super::super::root;
+    }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct pair {
@@ -130,23 +145,6 @@ pub mod root {
     }
     pub type pair_first_type = u8;
     pub type pair_second_type = u8;
-    pub type pair__PCCP = u8;
-    pub type pair__PCCFP = u8;
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
-    pub struct pair___zero_as_null_pointer_constant {
-      pub _address: u8,
-    }
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
-    pub struct reverse_iterator {
-      pub _address: u8,
-    }
-    pub type reverse_iterator___traits_type = u8;
-    pub type reverse_iterator_iterator_type = u8;
-    pub type reverse_iterator_pointer = u8;
-    pub type reverse_iterator_difference_type = u8;
-    pub type reverse_iterator_reference = u8;
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct allocator {
@@ -155,16 +153,6 @@ pub mod root {
     pub type allocator_value_type = u8;
     pub type allocator_size_type = u64;
     pub type allocator_difference_type = u64;
-    pub type allocator_pointer = u8;
-    pub type allocator_const_pointer = u8;
-    pub type allocator_reference = u8;
-    pub type allocator_const_reference = u8;
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
-    pub struct allocator_rebind {
-      pub _address: u8,
-    }
-    pub type allocator_rebind_other = u8;
     pub type allocator_propagate_on_container_move_assignment = u8;
     pub type allocator_is_always_equal = u8;
     #[repr(C)]
@@ -200,12 +188,32 @@ pub mod root {
     pub type map_difference_type = u8;
     pub type map_reverse_iterator = u8;
     pub type map_const_reverse_iterator = u8;
+    pub type map_node_type = u8;
+    pub type map_insert_return_type = u8;
     pub type string = [u64; 4usize];
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct char_traits {
       pub _address: u8,
     }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct basic_string_view {
+      pub _address: u8,
+    }
+    pub type basic_string_view_traits_type = u8;
+    pub type basic_string_view_value_type = u8;
+    pub type basic_string_view_pointer = u8;
+    pub type basic_string_view_const_pointer = u8;
+    pub type basic_string_view_reference = u8;
+    pub type basic_string_view_const_reference = u8;
+    pub type basic_string_view_const_iterator = u8;
+    pub type basic_string_view_iterator = u8;
+    pub type basic_string_view_const_reverse_iterator = u8;
+    pub type basic_string_view_reverse_iterator = u8;
+    pub type basic_string_view_size_type = u64;
+    pub type basic_string_view_difference_type = u64;
+    pub type string_view = [u64; 2usize];
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
     pub struct vector {
@@ -248,6 +256,14 @@ pub mod root {
     #[allow(unused_imports)]
     use self::super::super::root;
   }
+  pub mod __pstl {
+    #[allow(unused_imports)]
+    use self::super::super::root;
+    pub mod execution {
+      #[allow(unused_imports)]
+      use self::super::super::super::root;
+    }
+  }
   pub mod absl {
     #[allow(unused_imports)]
     use self::super::super::root;
@@ -284,255 +300,7 @@ pub mod root {
           )
         );
       }
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct string_view {
-        pub ptr_: *const ::std::os::raw::c_char,
-        pub length_: root::absl::lts_20230125::string_view_size_type,
-      }
-      pub type string_view_traits_type = u8;
-      pub type string_view_value_type = ::std::os::raw::c_char;
-      pub type string_view_pointer = *mut ::std::os::raw::c_char;
-      pub type string_view_const_pointer = *const ::std::os::raw::c_char;
-      pub type string_view_reference = *mut ::std::os::raw::c_char;
-      pub type string_view_const_reference = *const ::std::os::raw::c_char;
-      pub type string_view_const_iterator = *const ::std::os::raw::c_char;
-      pub type string_view_iterator = root::absl::lts_20230125::string_view_const_iterator;
-      pub type string_view_const_reverse_iterator = u64;
-      pub type string_view_reverse_iterator =
-        root::absl::lts_20230125::string_view_const_reverse_iterator;
-      pub type string_view_size_type = usize;
-      pub type string_view_difference_type = isize;
-      #[repr(C)]
-      #[derive(Debug, Copy, Clone)]
-      pub struct string_view_SkipCheckLengthTag {
-        pub _address: u8,
-      }
-      #[test]
-      fn bindgen_test_layout_string_view_SkipCheckLengthTag() {
-        assert_eq!(
-          ::std::mem::size_of::<string_view_SkipCheckLengthTag>(),
-          1usize,
-          concat!("Size of: ", stringify!(string_view_SkipCheckLengthTag))
-        );
-        assert_eq!(
-          ::std::mem::align_of::<string_view_SkipCheckLengthTag>(),
-          1usize,
-          concat!("Alignment of ", stringify!(string_view_SkipCheckLengthTag))
-        );
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZN4absl12lts_2023012511string_view4nposE"]
-        pub static string_view_npos: root::absl::lts_20230125::string_view_size_type;
-      }
-      pub const string_view_kMaxSize: root::absl::lts_20230125::string_view_size_type =
-        9223372036854775807;
-      #[test]
-      fn bindgen_test_layout_string_view() {
-        const UNINIT: ::std::mem::MaybeUninit<string_view> = ::std::mem::MaybeUninit::uninit();
-        let ptr = UNINIT.as_ptr();
-        assert_eq!(
-          ::std::mem::size_of::<string_view>(),
-          16usize,
-          concat!("Size of: ", stringify!(string_view))
-        );
-        assert_eq!(
-          ::std::mem::align_of::<string_view>(),
-          8usize,
-          concat!("Alignment of ", stringify!(string_view))
-        );
-        assert_eq!(
-          unsafe { ::std::ptr::addr_of!((*ptr).ptr_) as usize - ptr as usize },
-          0usize,
-          concat!(
-            "Offset of field: ",
-            stringify!(string_view),
-            "::",
-            stringify!(ptr_)
-          )
-        );
-        assert_eq!(
-          unsafe { ::std::ptr::addr_of!((*ptr).length_) as usize - ptr as usize },
-          8usize,
-          concat!(
-            "Offset of field: ",
-            stringify!(string_view),
-            "::",
-            stringify!(length_)
-          )
-        );
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view4findES1_m"]
-        pub fn string_view_find(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view4findEcm"]
-        pub fn string_view_find1(
-          this: *const root::absl::lts_20230125::string_view,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view5rfindES1_m"]
-        pub fn string_view_rfind(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view5rfindEcm"]
-        pub fn string_view_rfind1(
-          this: *const root::absl::lts_20230125::string_view,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view13find_first_ofES1_m"]
-        pub fn string_view_find_first_of(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view12find_last_ofES1_m"]
-        pub fn string_view_find_last_of(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view17find_first_not_ofES1_m"]
-        pub fn string_view_find_first_not_of(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view17find_first_not_ofEcm"]
-        pub fn string_view_find_first_not_of1(
-          this: *const root::absl::lts_20230125::string_view,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view16find_last_not_ofES1_m"]
-        pub fn string_view_find_last_not_of(
-          this: *const root::absl::lts_20230125::string_view,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      extern "C" {
-        #[link_name = "\u{1}_ZNK4absl12lts_2023012511string_view16find_last_not_ofEcm"]
-        pub fn string_view_find_last_not_of1(
-          this: *const root::absl::lts_20230125::string_view,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type;
-      }
-      impl string_view {
-        #[inline]
-        pub unsafe fn find(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find1(
-          &self,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find1(self, c, pos)
-        }
-
-        #[inline]
-        pub unsafe fn rfind(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_rfind(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn rfind1(
-          &self,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_rfind1(self, c, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_first_of(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_first_of(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_last_of(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_last_of(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_first_not_of(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_first_not_of(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_first_not_of1(
-          &self,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_first_not_of1(self, c, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_last_not_of(
-          &self,
-          s: root::absl::lts_20230125::string_view,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_last_not_of(self, s, pos)
-        }
-
-        #[inline]
-        pub unsafe fn find_last_not_of1(
-          &self,
-          c: ::std::os::raw::c_char,
-          pos: root::absl::lts_20230125::string_view_size_type,
-        ) -> root::absl::lts_20230125::string_view_size_type {
-          string_view_find_last_not_of1(self, c, pos)
-        }
-      }
+      pub type string_view = root::std::string_view;
     }
   }
   pub mod re2 {
@@ -604,7 +372,7 @@ pub mod root {
       pub fn StringWrapper_StringWrapper(this: *mut root::re2::StringWrapper);
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re213StringWrapperC1EN4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re213StringWrapperC1ESt17basic_string_viewIcSt11char_traitsIcEE"]
       pub fn StringWrapper_StringWrapper1(
         this: *mut root::re2::StringWrapper,
         s: root::absl::lts_20230125::string_view,
@@ -1213,7 +981,7 @@ pub mod root {
     }
     extern "C" {
       #[doc = " The array-based matching interface"]
-      #[link_name = "\u{1}_ZN3re23RE210FullMatchNEN4absl12lts_2023012511string_viewERKS0_PKPKNS0_3ArgEi"]
+      #[link_name = "\u{1}_ZN3re23RE210FullMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi"]
       pub fn RE2_FullMatchN(
         text: root::absl::lts_20230125::string_view,
         re: *const root::re2::RE2,
@@ -1222,7 +990,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE213PartialMatchNEN4absl12lts_2023012511string_viewERKS0_PKPKNS0_3ArgEi"]
+      #[link_name = "\u{1}_ZN3re23RE213PartialMatchNESt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi"]
       pub fn RE2_PartialMatchN(
         text: root::absl::lts_20230125::string_view,
         re: *const root::re2::RE2,
@@ -1231,7 +999,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE28ConsumeNEPN4absl12lts_2023012511string_viewERKS0_PKPKNS0_3ArgEi"]
+      #[link_name = "\u{1}_ZN3re23RE28ConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi"]
       pub fn RE2_ConsumeN(
         input: *mut root::absl::lts_20230125::string_view,
         re: *const root::re2::RE2,
@@ -1240,7 +1008,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE215FindAndConsumeNEPN4absl12lts_2023012511string_viewERKS0_PKPKNS0_3ArgEi"]
+      #[link_name = "\u{1}_ZN3re23RE215FindAndConsumeNEPSt17basic_string_viewIcSt11char_traitsIcEERKS0_PKPKNS0_3ArgEi"]
       pub fn RE2_FindAndConsumeN(
         input: *mut root::absl::lts_20230125::string_view,
         re: *const root::re2::RE2,
@@ -1249,7 +1017,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE27ReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_N4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re23RE27ReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E"]
       pub fn RE2_Replace(
         str_: *mut root::std::string,
         re: *const root::re2::RE2,
@@ -1257,7 +1025,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE213GlobalReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_N4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re23RE213GlobalReplaceEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS0_St17basic_string_viewIcS4_E"]
       pub fn RE2_GlobalReplace(
         str_: *mut root::std::string,
         re: *const root::re2::RE2,
@@ -1265,7 +1033,7 @@ pub mod root {
       ) -> ::std::os::raw::c_int;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE27ExtractEN4absl12lts_2023012511string_viewERKS0_S3_PNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE"]
+      #[link_name = "\u{1}_ZN3re23RE27ExtractESt17basic_string_viewIcSt11char_traitsIcEERKS0_S4_PNSt7__cxx1112basic_stringIcS3_SaIcEEE"]
       pub fn RE2_Extract(
         text: root::absl::lts_20230125::string_view,
         re: *const root::re2::RE2,
@@ -1274,7 +1042,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE29QuoteMetaB5cxx11EN4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re23RE29QuoteMetaB5cxx11ESt17basic_string_viewIcSt11char_traitsIcEE"]
       pub fn RE2_QuoteMeta(unquoted: root::absl::lts_20230125::string_view) -> root::std::string;
     }
     extern "C" {
@@ -1295,7 +1063,7 @@ pub mod root {
       pub fn RE2_CapturingGroupNames(this: *const root::re2::RE2) -> *const u8;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE25MatchEN4absl12lts_2023012511string_viewEmmNS0_6AnchorEPS3_i"]
+      #[link_name = "\u{1}_ZNK3re23RE25MatchESt17basic_string_viewIcSt11char_traitsIcEEmmNS0_6AnchorEPS4_i"]
       pub fn RE2_Match(
         this: *const root::re2::RE2,
         text: root::absl::lts_20230125::string_view,
@@ -1307,7 +1075,7 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE218CheckRewriteStringEN4absl12lts_2023012511string_viewEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE"]
+      #[link_name = "\u{1}_ZNK3re23RE218CheckRewriteStringESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS3_SaIcEEE"]
       pub fn RE2_CheckRewriteString(
         this: *const root::re2::RE2,
         rewrite: root::absl::lts_20230125::string_view,
@@ -1315,13 +1083,13 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE211MaxSubmatchEN4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re23RE211MaxSubmatchESt17basic_string_viewIcSt11char_traitsIcEE"]
       pub fn RE2_MaxSubmatch(
         rewrite: root::absl::lts_20230125::string_view,
       ) -> ::std::os::raw::c_int;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK3re23RE27RewriteEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEN4absl12lts_2023012511string_viewEPKSA_i"]
+      #[link_name = "\u{1}_ZNK3re23RE27RewriteEPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt17basic_string_viewIcS4_EPKS9_i"]
       pub fn RE2_Rewrite(
         this: *const root::re2::RE2,
         out: *mut root::std::string,
@@ -1343,11 +1111,11 @@ pub mod root {
       pub fn RE2_RE21(this: *mut root::re2::RE2, pattern: *const root::std::string);
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE2C1EN4absl12lts_2023012511string_viewE"]
+      #[link_name = "\u{1}_ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEE"]
       pub fn RE2_RE22(this: *mut root::re2::RE2, pattern: root::absl::lts_20230125::string_view);
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN3re23RE2C1EN4absl12lts_2023012511string_viewERKNS0_7OptionsE"]
+      #[link_name = "\u{1}_ZN3re23RE2C1ESt17basic_string_viewIcSt11char_traitsIcEERKNS0_7OptionsE"]
       pub fn RE2_RE23(
         this: *mut root::re2::RE2,
         pattern: root::absl::lts_20230125::string_view,
@@ -1690,7 +1458,8 @@ pub mod root {
         );
       }
       #[test]
-      fn __bindgen_test_layout_Parse3ary_open0_string_view_close0_instantiation() {
+      fn __bindgen_test_layout_Parse3ary_open0_basic_string_view_open1_char_char_traits_open2_char_close2_close1_close0_instantiation(
+      ) {
         assert_eq!(
           ::std::mem::size_of::<root::re2::re2_internal::Parse3ary>(),
           1usize,
@@ -2196,6 +1965,270 @@ pub mod root {
         #[link_name = "\u{1}_ZN3re25hooks23GetDFASearchFailureHookEv"]
         pub fn GetDFASearchFailureHook() -> root::re2::hooks::DFASearchFailureCallback;
       }
+    }
+  }
+  pub mod re2_c_bindings {
+    #[allow(unused_imports)]
+    use self::super::super::root;
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct StringView {
+      pub data_: *const ::std::os::raw::c_char,
+      pub len_: usize,
+    }
+    #[test]
+    fn bindgen_test_layout_StringView() {
+      const UNINIT: ::std::mem::MaybeUninit<StringView> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<StringView>(),
+        16usize,
+        concat!("Size of: ", stringify!(StringView))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<StringView>(),
+        8usize,
+        concat!("Alignment of ", stringify!(StringView))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).data_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringView),
+          "::",
+          stringify!(data_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).len_) as usize - ptr as usize },
+        8usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringView),
+          "::",
+          stringify!(len_)
+        )
+      );
+    }
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct StringWrapper {
+      pub inner_: root::std::string,
+    }
+    #[test]
+    fn bindgen_test_layout_StringWrapper() {
+      const UNINIT: ::std::mem::MaybeUninit<StringWrapper> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<StringWrapper>(),
+        32usize,
+        concat!("Size of: ", stringify!(StringWrapper))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<StringWrapper>(),
+        8usize,
+        concat!("Alignment of ", stringify!(StringWrapper))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).inner_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringWrapper),
+          "::",
+          stringify!(inner_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings13StringWrapper7as_viewEv"]
+      pub fn StringWrapper_as_view(
+        this: *const root::re2_c_bindings::StringWrapper,
+      ) -> root::re2_c_bindings::StringView;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperC1Ev"]
+      pub fn StringWrapper_StringWrapper(this: *mut root::re2_c_bindings::StringWrapper);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperC1ENS_10StringViewE"]
+      pub fn StringWrapper_StringWrapper1(
+        this: *mut root::re2_c_bindings::StringWrapper,
+        s: root::re2_c_bindings::StringView,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperD1Ev"]
+      pub fn StringWrapper_StringWrapper_destructor(this: *mut root::re2_c_bindings::StringWrapper);
+    }
+    impl StringWrapper {
+      #[inline]
+      pub unsafe fn as_view(&self) -> root::re2_c_bindings::StringView {
+        StringWrapper_as_view(self)
+      }
+
+      #[inline]
+      pub unsafe fn new() -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        StringWrapper_StringWrapper(__bindgen_tmp.as_mut_ptr());
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn new1(s: root::re2_c_bindings::StringView) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        StringWrapper_StringWrapper1(__bindgen_tmp.as_mut_ptr(), s);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn destruct(&mut self) { StringWrapper_StringWrapper_destructor(self) }
+    }
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct RE2Wrapper {
+      pub re_: root::re2::RE2,
+    }
+    #[test]
+    fn bindgen_test_layout_RE2Wrapper() {
+      const UNINIT: ::std::mem::MaybeUninit<RE2Wrapper> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<RE2Wrapper>(),
+        152usize,
+        concat!("Size of: ", stringify!(RE2Wrapper))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<RE2Wrapper>(),
+        8usize,
+        concat!("Alignment of ", stringify!(RE2Wrapper))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).re_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2Wrapper),
+          "::",
+          stringify!(re_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper10quote_metaENS_10StringViewE"]
+      pub fn RE2Wrapper_quote_meta(
+        pattern: root::re2_c_bindings::StringView,
+      ) -> root::re2_c_bindings::StringWrapper;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10error_codeEv"]
+      pub fn RE2Wrapper_error_code(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2::RE2_ErrorCode;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7patternEv"]
+      pub fn RE2Wrapper_pattern(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2_c_bindings::StringView;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper5errorEv"]
+      pub fn RE2Wrapper_error(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2_c_bindings::StringView;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper9error_argEv"]
+      pub fn RE2Wrapper_error_arg(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2_c_bindings::StringView;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12full_match_nENS_10StringViewEPS1_m"]
+      pub fn RE2Wrapper_full_match_n(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+        args: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper15partial_match_nENS_10StringViewEPS1_m"]
+      pub fn RE2Wrapper_partial_match_n(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: root::re2_c_bindings::StringView,
+        args: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperC1ENS_10StringViewERKN3re23RE27OptionsE"]
+      pub fn RE2Wrapper_RE2Wrapper(
+        this: *mut root::re2_c_bindings::RE2Wrapper,
+        pattern: root::re2_c_bindings::StringView,
+        options: *const root::re2::RE2_Options,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperD1Ev"]
+      pub fn RE2Wrapper_RE2Wrapper_destructor(this: *mut root::re2_c_bindings::RE2Wrapper);
+    }
+    impl RE2Wrapper {
+      #[inline]
+      pub unsafe fn quote_meta(
+        pattern: root::re2_c_bindings::StringView,
+      ) -> root::re2_c_bindings::StringWrapper {
+        RE2Wrapper_quote_meta(pattern)
+      }
+
+      #[inline]
+      pub unsafe fn error_code(&self) -> root::re2::RE2_ErrorCode { RE2Wrapper_error_code(self) }
+
+      #[inline]
+      pub unsafe fn pattern(&self) -> root::re2_c_bindings::StringView { RE2Wrapper_pattern(self) }
+
+      #[inline]
+      pub unsafe fn error(&self) -> root::re2_c_bindings::StringView { RE2Wrapper_error(self) }
+
+      #[inline]
+      pub unsafe fn error_arg(&self) -> root::re2_c_bindings::StringView {
+        RE2Wrapper_error_arg(self)
+      }
+
+      #[inline]
+      pub unsafe fn full_match_n(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        args: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool {
+        RE2Wrapper_full_match_n(self, text, args, n)
+      }
+
+      #[inline]
+      pub unsafe fn partial_match_n(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        args: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool {
+        RE2Wrapper_partial_match_n(self, text, args, n)
+      }
+
+      #[inline]
+      pub unsafe fn new(
+        pattern: root::re2_c_bindings::StringView,
+        options: *const root::re2::RE2_Options,
+      ) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        RE2Wrapper_RE2Wrapper(__bindgen_tmp.as_mut_ptr(), pattern, options);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn destruct(&mut self) { RE2Wrapper_RE2Wrapper_destructor(self) }
     }
   }
 }

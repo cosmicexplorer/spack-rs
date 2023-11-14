@@ -8,8 +8,5 @@ use spack::utils::declarative::resolve_dependencies;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
   resolve_dependencies().await?;
-
-  println!("cargo:rustc-link-lib=stdc++");
-
   Ok(())
 }
