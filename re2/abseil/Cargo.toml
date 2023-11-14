@@ -9,8 +9,8 @@ authors.workspace       = true
 
 [package.metadata.spack]
 env_label               = "re2-runtime-deps"
-spec                    = "abseil-cpp cxxstd=14"
-cxx                     = "c++14"
+spec                    = "abseil-cpp cxxstd=20"
+cxx                     = "c++20"
 
 [package.metadata.spack.bindgen]
 process_comments        = true

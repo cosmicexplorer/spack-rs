@@ -10,7 +10,7 @@ authors.workspace       = true
 [package.metadata.spack]
 env_label               = "hyperscan-runtime-deps"
 spec                    = "hyperscan@v5.4.2"
-cxx                     = "c++17"
+cxx                     = "c++20"
 
 [package.metadata.spack.bindgen]
 # TODO: generated doc comments for one of the exported functions get parsed as doctests which

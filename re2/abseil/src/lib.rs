@@ -45,10 +45,7 @@ impl<'a> StringView<'a> {
   #[inline]
   pub const fn from_str(s: &'a str) -> Self {
     let b = s.as_bytes();
-    let v = absl::string_view {
-      ptr_: unsafe { mem::transmute(b.as_ptr()) },
-      length_: b.len(),
-    };
+    let v: absl::string_view = [unsafe { mem::transmute(b.as_ptr()) }, b.len() as u64];
     Self {
       inner: v,
       _ph: PhantomData,
@@ -58,10 +55,9 @@ impl<'a> StringView<'a> {
   #[inline]
   pub const fn as_str(&self) -> &'a str {
     let Self {
-      inner: absl::string_view { ptr_, length_ },
-      ..
+      inner: [p, length], ..
     } = self;
-    let span: &'a [u8] = unsafe { slice::from_raw_parts(mem::transmute(*ptr_), *length_) };
+    let span: &'a [u8] = unsafe { slice::from_raw_parts(mem::transmute(*p), *length as usize) };
     unsafe { str::from_utf8_unchecked(span) }
   }
 }

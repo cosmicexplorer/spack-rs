@@ -604,10 +604,6 @@ pub mod declarative {
       );
     }
 
-    /* NB: put C++ stdlib linking AFTER all dependencies, otherwise linking may
-     * break! */
-    cxx::enable_hacky_linker_cpp_support(cur_recipe.cxx).await?;
-
     bindings = bindings
       .generate_comments(cur_recipe.bindgen_config.process_comments)
       .fit_macro_constants(true);
@@ -678,125 +674,7 @@ pub mod declarative {
   }
 
   pub mod cxx {
-    use crate::{metadata_spec::spec, utils::prefix};
-
-    use futures_util::{pin_mut, stream::TryStreamExt};
-    use tokio::fs;
-
-    use std::{ffi::OsStr, path::PathBuf};
-
-    async fn locate_stl_includes() -> eyre::Result<Vec<PathBuf>> {
-      let incstdcpp_prefix = prefix::Prefix {
-        path: PathBuf::from("/usr/include/c++"),
-      };
-      let s = incstdcpp_prefix.traverse();
-      pin_mut!(s);
-
-      let mut algorithm_header_path: Option<PathBuf> = None;
-      let mut basic_string_header_path: Option<PathBuf> = None;
-
-      while let Some(dir_entry) = s.try_next().await? {
-        if algorithm_header_path.is_some() && basic_string_header_path.is_some() {
-          break;
-        }
-
-        let inc_file_path = dir_entry.into_path();
-
-        if algorithm_header_path.is_none()
-          && inc_file_path
-            .file_name()
-            .map(|s| s == OsStr::new("algorithm"))
-            .unwrap_or(false)
-        {
-          if inc_file_path.ends_with("parallel/algorithm")
-            || inc_file_path.ends_with("experimental/algorithm")
-            || inc_file_path.ends_with("ext/algorithm")
-          {
-            continue;
-          }
-          if fs::File::open(&inc_file_path).await.is_ok() {
-            let _ = algorithm_header_path.insert(inc_file_path);
-          }
-          continue;
-        }
-
-        if basic_string_header_path.is_none()
-          && inc_file_path
-            .file_name()
-            .map(|s| s == OsStr::new("basic_string.h"))
-            .unwrap_or(false)
-        {
-          assert!(inc_file_path.ends_with("bits/basic_string.h"));
-          if fs::File::open(&inc_file_path).await.is_ok() {
-            let _ = basic_string_header_path.insert(inc_file_path);
-          }
-          continue;
-        }
-      }
-
-      let algorithm_inc_dir = algorithm_header_path
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-      let basic_string_inc_dir = basic_string_header_path
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
-      Ok(vec![algorithm_inc_dir, basic_string_inc_dir])
-    }
-
-    async fn locate_plat_includes() -> eyre::Result<Vec<PathBuf>> {
-      let plat_inc_prefix = prefix::Prefix {
-        path: PathBuf::from("/usr/include"),
-      };
-      let s = plat_inc_prefix.traverse();
-      pin_mut!(s);
-
-      let mut cppconfig_header_path: Option<PathBuf> = None;
-
-      while let Some(dir_entry) = s.try_next().await? {
-        if cppconfig_header_path.is_some() {
-          break;
-        }
-
-        let inc_file_path = dir_entry.into_path();
-
-        if cppconfig_header_path.is_none()
-          && inc_file_path
-            .file_name()
-            .map(|s| s == OsStr::new("c++config.h"))
-            .unwrap_or(false)
-        {
-          assert!(inc_file_path.ends_with("bits/c++config.h"));
-          if fs::File::open(&inc_file_path).await.is_ok() {
-            let _ = cppconfig_header_path.insert(inc_file_path);
-          }
-          continue;
-        }
-      }
-
-      let cppconfig_inc_dir = cppconfig_header_path
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
-      Ok(vec![cppconfig_inc_dir])
-    }
-
-    async fn locate_cxx_stdlib_system_includes() -> eyre::Result<Vec<PathBuf>> {
-      let mut all_includes = Vec::new();
-      all_includes.extend(locate_stl_includes().await?.into_iter());
-      all_includes.extend(locate_plat_includes().await?.into_iter());
-      Ok(all_includes)
-    }
+    use crate::metadata_spec::spec;
 
     pub async fn enable_hacky_bindgen_cpp_support(
       bindings: bindgen::Builder,
@@ -810,49 +688,13 @@ pub mod declarative {
         spec::CxxSupport::Std14 => "-std=c++14",
         spec::CxxSupport::Std20 => "-std=c++20",
       };
-      let mut bindings = bindings
-        .clang_arg(std_arg)
+      let bindings = bindings
         .clang_args(&["-x", "c++"])
+        .clang_arg(std_arg)
         .enable_cxx_namespaces()
         .opaque_type("std::.*");
 
-      /* Pull in the c++ stdlib include dirs. */
-      for sys_incdir in locate_cxx_stdlib_system_includes().await?.into_iter() {
-        let incdir_str: String = format!("{}", sys_incdir.display());
-        dbg!(&incdir_str);
-        /* FIXME: why is this necessary??? */
-        bindings = bindings.clang_args(&["-cxx-isystem", &incdir_str]);
-      }
-
       Ok(bindings)
-    }
-
-    /* FIXME: why is this necessary??? */
-    async fn explicitly_link_cxx_stdlib() -> eyre::Result<()> {
-      let libstdcpp_prefix = prefix::Prefix {
-        path: PathBuf::from("/usr/lib"),
-      };
-      let query = prefix::LibsQuery {
-        needed_libraries: vec![prefix::LibraryName("stdc++".to_string())],
-        kind: prefix::LibraryType::Dynamic,
-        search_behavior: prefix::SearchBehavior::SelectFirstForEachLibraryName,
-      };
-      let libs = query.find_libs(&libstdcpp_prefix).await?;
-
-      /* Do not set rpath and rely on the dynamic linker to resolve the C++ stdlib. */
-      libs.link_libraries(prefix::RpathBehavior::DoNotSetRpath);
-      /* libs.link_libraries(prefix::RpathBehavior::SetRpathForContainingDirs); */
-
-      Ok(())
-    }
-
-    pub async fn enable_hacky_linker_cpp_support(cxx: spec::CxxSupport) -> eyre::Result<()> {
-      match cxx {
-        spec::CxxSupport::None => Ok(()),
-        spec::CxxSupport::Std20 | spec::CxxSupport::Std17 | spec::CxxSupport::Std14 => {
-          explicitly_link_cxx_stdlib().await
-        },
-      }
     }
   }
 }

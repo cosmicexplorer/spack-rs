@@ -9,5 +9,7 @@ use spack::utils::declarative::resolve_dependencies;
 async fn main() -> eyre::Result<()> {
   resolve_dependencies().await?;
 
+  println!("cargo:rustc-link-lib=stdc++");
+
   Ok(())
 }
