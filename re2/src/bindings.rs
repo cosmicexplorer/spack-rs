@@ -2307,6 +2307,38 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7consumeEPNS_10StringViewE"]
+      pub fn RE2Wrapper_consume(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: *mut root::re2_c_bindings::StringView,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper9consume_nEPNS_10StringViewES2_m"]
+      pub fn RE2Wrapper_consume_n(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper16find_and_consumeEPNS_10StringViewE"]
+      pub fn RE2Wrapper_find_and_consume(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: *mut root::re2_c_bindings::StringView,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper18find_and_consume_nEPNS_10StringViewES2_m"]
+      pub fn RE2Wrapper_find_and_consume_n(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        text: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperC1ENS_10StringViewERKN3re23RE27OptionsE"]
       pub fn RE2Wrapper_RE2Wrapper(
         this: *mut root::re2_c_bindings::RE2Wrapper,
@@ -2376,6 +2408,36 @@ pub mod root {
         n: usize,
       ) -> bool {
         RE2Wrapper_partial_match_n(self, text, captures, n)
+      }
+
+      #[inline]
+      pub unsafe fn consume(&self, text: *mut root::re2_c_bindings::StringView) -> bool {
+        RE2Wrapper_consume(self, text)
+      }
+
+      #[inline]
+      pub unsafe fn consume_n(
+        &self,
+        text: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool {
+        RE2Wrapper_consume_n(self, text, captures, n)
+      }
+
+      #[inline]
+      pub unsafe fn find_and_consume(&self, text: *mut root::re2_c_bindings::StringView) -> bool {
+        RE2Wrapper_find_and_consume(self, text)
+      }
+
+      #[inline]
+      pub unsafe fn find_and_consume_n(
+        &self,
+        text: *mut root::re2_c_bindings::StringView,
+        captures: *mut root::re2_c_bindings::StringView,
+        n: usize,
+      ) -> bool {
+        RE2Wrapper_find_and_consume_n(self, text, captures, n)
       }
 
       #[inline]

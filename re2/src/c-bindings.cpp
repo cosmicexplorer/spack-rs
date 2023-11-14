@@ -135,4 +135,38 @@ bool RE2Wrapper::partial_match_n(const StringView text, StringView captures[],
   return ret;
 }
 
+bool RE2Wrapper::consume(StringView *text) const {
+  auto tv = text->into_absl_view();
+  bool ret = re2::RE2::ConsumeN(&tv, *re_, nullptr, 0);
+  *text = StringView(tv);
+  return ret;
+}
+
+bool RE2Wrapper::consume_n(StringView *text, StringView captures[],
+                           const size_t n) const {
+  auto tv = text->into_absl_view();
+  auto argv = generate_n_args(captures, n);
+  bool ret = re2::RE2::ConsumeN(&tv, *re_, argv.data(), n);
+  free_n_args(std::move(argv));
+  *text = StringView(tv);
+  return ret;
+}
+
+bool RE2Wrapper::find_and_consume(StringView *text) const {
+  auto tv = text->into_absl_view();
+  bool ret = re2::RE2::FindAndConsumeN(&tv, *re_, nullptr, 0);
+  *text = StringView(tv);
+  return ret;
+}
+
+bool RE2Wrapper::find_and_consume_n(StringView *text, StringView captures[],
+                                    size_t n) const {
+  auto tv = text->into_absl_view();
+  auto argv = generate_n_args(captures, n);
+  bool ret = re2::RE2::FindAndConsumeN(&tv, *re_, argv.data(), n);
+  free_n_args(std::move(argv));
+  *text = StringView(tv);
+  return ret;
+}
+
 } /* namespace re2_c_bindings */

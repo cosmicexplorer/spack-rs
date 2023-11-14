@@ -96,6 +96,10 @@ impl<'a> StringView<'a> {
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 }
 
+impl<'a> AsMut<re2_c::StringView> for StringView<'a> {
+  fn as_mut(&mut self) -> &mut re2_c::StringView { &mut self.inner }
+}
+
 impl<'a> Default for StringView<'a> {
   fn default() -> Self { Self::empty() }
 }
@@ -465,6 +469,127 @@ impl RE2 {
     } {
       return None;
     }
+
+    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(unsafe { StringView::from_native(input) }.as_str());
+    }
+    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a.{2}")?;
+  /// let mut s = "asdf";
+  /// assert!(r.consume(&mut s));
+  /// assert_eq!(s, "f");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn consume(&self, text: &mut &str) -> bool {
+    let mut text_view = StringView::from_str(*text);
+    let ret = unsafe { self.0.consume(text_view.as_mut()) };
+    *text = text_view.as_str();
+    ret
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// assert_eq!(2, r.num_captures());
+  ///
+  /// let mut msg = "asdfe";
+  /// let [s1, s2] = r.consume_capturing(&mut msg).unwrap();
+  /// assert_eq!(s1, "s");
+  /// assert_eq!(s2, "f");
+  /// assert_eq!(msg, "e");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn consume_capturing<'a, const N: usize>(&self, text: &mut &'a str) -> Option<[&'a str; N]> {
+    if N == 0 {
+      return if self.consume(text) {
+        Some(unsafe { Self::empty_result() })
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut text_view = StringView::from_str(*text);
+    let mut argv = [StringView::empty().into_native(); N];
+
+    if !unsafe { self.0.consume_n(text_view.as_mut(), argv.as_mut_ptr(), N) } {
+      return None;
+    }
+
+    *text = text_view.as_str();
+
+    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(unsafe { StringView::from_native(input) }.as_str());
+    }
+    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a.{2}")?;
+  /// let mut s = "the asdf";
+  /// assert!(r.find_and_consume(&mut s));
+  /// assert_eq!(s, "f");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn find_and_consume(&self, text: &mut &str) -> bool {
+    let mut text_view = StringView::from_str(*text);
+    let ret = unsafe { self.0.find_and_consume(text_view.as_mut()) };
+    *text = text_view.as_str();
+    ret
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// assert_eq!(2, r.num_captures());
+  ///
+  /// let mut msg = "the asdfe";
+  /// let [s1, s2] = r.find_and_consume_capturing(&mut msg).unwrap();
+  /// assert_eq!(s1, "s");
+  /// assert_eq!(s2, "f");
+  /// assert_eq!(msg, "e");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn find_and_consume_capturing<'a, const N: usize>(
+    &self,
+    text: &mut &'a str,
+  ) -> Option<[&'a str; N]> {
+    if N == 0 {
+      return if self.find_and_consume(text) {
+        Some(unsafe { Self::empty_result() })
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut text_view = StringView::from_str(*text);
+    let mut argv = [StringView::empty().into_native(); N];
+
+    if !unsafe {
+      self
+        .0
+        .find_and_consume_n(text_view.as_mut(), argv.as_mut_ptr(), N)
+    } {
+      return None;
+    }
+
+    *text = text_view.as_str();
 
     let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
     for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
