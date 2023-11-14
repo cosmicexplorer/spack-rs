@@ -2241,16 +2241,22 @@ pub mod root {
       pub fn RE2Wrapper_clear(this: *mut root::re2_c_bindings::RE2Wrapper);
     }
     extern "C" {
-      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10error_codeEv"]
-      pub fn RE2Wrapper_error_code(
-        this: *const root::re2_c_bindings::RE2Wrapper,
-      ) -> root::re2::RE2_ErrorCode;
-    }
-    extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7patternEv"]
       pub fn RE2Wrapper_pattern(
         this: *const root::re2_c_bindings::RE2Wrapper,
       ) -> root::re2_c_bindings::StringView;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper7optionsEv"]
+      pub fn RE2Wrapper_options(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> *const root::re2::RE2_Options;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10error_codeEv"]
+      pub fn RE2Wrapper_error_code(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2::RE2_ErrorCode;
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper5errorEv"]
@@ -2384,10 +2390,13 @@ pub mod root {
       pub unsafe fn clear(&mut self) { RE2Wrapper_clear(self) }
 
       #[inline]
-      pub unsafe fn error_code(&self) -> root::re2::RE2_ErrorCode { RE2Wrapper_error_code(self) }
+      pub unsafe fn pattern(&self) -> root::re2_c_bindings::StringView { RE2Wrapper_pattern(self) }
 
       #[inline]
-      pub unsafe fn pattern(&self) -> root::re2_c_bindings::StringView { RE2Wrapper_pattern(self) }
+      pub unsafe fn options(&self) -> *const root::re2::RE2_Options { RE2Wrapper_options(self) }
+
+      #[inline]
+      pub unsafe fn error_code(&self) -> root::re2::RE2_ErrorCode { RE2Wrapper_error_code(self) }
 
       #[inline]
       pub unsafe fn error(&self) -> root::re2_c_bindings::StringView { RE2Wrapper_error(self) }

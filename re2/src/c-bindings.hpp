@@ -77,9 +77,10 @@ public:
 
   void clear();
 
-  re2::RE2::ErrorCode error_code() const noexcept;
-
   StringView pattern() const noexcept;
+  const re2::RE2::Options& options() const noexcept;
+
+  re2::RE2::ErrorCode error_code() const noexcept;
   StringView error() const noexcept;
   StringView error_arg() const noexcept;
 

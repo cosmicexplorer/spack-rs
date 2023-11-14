@@ -272,6 +272,34 @@ impl RE2 {
   #[inline]
   pub fn pattern(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.pattern()) } }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, options::*};
+  ///
+  /// let o: Options = CannedOptions::POSIX.into();
+  /// let r = RE2::compile(StringView::from_str("asdf"), o)?;
+  /// assert_eq!(o, r.options());
+  /// assert_ne!(o, Options::default());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn options(&self) -> Options { unsafe { *self.0.options() }.into() }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, options::*};
+  ///
+  /// let o: Options = CannedOptions::POSIX.into();
+  /// let r = RE2::compile(StringView::from_str("asdf"), o)?;
+  /// assert_eq!(o, r.options());
+  /// assert_ne!(o, Options::default());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn expensive_clone(&self) -> Self { Self::compile(self.pattern(), self.options()).unwrap() }
+
   #[inline]
   fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
 
@@ -671,5 +699,62 @@ impl ops::Drop for RE2 {
     unsafe {
       self.0.clear();
     }
+  }
+}
+
+impl fmt::Debug for RE2 {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "RE2(pattern={:?}, options={:?})",
+      self.pattern(),
+      self.options()
+    )
+  }
+}
+
+impl fmt::Display for RE2 {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let o = self.options();
+    if o == Options::default() {
+      write!(f, "RE2({})", self.pattern())
+    } else {
+      write!(f, "RE2(/{}/, options={:?})", self.pattern(), o)
+    }
+  }
+}
+
+impl cmp::PartialEq for RE2 {
+  fn eq(&self, other: &Self) -> bool {
+    self.pattern().eq(&other.pattern()) && self.options().eq(&other.options())
+  }
+}
+
+impl cmp::Eq for RE2 {}
+
+impl cmp::PartialOrd for RE2 {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    let intermediate = self.pattern().partial_cmp(&other.pattern());
+    if intermediate != Some(cmp::Ordering::Equal) {
+      return intermediate;
+    }
+    self.options().partial_cmp(&other.options())
+  }
+}
+
+impl cmp::Ord for RE2 {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    let intermediate = self.pattern().cmp(&other.pattern());
+    if intermediate != cmp::Ordering::Equal {
+      return intermediate;
+    }
+    self.options().cmp(&other.options())
+  }
+}
+
+impl hash::Hash for RE2 {
+  fn hash<H>(&self, state: &mut H) where H: hash::Hasher {
+    self.pattern().hash(state);
+    self.options().hash(state);
   }
 }

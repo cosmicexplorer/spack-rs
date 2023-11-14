@@ -54,6 +54,10 @@ void RE2Wrapper::clear() {
   re_ = nullptr;
 }
 
+const re2::RE2::Options &RE2Wrapper::options() const noexcept {
+  return re_->options();
+}
+
 re2::RE2::ErrorCode RE2Wrapper::error_code() const noexcept {
   return re_->error_code();
 }
