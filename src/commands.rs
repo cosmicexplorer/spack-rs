@@ -528,16 +528,16 @@ pub mod find {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure a python is installed that is at least version 3.
+      // Ensure an m4 is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("python@3:"),
+        spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
-      // Look for a python spec with that exact hash.
+      // Look for an m4 spec with that exact hash.
       let find = Find {
         spack,
         spec: found_spec.hashed_spec(),
@@ -551,12 +551,12 @@ pub mod find {
         .map_err(|e| crate::commands::CommandError::Find(find, e))?;
 
       // Here, we just check the first of the found specs.
-      assert!(&found_specs[0].name == "python");
+      assert!(&found_specs[0].name == "m4");
       // Verify that this is the same spec as before.
       assert!(&found_specs[0].hash == &found_spec.hash);
       // The fields of the '--json' output of 'find'
       // are deserialized into FoundSpec instances.
-      assert!(&found_specs[0].version.0[..2] == "3.");
+      assert!(&found_specs[0].version.0[..4] == "1.4.");
       Ok(())
     }
 
@@ -571,10 +571,10 @@ pub mod find {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure a python is installed that is at least version 3.
+      // Ensure an m4 is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("python@3:"),
+        spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
       };
@@ -584,7 +584,7 @@ pub mod find {
         .await
         .map_err(|e| crate::commands::CommandError::Install(install, e))?;
 
-      // Look for a python spec with that exact hash.
+      // Look for an m4 spec with that exact hash.
       let find_prefix = FindPrefix {
         spack,
         spec: found_spec.hashed_spec(),
@@ -592,16 +592,16 @@ pub mod find {
       };
 
       // .find_prefix() will return the spec's prefix root wrapped in an Option.
-      let python_prefix = find_prefix
+      let m4_prefix = find_prefix
         .clone()
         .find_prefix()
         .await
         .map_err(|e| crate::commands::CommandError::FindPrefix(find_prefix, e))?
         .unwrap();
 
-      // Verify that this prefix contains the python3 executable.
-      let python3_exe = python_prefix.path.join("bin").join("python3");
-      assert!(fs::File::open(python3_exe).is_ok());
+      // Verify that this prefix contains the m4 executable.
+      let m4_exe = m4_prefix.path.join("bin").join("m4");
+      assert!(fs::File::open(m4_exe).is_ok());
       Ok(())
     }
   }
@@ -705,27 +705,27 @@ pub mod load {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure a python is installed that is at least version 3.
+      // Ensure an m4 is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("python@3:"),
+        spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
-      // Look for a python spec with that exact hash.
+      // Look for a m4 spec with that exact hash.
       let load = Load {
         spack,
         specs: vec![found_spec.hashed_spec()],
       };
-      let exe::EnvModifications(python_env) = load
+      let exe::EnvModifications(m4_env) = load
         .clone()
         .load()
         .await
         .map_err(|e| crate::commands::CommandError::Load(load, e))?;
       // This is the contents of a source-able environment script.
-      assert!(python_env.contains_key(OsStr::new("ACLOCAL_PATH")));
+      assert!(m4_env.contains_key(OsStr::new("M4")));
       Ok(())
     }
   }
@@ -989,6 +989,7 @@ pub mod build_env {
     pub spec: CLISpec,
     /// Optional output file for sourcing environment modifications.
     pub dump: Option<PathBuf>,
+    pub env: Option<EnvName>,
     /// Optional command line to evaluate within the package environment.
     ///
     /// If this argv is empty, the contents of the environment are printed to
@@ -1004,6 +1005,7 @@ pub mod build_env {
       let Self {
         spack,
         spec,
+        env,
         argv,
         dump,
       } = self;
@@ -1014,7 +1016,7 @@ pub mod build_env {
         vec![]
       };
 
-      let argv = exe::Argv(
+      let mut argv = exe::Argv(
         ["build-env".to_string()]
           .into_iter()
           .chain(dump_args.into_iter())
@@ -1023,6 +1025,10 @@ pub mod build_env {
           .chain(argv.trailing_args().0.into_iter())
           .collect(),
       );
+
+      if let Some(env) = env {
+        env.unshift_env_args(&mut argv);
+      }
 
       let command = spack
         .with_spack_exe(exe::Command {
@@ -1064,10 +1070,10 @@ pub mod build_env {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Let's get a python 3 or later installed!
+      // Let's get an m4 installed!
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("python@3:"),
+        spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
       };
@@ -1082,6 +1088,7 @@ pub mod build_env {
         spack: spack.clone(),
         // Use the precise spec we just ensured was installed.
         spec: found_spec.hashed_spec(),
+        env: None,
         dump: None,
         argv: Default::default(),
       };
@@ -1098,7 +1105,7 @@ pub mod build_env {
         let line = line.unwrap();
         if line.starts_with("SPACK_SHORT_SPEC") {
           spec_was_found = true;
-          assert!("python" == &line[17..23]);
+          assert!("m4" == &line[17..19]);
         }
       }
       assert!(spec_was_found);
@@ -1108,6 +1115,7 @@ pub mod build_env {
       let build_env = BuildEnv {
         spack: spack.clone(),
         spec: found_spec.hashed_spec(),
+        env: None,
         dump: Some(dump.clone()),
         argv: Default::default(),
       };
@@ -1124,7 +1132,7 @@ pub mod build_env {
       {
         if line.starts_with("SPACK_SHORT_SPEC") {
           spec_was_found = true;
-          assert!("python" == &line[18..24]);
+          assert!("m4" == &line[18..20]);
         }
       }
       assert!(spec_was_found);
@@ -1133,6 +1141,7 @@ pub mod build_env {
       let build_env = BuildEnv {
         spack,
         spec: found_spec.hashed_spec(),
+        env: None,
         dump: None,
         argv: ["sh", "-c", "echo $SPACK_SHORT_SPEC"].as_ref().into(),
       };
@@ -1141,7 +1150,7 @@ pub mod build_env {
         .build_env()
         .await
         .map_err(|e| crate::commands::CommandError::BuildEnv(build_env, e))?;
-      assert!(&output.stdout[..6] == b"python");
+      assert!(&output.stdout[..2] == b"m4");
       Ok(())
     }
   }
@@ -1799,9 +1808,7 @@ pub mod env {
         .await
         .map_err(|e| e.with_context(format!("in env_list()!")))?;
       let output = command.clone().invoke().await?;
-      dbg!(&output);
       let output = output.decode(command).await?;
-      dbg!(&output);
       Ok(
         output
           .stdout

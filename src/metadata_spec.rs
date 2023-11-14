@@ -89,6 +89,7 @@ pub mod spec {
     None,
     Std14,
     Std17,
+    Std20,
   }
 
   impl CxxSupport {
@@ -100,9 +101,11 @@ pub mod spec {
             Ok(Self::Std17)
           } else if s == "c++14" {
             Ok(Self::Std14)
+          } else if s == "c++20" {
+            Ok(Self::Std20)
           } else {
             Err(SpecError::Parsing(format!(
-              "cxx only supports \"c++17\" or \"c++14\"; was {:?}",
+              "cxx only supports \"c++20\" or \"c++17\" or \"c++14\"; was {:?}",
               s
             )))
           }

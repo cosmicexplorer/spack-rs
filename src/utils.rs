@@ -808,6 +808,7 @@ pub mod declarative {
         spec::CxxSupport::None => return Ok(bindings),
         spec::CxxSupport::Std17 => "-std=c++17",
         spec::CxxSupport::Std14 => "-std=c++14",
+        spec::CxxSupport::Std20 => "-std=c++20",
       };
       let mut bindings = bindings
         .clang_arg(std_arg)
@@ -840,6 +841,7 @@ pub mod declarative {
 
       /* Do not set rpath and rely on the dynamic linker to resolve the C++ stdlib. */
       libs.link_libraries(prefix::RpathBehavior::DoNotSetRpath);
+      /* libs.link_libraries(prefix::RpathBehavior::SetRpathForContainingDirs); */
 
       Ok(())
     }
@@ -847,7 +849,9 @@ pub mod declarative {
     pub async fn enable_hacky_linker_cpp_support(cxx: spec::CxxSupport) -> eyre::Result<()> {
       match cxx {
         spec::CxxSupport::None => Ok(()),
-        spec::CxxSupport::Std17 | spec::CxxSupport::Std14 => explicitly_link_cxx_stdlib().await,
+        spec::CxxSupport::Std20 | spec::CxxSupport::Std17 | spec::CxxSupport::Std14 => {
+          explicitly_link_cxx_stdlib().await
+        },
       }
     }
   }
