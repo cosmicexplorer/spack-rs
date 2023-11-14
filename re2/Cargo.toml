@@ -45,7 +45,6 @@ tokio                   = { workspace = true, features = ["macros"] }
 
 [dependencies]
 displaydoc.workspace    = true
-indexmap.workspace      = true
 num_enum.workspace      = true
 static_assertions.workspace = true
 thiserror.workspace     = true

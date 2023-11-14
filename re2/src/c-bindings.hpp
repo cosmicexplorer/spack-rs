@@ -28,7 +28,6 @@ class StringWrapper {
 public:
   StringWrapper();
   StringWrapper(StringView s);
-  StringWrapper(std::string *s) : inner_(s) {}
 
   StringWrapper(StringWrapper &&rhs) : inner_(rhs.inner_) {}
   StringWrapper(const StringWrapper &) = delete;
@@ -48,9 +47,31 @@ private:
   std::string *inner_;
 };
 
+struct NamedGroup {
+  StringView name_;
+  size_t index_;
+
+  NamedGroup(const NamedGroup &rhs) = default;
+  NamedGroup &operator=(const NamedGroup &rhs) = default;
+};
+
+class NamedCapturingGroups {
+public:
+  NamedCapturingGroups(const std::map<std::string, int> &m)
+      : named_groups_(m), it_(m.cbegin()) {}
+
+  void deref(NamedGroup *out) const;
+  void advance();
+  bool completed() const noexcept;
+
+private:
+  const std::map<std::string, int> &named_groups_;
+  std::map<std::string, int>::const_iterator it_;
+};
+
 class RE2Wrapper {
 public:
-  static void quote_meta(StringView pattern, StringWrapper* out);
+  static void quote_meta(StringView pattern, StringWrapper *out);
 
   RE2Wrapper(StringView pattern, const re2::RE2::Options &options);
 
@@ -63,6 +84,7 @@ public:
   StringView error_arg() const noexcept;
 
   size_t num_captures() const noexcept;
+  NamedCapturingGroups named_groups() const;
 
   bool full_match(StringView text) const;
   bool full_match_n(StringView text, StringView captures[], size_t n) const;

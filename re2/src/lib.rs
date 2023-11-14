@@ -24,8 +24,6 @@ use options::Options;
 
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
-use indexmap::IndexMap;
-
 use std::{
   cmp, fmt, hash,
   marker::PhantomData,
@@ -172,6 +170,79 @@ impl ops::Drop for StringWrapper {
 }
 
 #[repr(transparent)]
+pub struct NamedGroup<'a> {
+  inner: re2_c::NamedGroup,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> NamedGroup<'a> {
+  #[inline]
+  pub(crate) const unsafe fn from_native(inner: re2_c::NamedGroup) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  pub const fn name(&self) -> StringView<'a> {
+    unsafe { StringView::from_native(self.inner.name_) }
+  }
+
+  #[inline]
+  pub const fn index(&self) -> &usize { &self.inner.index_ }
+}
+
+#[repr(transparent)]
+pub struct NamedCapturingGroups<'a> {
+  inner: re2_c::NamedCapturingGroups,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> NamedCapturingGroups<'a> {
+  #[inline]
+  pub(crate) const unsafe fn from_native(inner: re2_c::NamedCapturingGroups) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  pub fn deref(&self) -> NamedGroup<'a> {
+    let mut out: MaybeUninit<re2_c::NamedGroup> = MaybeUninit::uninit();
+    unsafe {
+      self.inner.deref(out.as_mut_ptr());
+      NamedGroup::from_native(out.assume_init())
+    }
+  }
+
+  #[inline]
+  pub fn advance(&mut self) {
+    unsafe {
+      self.inner.advance();
+    }
+  }
+
+  #[inline]
+  pub fn completed(&self) -> bool { unsafe { self.inner.completed() } }
+}
+
+impl<'a> Iterator for NamedCapturingGroups<'a> {
+  type Item = NamedGroup<'a>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.completed() {
+      return None;
+    }
+
+    let ret = self.deref();
+    self.advance();
+    Some(ret)
+  }
+}
+
+#[repr(transparent)]
 pub struct RE2(re2_c::RE2Wrapper);
 
 impl RE2 {
@@ -244,6 +315,26 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// assert_eq!(0, RE2::from_str("a(.)df")?.named_groups().count());
+  /// assert_eq!(1, RE2::from_str("a(?P<hey>.)df")?.named_groups().count());
+  /// let r = RE2::from_str("a(?P<y>(?P<x>.)d(f))")?;
+  /// assert_eq!(3, r.num_captures());
+  /// let groups: Vec<(&str, usize)> = r.named_groups()
+  ///   .map(|g| (g.name().as_str(), *g.index()))
+  ///   .collect();
+  /// assert_eq!(vec![("x", 2), ("y", 1)], groups);
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn named_groups(&self) -> impl Iterator<Item=NamedGroup<'_>>+'_ {
+    unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
+  }
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
@@ -330,7 +421,6 @@ impl RE2 {
     unsafe { self.0.partial_match(text.into_native()) }
   }
 
-
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::{*, options::*};
@@ -382,7 +472,6 @@ impl RE2 {
     }
     Some(unsafe { MaybeUninit::array_assume_init(ret) })
   }
-
 }
 
 impl ops::Drop for RE2 {

@@ -5,9 +5,6 @@
 
 #include <cassert>
 
-#include <cstdio>
-#include <iostream>
-
 namespace re2_c_bindings {
 using re2_c_bindings::StringWrapper;
 
@@ -25,6 +22,23 @@ StringView StringWrapper::as_view() const {
     return StringView();
   }
   return StringView(inner_->data(), inner_->size());
+}
+
+void NamedCapturingGroups::deref(NamedGroup *out) const {
+  assert(!completed());
+
+  out->name_ = absl::string_view(it_->first);
+  assert(it_->second > 0);
+  out->index_ = it_->second;
+}
+
+void NamedCapturingGroups::advance() {
+  assert(!completed());
+  ++it_;
+}
+
+bool NamedCapturingGroups::completed() const noexcept {
+  return it_ == named_groups_.end();
 }
 
 void RE2Wrapper::quote_meta(const StringView pattern, StringWrapper *out) {
@@ -65,13 +79,16 @@ size_t RE2Wrapper::num_captures() const noexcept {
   return n;
 }
 
+NamedCapturingGroups RE2Wrapper::named_groups() const {
+  return NamedCapturingGroups(re_->NamedCapturingGroups());
+}
+
 bool RE2Wrapper::full_match(const StringView text) const {
   return re2::RE2::FullMatchN(text.into_absl_view(), *re_, nullptr, 0);
 }
 
 static bool parse_string_view(const char *data, size_t len, void *dest) {
   StringView *dest_sv = reinterpret_cast<StringView *>(dest);
-  fprintf(stderr, "data=%p, len=%lu, dest=%p\n", data, len, dest);
   dest_sv->data_ = data;
   dest_sv->len_ = len;
   return true;

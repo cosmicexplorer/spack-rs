@@ -552,7 +552,7 @@ pub mod root {
       pub prefix_: root::std::string,
       pub prog_: *mut root::re2::Prog,
       pub rprog_: *mut root::re2::Prog,
-      pub named_groups_: *const u8,
+      pub named_groups_: *const [u64; 6usize],
       pub group_names_: *const u8,
       pub rprog_once_: root::absl::lts_20230125::once_flag,
       pub named_groups_once_: root::absl::lts_20230125::once_flag,
@@ -1056,7 +1056,7 @@ pub mod root {
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE220NamedCapturingGroupsB5cxx11Ev"]
-      pub fn RE2_NamedCapturingGroups(this: *const root::re2::RE2) -> *const u8;
+      pub fn RE2_NamedCapturingGroups(this: *const root::re2::RE2) -> *const [u64; 6usize];
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE219CapturingGroupNamesB5cxx11Ev"]
@@ -1326,7 +1326,9 @@ pub mod root {
       }
 
       #[inline]
-      pub unsafe fn NamedCapturingGroups(&self) -> *const u8 { RE2_NamedCapturingGroups(self) }
+      pub unsafe fn NamedCapturingGroups(&self) -> *const [u64; 6usize] {
+        RE2_NamedCapturingGroups(self)
+      }
 
       #[inline]
       pub unsafe fn CapturingGroupNames(&self) -> *const u8 { RE2_CapturingGroupNames(self) }
@@ -2087,6 +2089,118 @@ pub mod root {
     }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
+    pub struct NamedGroup {
+      pub name_: root::re2_c_bindings::StringView,
+      pub index_: usize,
+    }
+    #[test]
+    fn bindgen_test_layout_NamedGroup() {
+      const UNINIT: ::std::mem::MaybeUninit<NamedGroup> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<NamedGroup>(),
+        24usize,
+        concat!("Size of: ", stringify!(NamedGroup))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<NamedGroup>(),
+        8usize,
+        concat!("Alignment of ", stringify!(NamedGroup))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).name_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(NamedGroup),
+          "::",
+          stringify!(name_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).index_) as usize - ptr as usize },
+        16usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(NamedGroup),
+          "::",
+          stringify!(index_)
+        )
+      );
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct NamedCapturingGroups {
+      pub named_groups_: *const [u64; 6usize],
+      pub it_: u64,
+    }
+    #[test]
+    fn bindgen_test_layout_NamedCapturingGroups() {
+      const UNINIT: ::std::mem::MaybeUninit<NamedCapturingGroups> =
+        ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<NamedCapturingGroups>(),
+        16usize,
+        concat!("Size of: ", stringify!(NamedCapturingGroups))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<NamedCapturingGroups>(),
+        8usize,
+        concat!("Alignment of ", stringify!(NamedCapturingGroups))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).named_groups_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(NamedCapturingGroups),
+          "::",
+          stringify!(named_groups_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).it_) as usize - ptr as usize },
+        8usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(NamedCapturingGroups),
+          "::",
+          stringify!(it_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings20NamedCapturingGroups5derefEPNS_10NamedGroupE"]
+      pub fn NamedCapturingGroups_deref(
+        this: *const root::re2_c_bindings::NamedCapturingGroups,
+        out: *mut root::re2_c_bindings::NamedGroup,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings20NamedCapturingGroups7advanceEv"]
+      pub fn NamedCapturingGroups_advance(this: *mut root::re2_c_bindings::NamedCapturingGroups);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings20NamedCapturingGroups9completedEv"]
+      pub fn NamedCapturingGroups_completed(
+        this: *const root::re2_c_bindings::NamedCapturingGroups,
+      ) -> bool;
+    }
+    impl NamedCapturingGroups {
+      #[inline]
+      pub unsafe fn deref(&self, out: *mut root::re2_c_bindings::NamedGroup) {
+        NamedCapturingGroups_deref(self, out)
+      }
+
+      #[inline]
+      pub unsafe fn advance(&mut self) { NamedCapturingGroups_advance(self) }
+
+      #[inline]
+      pub unsafe fn completed(&self) -> bool { NamedCapturingGroups_completed(self) }
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2Wrapper {
       pub re_: *mut root::re2::RE2,
     }
@@ -2153,6 +2267,12 @@ pub mod root {
     extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12num_capturesEv"]
       pub fn RE2Wrapper_num_captures(this: *const root::re2_c_bindings::RE2Wrapper) -> usize;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper12named_groupsEv"]
+      pub fn RE2Wrapper_named_groups(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+      ) -> root::re2_c_bindings::NamedCapturingGroups;
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper10full_matchENS_10StringViewE"]
@@ -2222,6 +2342,11 @@ pub mod root {
 
       #[inline]
       pub unsafe fn num_captures(&self) -> usize { RE2Wrapper_num_captures(self) }
+
+      #[inline]
+      pub unsafe fn named_groups(&self) -> root::re2_c_bindings::NamedCapturingGroups {
+        RE2Wrapper_named_groups(self)
+      }
 
       #[inline]
       pub unsafe fn full_match(&self, text: root::re2_c_bindings::StringView) -> bool {
