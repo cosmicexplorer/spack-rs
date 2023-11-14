@@ -43,7 +43,7 @@ jobs:
       with:
         path: ~/.spack/summonings
         # No need to split cache by os, as spack already ensures this separation!
-        key: spack-summonings-${{ env.cache-name }}-v3
+        key: spack-summonings-${{ env.cache-name }}-v4
 
     - name: test rust
       uses: actions-rs/cargo@v1
