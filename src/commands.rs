@@ -798,7 +798,7 @@ pub mod install {
 
       /* Generate spack argv. */
       /* FIXME: determine appropriate amount of build parallelism! */
-      let mut args = vec!["install", "--fail-fast", "-j12"];
+      let mut args = vec!["install", "--fail-fast", "-j6"];
       /* If running this inside an environment, the command will fail without this
        * argument. */
       if env.is_some() {

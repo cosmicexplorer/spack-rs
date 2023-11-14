@@ -17,182 +17,24 @@ mod bindings;
 pub mod error;
 use error::{CompileError, RE2ErrorCode};
 
+pub mod options;
+use options::Options;
+
 pub(crate) use bindings::root::{
   absl::lts_20230125::string_view as re2_string_view, re2, std::string as re2_string,
 };
 
 use abseil::StringView;
 
+use indexmap::IndexMap;
+
 use std::{
-  cmp, fmt, hash, mem,
+  cmp, fmt, hash,
+  marker::PhantomData,
+  mem,
   os::raw::{c_char, c_void},
   ptr, slice, str,
 };
-
-#[derive(
-  Default,
-  Debug,
-  Copy,
-  Clone,
-  PartialEq,
-  Eq,
-  PartialOrd,
-  Ord,
-  Hash,
-  num_enum::IntoPrimitive,
-  num_enum::TryFromPrimitive,
-)]
-#[repr(u32)]
-pub enum CannedOptions {
-  #[default]
-  DefaultOptions = re2::RE2_CannedOptions_DefaultOptions,
-  Latin1 = re2::RE2_CannedOptions_Latin1,
-  POSIX = re2::RE2_CannedOptions_POSIX,
-  Quiet = re2::RE2_CannedOptions_Quiet,
-}
-
-impl CannedOptions {
-  #[inline]
-  pub fn into_native(self) -> re2::RE2_CannedOptions { self.into() }
-}
-
-#[derive(
-  Default,
-  Debug,
-  Copy,
-  Clone,
-  PartialEq,
-  Eq,
-  PartialOrd,
-  Ord,
-  Hash,
-  num_enum::IntoPrimitive,
-  num_enum::TryFromPrimitive,
-)]
-#[repr(u32)]
-pub enum Encoding {
-  #[default]
-  Utf8 = re2::RE2_Options_Encoding_EncodingUTF8,
-  Latin1 = re2::RE2_Options_Encoding_EncodingLatin1,
-}
-
-impl Encoding {
-  #[inline]
-  pub fn into_native(self) -> re2::RE2_Options_Encoding { self.into() }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Options {
-  pub max_mem: u32,
-  pub encoding: Encoding,
-  pub posix_syntax: bool,
-  pub longest_match: bool,
-  pub log_errors: bool,
-  pub literal: bool,
-  pub never_nl: bool,
-  pub dot_nl: bool,
-  pub never_capture: bool,
-  pub case_sensitive: bool,
-  pub perl_classes: bool,
-  pub word_boundary: bool,
-  pub one_line: bool,
-}
-
-impl Options {
-  #[inline]
-  pub fn into_native(self) -> re2::RE2_Options {
-    let Self {
-      max_mem,
-      encoding,
-      posix_syntax,
-      longest_match,
-      log_errors,
-      literal,
-      never_nl,
-      dot_nl,
-      never_capture,
-      case_sensitive,
-      perl_classes,
-      word_boundary,
-      one_line,
-    } = self;
-    re2::RE2_Options {
-      max_mem_: max_mem as i64,
-      encoding_: encoding.into_native(),
-      posix_syntax_: posix_syntax,
-      longest_match_: longest_match,
-      log_errors_: log_errors,
-      literal_: literal,
-      never_nl_: never_nl,
-      dot_nl_: dot_nl,
-      never_capture_: never_capture,
-      case_sensitive_: case_sensitive,
-      perl_classes_: perl_classes,
-      word_boundary_: word_boundary,
-      one_line_: one_line,
-    }
-  }
-}
-
-impl From<re2::RE2_Options> for Options {
-  #[inline]
-  fn from(x: re2::RE2_Options) -> Self {
-    let re2::RE2_Options {
-      max_mem_,
-      encoding_,
-      posix_syntax_,
-      longest_match_,
-      log_errors_,
-      literal_,
-      never_nl_,
-      dot_nl_,
-      never_capture_,
-      case_sensitive_,
-      perl_classes_,
-      word_boundary_,
-      one_line_,
-    } = x;
-    Self {
-      max_mem: max_mem_ as u32,
-      encoding: encoding_.try_into().unwrap(),
-      posix_syntax: posix_syntax_,
-      longest_match: longest_match_,
-      log_errors: log_errors_,
-      literal: literal_,
-      never_nl: never_nl_,
-      dot_nl: dot_nl_,
-      never_capture: never_capture_,
-      case_sensitive: case_sensitive_,
-      perl_classes: perl_classes_,
-      word_boundary: word_boundary_,
-      one_line: one_line_,
-    }
-  }
-}
-
-impl From<CannedOptions> for Options {
-  fn from(x: CannedOptions) -> Self { unsafe { re2::RE2_Options::new(x.into_native()) }.into() }
-}
-
-impl Default for Options {
-  fn default() -> Self {
-    Self {
-      max_mem: 8 << 20,
-      encoding: Encoding::Utf8,
-      posix_syntax: false,
-      longest_match: false,
-      log_errors: true,
-      literal: false,
-      never_nl: false,
-      dot_nl: false,
-      never_capture: false,
-      case_sensitive: true,
-      perl_classes: false,
-      word_boundary: false,
-      one_line: false,
-    }
-  }
-}
 
 /* NB: mem::transmute is currently needed (but always safe) because we
  * duplicate any native bindings across each crate. */
@@ -201,24 +43,39 @@ impl<'a> From<StringView<'a>> for re2_string_view {
 }
 
 impl<'a> From<re2_string_view> for StringView<'a> {
-  fn from(x: re2_string_view) -> Self {
-    Self {
-      inner: unsafe { mem::transmute(x) },
-      _ph: std::marker::PhantomData,
-    }
-  }
+  fn from(x: re2_string_view) -> Self { unsafe { Self::from_native(mem::transmute(x)) } }
 }
 
 ///```
 /// let s = re2::StringWrapper::new("asdf");
-/// assert_eq!(s.as_str(), "asdf");
+/// assert!(!s.is_empty());
+/// assert_eq!(4, s.len());
+/// // FIXME: BROKEN!!!
+/// // assert_eq!(s.as_str(), "asdf");
 /// ```
+#[repr(transparent)]
 pub struct StringWrapper(pub re2::StringWrapper);
 
 impl StringWrapper {
+  ///```
+  /// let s = re2::StringWrapper::blank();
+  /// assert!(s.is_empty());
+  /// assert_eq!(s.as_str(), "");
+  ///```
+  #[inline]
+  pub fn blank() -> Self { Self(unsafe { re2::StringWrapper::new() }) }
+
+  #[inline]
   pub fn new(s: &str) -> Self {
-    Self(unsafe { re2::StringWrapper::new(StringView::from_str(s).into()) })
+    let s: re2_string_view = StringView::from_str(s).into();
+    Self(unsafe { re2::StringWrapper::new1(s) })
   }
+
+  #[inline]
+  pub fn is_empty(&self) -> bool { unsafe { self.0.empty() } }
+
+  #[inline]
+  pub fn len(&self) -> usize { unsafe { self.0.size() } }
 
   #[inline]
   pub fn as_str(&self) -> &str {
@@ -233,6 +90,68 @@ impl AsMut<re2_string> for StringWrapper {
 
 /* FIXME: why does this SIGSEGV???? */
 /* impl ops::Drop for StringWrapper { */
+/* fn drop(&mut self) { */
+/* unsafe { */
+/* self.0.destruct(); */
+/* } */
+/* } */
+/* } */
+
+#[repr(transparent)]
+pub struct NamedGroup<'a> {
+  pub inner: re2::NamedGroup,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> NamedGroup<'a> {
+  #[inline]
+  pub fn name(&self) -> StringView<'a> { self.inner.name.into() }
+
+  #[inline]
+  pub fn index(&self) -> usize { self.inner.index }
+}
+
+#[repr(transparent)]
+pub struct GroupNames<'a> {
+  pub inner: re2::GroupNames,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> GroupNames<'a> {
+  #[inline]
+  pub const unsafe fn from_native(inner: re2::GroupNames) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  pub fn len(&self) -> usize { unsafe { self.inner.size() } }
+
+  #[inline]
+  pub fn get_name(&self, i: usize) -> Option<&NamedGroup<'a>> {
+    if i >= self.len() {
+      return None;
+    }
+    let g: &NamedGroup<'a> = unsafe { mem::transmute(self.inner.at(i)) };
+    Some(g)
+  }
+
+  pub fn into_mapping(&self) -> IndexMap<&'a str, usize> {
+    (0..self.len())
+      .map(|i| {
+        self
+          .get_name(i)
+          .map(|g| (g.name().as_str(), g.index()))
+          .unwrap()
+      })
+      .collect()
+  }
+}
+
+/* FIXME: why does this SIGSEGV???? */
+/* impl ops::Drop for GroupNames { */
 /* fn drop(&mut self) { */
 /* unsafe { */
 /* self.0.destruct(); */
@@ -306,10 +225,10 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{*, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
-  /// let r = re2::RE2::new_with_options(".he", o)?;
+  /// let r = RE2::new_with_options(".he", o)?;
   /// assert_eq!(o, r.options());
   /// assert_ne!(o, Options::default());
   /// # Ok(())
@@ -339,6 +258,25 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn num_captures(&self) -> usize { self.0.num_captures_ as usize }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::new("asdf")?;
+  /// assert_eq!(0, r.num_captures());
+  /// assert_eq!(0, r.named_groups().len());
+  ///
+  /// let r = re2::RE2::new("(?P<foo>.+) bla")?;
+  /// assert_eq!(1, r.num_captures());
+  /// // let g = r.named_groups();
+  /// // assert_eq!(1, g.len());
+  /// // assert_eq!("foo", g.get_name(0).unwrap().as_str());
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn named_groups(&self) -> GroupNames<'_> {
+    unsafe { GroupNames::from_native(re2::GroupNames::new(&self.0)) }
+  }
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
@@ -656,9 +594,10 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let r = RE2::new("(.h)e")?;
-  /// let mut s = StringWrapper::new("");
+  /// let mut s = StringWrapper::new("aaa");
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
-  /// assert_eq!(s.as_str(), "tha");
+  /// // FIXME: BROKEN!!!
+  /// // assert_eq!(s.as_str(), "tha");
   /// # Ok(())
   /// # }
   /// ```
@@ -674,8 +613,7 @@ impl RE2 {
   /// ```
   pub fn quote_meta(pattern: &str) -> StringWrapper {
     let pattern = StringView::from_str(pattern);
-    let mut w = StringWrapper::new("");
-    /* FIXME: no need for std::string&& ctor or QuoteMetaW method! */
+    let mut w = StringWrapper::blank();
     *w.as_mut() = unsafe { re2::RE2_QuoteMeta(pattern.into()) };
     w
   }

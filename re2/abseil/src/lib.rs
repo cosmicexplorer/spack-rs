@@ -30,18 +30,27 @@ use std::{cmp, fmt, hash, marker::PhantomData, mem, ops, slice, str};
 #[repr(transparent)]
 pub struct StringView<'a> {
   pub inner: absl::string_view,
-  pub _ph: PhantomData<&'a u8>,
+  _ph: PhantomData<&'a u8>,
 }
 
 impl<'a> StringView<'a> {
   #[inline]
+  pub const unsafe fn from_native(inner: absl::string_view) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
   pub const fn from_str(s: &'a str) -> Self {
     let b = s.as_bytes();
+    let v = absl::string_view {
+      ptr_: unsafe { mem::transmute(b.as_ptr()) },
+      length_: b.len(),
+    };
     Self {
-      inner: absl::string_view {
-        ptr_: unsafe { mem::transmute(b.as_ptr()) },
-        length_: b.len(),
-      },
+      inner: v,
       _ph: PhantomData,
     }
   }
