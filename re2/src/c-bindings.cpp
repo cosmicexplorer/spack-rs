@@ -46,6 +46,12 @@ void RE2Wrapper::quote_meta(const StringView pattern, StringWrapper *out) {
       std::move(re2::RE2::QuoteMeta(pattern.into_absl_view()));
 }
 
+size_t RE2Wrapper::max_submatch(const StringView rewrite) {
+  int ret = re2::RE2::MaxSubmatch(rewrite.into_absl_view());
+  assert(ret >= 0);
+  return ret;
+}
+
 RE2Wrapper::RE2Wrapper(StringView pattern, const re2::RE2::Options &options)
     : re_(new re2::RE2(pattern.into_absl_view(), options)) {}
 
@@ -201,7 +207,7 @@ bool RE2Wrapper::match_single(const StringView text, size_t startpos,
 bool RE2Wrapper::match_routine(const StringView text, size_t startpos,
                                size_t endpos, re2::RE2::Anchor re_anchor,
                                StringView submatch_args[],
-                               size_t nsubmatch) const {
+                               const size_t nsubmatch) const {
   std::vector<absl::string_view> submatches(nsubmatch);
 
   bool ret = re_->Match(text.into_absl_view(), startpos, endpos, re_anchor,
@@ -211,6 +217,25 @@ bool RE2Wrapper::match_routine(const StringView text, size_t startpos,
     submatch_args[i] = submatches[i];
   }
   return ret;
+}
+
+bool RE2Wrapper::check_rewrite_string(const StringView rewrite,
+                                      StringWrapper *error) const {
+  return re_->CheckRewriteString(rewrite.into_absl_view(),
+                                 error->get_mutable());
+}
+
+bool RE2Wrapper::vector_rewrite(StringWrapper *out, const StringView rewrite,
+                                const StringView *vec,
+                                const size_t veclen) const {
+  std::vector<absl::string_view> match_components(veclen);
+
+  for (size_t i = 0; i < veclen; ++i) {
+    match_components[i] = vec[i].into_absl_view();
+  }
+
+  return re_->Rewrite(out->get_mutable(), rewrite.into_absl_view(),
+                      match_components.data(), match_components.size());
 }
 
 } /* namespace re2_c_bindings */

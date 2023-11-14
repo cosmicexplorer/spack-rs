@@ -19,7 +19,7 @@
 mod bindings;
 
 pub mod error;
-use error::{CompileError, RE2ErrorCode};
+use error::{CompileError, RE2ErrorCode, RewriteError};
 
 pub mod options;
 use options::{Anchor, Options};
@@ -259,10 +259,24 @@ impl RE2 {
   /// let q = RE2::quote_meta(s);
   /// assert_eq!(q.as_view().as_str(), r"1\.5\-1\.8\?");
   /// ```
+  #[inline]
   pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
     let mut out = StringWrapper::blank();
     unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
     out
+  }
+
+  ///```
+  /// use re2::*;
+  ///
+  /// assert_eq!(0, RE2::max_submatch(StringView::from_str("asdf")));
+  /// assert_eq!(0, RE2::max_submatch(StringView::from_str(r"\0asdf")));
+  /// assert_eq!(1, RE2::max_submatch(StringView::from_str(r"\0a\1sdf")));
+  /// assert_eq!(3, RE2::max_submatch(StringView::from_str(r"\3a\1sdf")));
+  /// ```
+  #[inline]
+  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
+    unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
   #[inline]
@@ -763,6 +777,75 @@ impl RE2 {
       output.write(unsafe { StringView::from_native(input) }.as_str());
     }
     Some(unsafe { MaybeUninit::array_assume_init(ret) })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::{*, error::*};
+  ///
+  /// let r = RE2::from_str("asdf")?;
+  /// r.check_rewrite_string("a").unwrap();
+  /// r.check_rewrite_string(r"a\0b").unwrap();
+  /// assert_eq!(
+  ///   RewriteError {
+  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
+  ///   },
+  ///   r.check_rewrite_string(r"a\0b\1").err().unwrap(),
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn check_rewrite_string(&self, rewrite: &str) -> Result<(), RewriteError> {
+    let rewrite = StringView::from_str(rewrite);
+    let mut sw = StringWrapper::blank();
+
+    if unsafe {
+      self
+        .0
+        .check_rewrite_string(rewrite.into_native(), sw.as_mut_native())
+    } {
+      Ok(())
+    } else {
+      Err(RewriteError {
+        message: sw.as_view().as_str().to_string(),
+      })
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::*;
+  ///
+  /// let mut sw = StringWrapper::blank();
+  /// let r = RE2::from_str("a(s+)d(f+)")?;
+  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
+  /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn vector_rewrite<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: &str,
+    inputs: [&str; N],
+  ) -> bool {
+    let rewrite = StringView::from_str(rewrite);
+
+    let mut input_views = [StringView::empty().into_native(); N];
+    for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
+      *sv = StringView::from_str(s).into_native();
+    }
+
+    unsafe {
+      self.0.vector_rewrite(
+        out.as_mut_native(),
+        rewrite.into_native(),
+        input_views.as_ptr(),
+        input_views.len(),
+      )
+    }
   }
 }
 

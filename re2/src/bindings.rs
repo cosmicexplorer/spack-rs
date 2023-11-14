@@ -2237,6 +2237,10 @@ pub mod root {
       );
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper12max_submatchENS_10StringViewE"]
+      pub fn RE2Wrapper_max_submatch(rewrite: root::re2_c_bindings::StringView) -> usize;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings10RE2Wrapper5clearEv"]
       pub fn RE2Wrapper_clear(this: *mut root::re2_c_bindings::RE2Wrapper);
     }
@@ -2392,6 +2396,24 @@ pub mod root {
       ) -> bool;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper20check_rewrite_stringENS_10StringViewEPNS_13StringWrapperE"]
+      pub fn RE2Wrapper_check_rewrite_string(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        rewrite: root::re2_c_bindings::StringView,
+        error: *mut root::re2_c_bindings::StringWrapper,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10RE2Wrapper14vector_rewriteEPNS_13StringWrapperENS_10StringViewEPKS3_m"]
+      pub fn RE2Wrapper_vector_rewrite(
+        this: *const root::re2_c_bindings::RE2Wrapper,
+        out: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+        vec: *const root::re2_c_bindings::StringView,
+        veclen: usize,
+      ) -> bool;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings10RE2WrapperC1ENS_10StringViewERKN3re23RE27OptionsE"]
       pub fn RE2Wrapper_RE2Wrapper(
         this: *mut root::re2_c_bindings::RE2Wrapper,
@@ -2406,6 +2428,11 @@ pub mod root {
         out: *mut root::re2_c_bindings::StringWrapper,
       ) {
         RE2Wrapper_quote_meta(pattern, out)
+      }
+
+      #[inline]
+      pub unsafe fn max_submatch(rewrite: root::re2_c_bindings::StringView) -> usize {
+        RE2Wrapper_max_submatch(rewrite)
       }
 
       #[inline]
@@ -2554,6 +2581,26 @@ pub mod root {
           submatch_args,
           nsubmatch,
         )
+      }
+
+      #[inline]
+      pub unsafe fn check_rewrite_string(
+        &self,
+        rewrite: root::re2_c_bindings::StringView,
+        error: *mut root::re2_c_bindings::StringWrapper,
+      ) -> bool {
+        RE2Wrapper_check_rewrite_string(self, rewrite, error)
+      }
+
+      #[inline]
+      pub unsafe fn vector_rewrite(
+        &self,
+        out: *mut root::re2_c_bindings::StringWrapper,
+        rewrite: root::re2_c_bindings::StringView,
+        vec: *const root::re2_c_bindings::StringView,
+        veclen: usize,
+      ) -> bool {
+        RE2Wrapper_vector_rewrite(self, out, rewrite, vec, veclen)
       }
 
       #[inline]

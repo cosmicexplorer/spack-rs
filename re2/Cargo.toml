@@ -38,7 +38,7 @@ lib_names               = [
 allowlist               = []
 
 [build-dependencies]
-cc                      = "1.0.84"
+cc                      = "1.0.83"
 eyre.workspace          = true
 spack.workspace         = true
 tokio                   = { workspace = true, features = ["macros"] }

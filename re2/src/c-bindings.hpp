@@ -72,6 +72,7 @@ private:
 class RE2Wrapper {
 public:
   static void quote_meta(StringView pattern, StringWrapper *out);
+  static size_t max_submatch(StringView rewrite);
 
   RE2Wrapper(StringView pattern, const re2::RE2::Options &options);
 
@@ -106,6 +107,10 @@ public:
   bool match_routine(StringView text, size_t startpos, size_t endpos,
                      re2::RE2::Anchor re_anchor, StringView submatch_args[],
                      size_t nsubmatch) const;
+
+  bool check_rewrite_string(StringView rewrite, StringWrapper *error) const;
+  bool vector_rewrite(StringWrapper *out, StringView rewrite,
+                      const StringView *vec, size_t veclen) const;
 
 private:
   re2::RE2 *re_;
