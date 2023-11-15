@@ -2048,6 +2048,10 @@ pub mod root {
       pub fn StringWrapper_clear(this: *mut root::re2_c_bindings::StringWrapper);
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapper6resizeEm"]
+      pub fn StringWrapper_resize(this: *mut root::re2_c_bindings::StringWrapper, len: usize);
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZNK14re2_c_bindings13StringWrapper7as_viewEv"]
       pub fn StringWrapper_as_view(
         this: *const root::re2_c_bindings::StringWrapper,
@@ -2067,6 +2071,9 @@ pub mod root {
     impl StringWrapper {
       #[inline]
       pub unsafe fn clear(&mut self) { StringWrapper_clear(self) }
+
+      #[inline]
+      pub unsafe fn resize(&mut self, len: usize) { StringWrapper_resize(self, len) }
 
       #[inline]
       pub unsafe fn as_view(&self) -> root::re2_c_bindings::StringView {

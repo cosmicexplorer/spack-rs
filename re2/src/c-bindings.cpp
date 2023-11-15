@@ -6,8 +6,6 @@
 #include <cassert>
 
 namespace re2_c_bindings {
-using re2_c_bindings::StringWrapper;
-
 StringWrapper::StringWrapper() : inner_(nullptr) {}
 StringWrapper::StringWrapper(StringView s)
     : inner_(new std::string(s.data_, s.len_)) {}
@@ -15,6 +13,13 @@ StringWrapper::StringWrapper(StringView s)
 void StringWrapper::clear() {
   delete inner_;
   inner_ = nullptr;
+}
+
+void StringWrapper::resize(const size_t len) {
+  if (len == 0) {
+    return clear();
+  }
+  get_mutable()->resize(len);
 }
 
 StringView StringWrapper::as_view() const {

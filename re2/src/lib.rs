@@ -165,14 +165,24 @@ impl StringWrapper {
 
   #[inline]
   pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
-}
 
-impl ops::Drop for StringWrapper {
-  fn drop(&mut self) {
+  #[inline]
+  pub fn resize(&mut self, len: usize) {
+    unsafe {
+      self.0.resize(len);
+    }
+  }
+
+  #[inline]
+  pub fn clear(&mut self) {
     unsafe {
       self.0.clear();
     }
   }
+}
+
+impl ops::Drop for StringWrapper {
+  fn drop(&mut self) { self.clear(); }
 }
 
 #[repr(transparent)]
@@ -261,7 +271,7 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
-    let mut out = StringWrapper::blank();
+    let mut out = StringWrapper::from_view(pattern);
     unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
     out
   }

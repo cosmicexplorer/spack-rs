@@ -34,6 +34,7 @@ public:
   StringWrapper &operator=(const StringWrapper &) = delete;
 
   void clear();
+  void resize(size_t len);
 
   StringView as_view() const;
   std::string *get_mutable() {
