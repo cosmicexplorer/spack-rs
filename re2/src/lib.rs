@@ -152,7 +152,7 @@ impl<'a> hash::Hash for StringView<'a> {
 #[repr(transparent)]
 pub struct StringMut<'a> {
   inner: re2_c::StringMut,
-  _ph: PhantomData<&'a u8>,
+  _ph: PhantomData<&'a mut u8>,
 }
 
 impl<'a> StringMut<'a> {
@@ -521,8 +521,12 @@ impl RE2 {
   ///
   /// assert_eq!(0, RE2::from_str("a(.)df")?.named_groups().count());
   /// assert_eq!(1, RE2::from_str("a(?P<hey>.)df")?.named_groups().count());
+  ///
+  /// // Not all captures are named:
   /// let r = RE2::from_str("a(?P<y>(?P<x>.)d(f))")?;
   /// assert_eq!(3, r.num_captures());
+  ///
+  /// // Results are sorted by name (not number!):
   /// let groups: Vec<(&str, usize)> = r.named_groups()
   ///   .map(|g| (g.name().as_str(), *g.index()))
   ///   .collect();
