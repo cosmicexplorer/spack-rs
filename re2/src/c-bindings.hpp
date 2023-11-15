@@ -24,6 +24,17 @@ struct StringView {
   }
 };
 
+struct StringMut {
+  char *data_;
+  size_t len_;
+
+  StringMut() : data_(nullptr), len_(0) {}
+  StringMut(char *data, size_t len) : data_(data), len_(len) {}
+
+  StringMut(const StringMut &rhs) = default;
+  StringMut &operator=(const StringMut &rhs) = default;
+};
+
 class StringWrapper {
 public:
   StringWrapper();
@@ -37,6 +48,8 @@ public:
   void resize(size_t len);
 
   StringView as_view() const;
+  StringMut as_mut();
+
   std::string *get_mutable() {
     if (!inner_) {
       inner_ = new std::string();

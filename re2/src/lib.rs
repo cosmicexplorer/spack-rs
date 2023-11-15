@@ -13,6 +13,9 @@
 #![feature(const_maybe_uninit_uninit_array)]
 #![feature(const_maybe_uninit_array_assume_init)]
 #![feature(generic_const_exprs)]
+#![feature(const_mut_refs)]
+#![feature(const_slice_from_raw_parts_mut)]
+#![feature(const_str_from_utf8_unchecked_mut)]
 #![allow(incomplete_features)]
 
 #[allow(unused, improper_ctypes)]
@@ -34,7 +37,6 @@ use std::{
   os::raw::c_char,
   ptr, slice, str,
 };
-
 
 ///```
 /// use re2::StringView;
@@ -84,7 +86,7 @@ impl<'a> StringView<'a> {
   pub const fn from_str(s: &'a str) -> Self { Self::from_slice(s.as_bytes()) }
 
   #[inline]
-  pub const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
+  const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
 
   #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
@@ -95,11 +97,10 @@ impl<'a> StringView<'a> {
   }
 
   #[inline]
-  pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
-}
+  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringView { &mut self.inner }
 
-impl<'a> AsMut<re2_c::StringView> for StringView<'a> {
-  fn as_mut(&mut self) -> &mut re2_c::StringView { &mut self.inner }
+  #[inline]
+  pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 }
 
 impl<'a> Default for StringView<'a> {
@@ -138,6 +139,107 @@ impl<'a> hash::Hash for StringView<'a> {
 }
 
 ///```
+/// use re2::StringMut;
+///
+/// let mut s = "asdf".to_string();
+/// let s1 = StringMut::from_mut_str(&mut s);
+/// assert_eq!(s1.as_mut_str(), "asdf");
+/// s1.as_mut_slice()[2] = b'e';
+/// assert_eq!(s1.as_mut_str(), "asef");
+/// assert_eq!(StringMut::empty().as_mut_str(), "");
+/// ```
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+pub struct StringMut<'a> {
+  inner: re2_c::StringMut,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> StringMut<'a> {
+  #[inline]
+  pub const fn empty() -> Self {
+    let inner = re2_c::StringMut {
+      data_: ptr::null_mut(),
+      len_: 0,
+    };
+    unsafe { Self::from_native(inner) }
+  }
+
+  #[inline]
+  pub(crate) const unsafe fn from_native(inner: re2_c::StringMut) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  pub const fn from_mut_slice(b: &'a mut [u8]) -> Self {
+    let inner = re2_c::StringMut {
+      data_: b.as_mut_ptr() as *mut c_char,
+      len_: b.len(),
+    };
+    unsafe { Self::from_native(inner) }
+  }
+
+  #[inline]
+  pub fn from_mut_str(s: &'a mut str) -> Self { Self::from_mut_slice(unsafe { s.as_bytes_mut() }) }
+
+  #[inline]
+  const unsafe fn mut_data_pointer(&self) -> *mut u8 { mem::transmute(self.inner.data_) }
+
+  #[inline]
+  pub const fn len(&self) -> usize { self.inner.len_ }
+
+  #[inline]
+  pub const fn as_mut_slice(&self) -> &'a mut [u8] {
+    unsafe { slice::from_raw_parts_mut(self.mut_data_pointer(), self.len()) }
+  }
+
+  #[inline]
+  pub const fn as_mut_str(&self) -> &'a mut str {
+    unsafe { str::from_utf8_unchecked_mut(self.as_mut_slice()) }
+  }
+}
+
+impl<'a> Default for StringMut<'a> {
+  fn default() -> Self { Self::empty() }
+}
+
+impl<'a> fmt::Debug for StringMut<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{:?}", self.as_mut_str()) }
+}
+
+impl<'a> fmt::Display for StringMut<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.as_mut_str()) }
+}
+
+impl<'a> cmp::PartialEq for StringMut<'a> {
+  fn eq(&self, other: &Self) -> bool { self.as_mut_slice().eq(&mut other.as_mut_slice()) }
+}
+
+impl<'a> cmp::Eq for StringMut<'a> {}
+
+impl<'a> cmp::PartialOrd for StringMut<'a> {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    self.as_mut_slice().partial_cmp(&mut other.as_mut_slice())
+  }
+}
+
+impl<'a> cmp::Ord for StringMut<'a> {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    self.as_mut_slice().cmp(&mut other.as_mut_slice())
+  }
+}
+
+impl<'a> hash::Hash for StringMut<'a> {
+  fn hash<H>(&self, state: &mut H)
+  where H: hash::Hasher {
+    self.as_mut_slice().hash(state);
+  }
+}
+
+///```
 /// use re2::*;
 ///
 /// let s = StringWrapper::from_view(StringView::from_str("asdf"));
@@ -163,9 +265,37 @@ impl StringWrapper {
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringWrapper { &mut self.0 }
 
+  ///```
+  /// use re2::*;
+  ///
+  /// let s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// assert_eq!(s.as_view().as_str(), "asdf");
+  /// ```
   #[inline]
   pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
 
+  ///```
+  /// use re2::*;
+  ///
+  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// s.as_mut().as_mut_slice()[2] = b'e';
+  /// assert_eq!(s.as_view().as_str(), "asef");
+  /// ```
+  #[inline]
+  pub fn as_mut(&mut self) -> StringMut<'_> { unsafe { StringMut::from_native(self.0.as_mut()) } }
+
+  ///```
+  /// use re2::*;
+  ///
+  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// assert_eq!(s.as_view().as_str(), "asdf");
+  /// s.resize(2);
+  /// assert_eq!(s.as_view().as_str(), "as");
+  /// s.resize(6);
+  /// assert_eq!(s.as_view().as_str(), "as\0\0\0\0");
+  /// s.resize(0);
+  /// assert_eq!(s.as_view().as_str(), "");
+  /// ```
   #[inline]
   pub fn resize(&mut self, len: usize) {
     unsafe {
@@ -173,6 +303,14 @@ impl StringWrapper {
     }
   }
 
+  ///```
+  /// use re2::*;
+  ///
+  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// assert_eq!(s.as_view().as_str(), "asdf");
+  /// s.clear();
+  /// assert_eq!(s.as_view().as_str(), "");
+  /// ```
   #[inline]
   pub fn clear(&mut self) {
     unsafe {
@@ -545,7 +683,7 @@ impl RE2 {
   /// ```
   pub fn consume(&self, text: &mut &str) -> bool {
     let mut text_view = StringView::from_str(*text);
-    let ret = unsafe { self.0.consume(text_view.as_mut()) };
+    let ret = unsafe { self.0.consume(text_view.as_mut_native()) };
     *text = text_view.as_str();
     ret
   }
@@ -578,7 +716,11 @@ impl RE2 {
     let mut text_view = StringView::from_str(*text);
     let mut argv = [StringView::empty().into_native(); N];
 
-    if !unsafe { self.0.consume_n(text_view.as_mut(), argv.as_mut_ptr(), N) } {
+    if !unsafe {
+      self
+        .0
+        .consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), N)
+    } {
       return None;
     }
 
@@ -602,7 +744,7 @@ impl RE2 {
   /// ```
   pub fn find_and_consume(&self, text: &mut &str) -> bool {
     let mut text_view = StringView::from_str(*text);
-    let ret = unsafe { self.0.find_and_consume(text_view.as_mut()) };
+    let ret = unsafe { self.0.find_and_consume(text_view.as_mut_native()) };
     *text = text_view.as_str();
     ret
   }
@@ -641,7 +783,7 @@ impl RE2 {
     if !unsafe {
       self
         .0
-        .find_and_consume_n(text_view.as_mut(), argv.as_mut_ptr(), N)
+        .find_and_consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), N)
     } {
       return None;
     }

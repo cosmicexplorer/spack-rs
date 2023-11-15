@@ -29,6 +29,13 @@ StringView StringWrapper::as_view() const {
   return StringView(inner_->data(), inner_->size());
 }
 
+StringMut StringWrapper::as_mut() {
+  if (!inner_) {
+    return StringMut();
+  }
+  return StringMut(inner_->data(), inner_->size());
+}
+
 void NamedCapturingGroups::deref(NamedGroup *out) const {
   assert(!completed());
 

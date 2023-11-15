@@ -2015,6 +2015,47 @@ pub mod root {
     }
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
+    pub struct StringMut {
+      pub data_: *mut ::std::os::raw::c_char,
+      pub len_: usize,
+    }
+    #[test]
+    fn bindgen_test_layout_StringMut() {
+      const UNINIT: ::std::mem::MaybeUninit<StringMut> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<StringMut>(),
+        16usize,
+        concat!("Size of: ", stringify!(StringMut))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<StringMut>(),
+        8usize,
+        concat!("Alignment of ", stringify!(StringMut))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).data_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringMut),
+          "::",
+          stringify!(data_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).len_) as usize - ptr as usize },
+        8usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(StringMut),
+          "::",
+          stringify!(len_)
+        )
+      );
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
     pub struct StringWrapper {
       pub inner_: *mut root::std::string,
     }
@@ -2058,6 +2099,12 @@ pub mod root {
       ) -> root::re2_c_bindings::StringView;
     }
     extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapper6as_mutEv"]
+      pub fn StringWrapper_as_mut(
+        this: *mut root::re2_c_bindings::StringWrapper,
+      ) -> root::re2_c_bindings::StringMut;
+    }
+    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperC1Ev"]
       pub fn StringWrapper_StringWrapper(this: *mut root::re2_c_bindings::StringWrapper);
     }
@@ -2078,6 +2125,11 @@ pub mod root {
       #[inline]
       pub unsafe fn as_view(&self) -> root::re2_c_bindings::StringView {
         StringWrapper_as_view(self)
+      }
+
+      #[inline]
+      pub unsafe fn as_mut(&mut self) -> root::re2_c_bindings::StringMut {
+        StringWrapper_as_mut(self)
       }
 
       #[inline]
