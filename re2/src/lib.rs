@@ -309,6 +309,9 @@ impl RE2 {
   /// let r = RE2::compile(StringView::from_str("asdf"), o)?;
   /// assert_eq!(o, r.options());
   /// assert_ne!(o, Options::default());
+  ///
+  /// let r2 = r.expensive_clone();
+  /// assert_eq!(&r, &r2);
   /// # Ok(())
   /// # }
   /// ```
