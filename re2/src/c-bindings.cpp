@@ -164,6 +164,7 @@ public:
 
   absl::string_view *as_mutable() noexcept { return &view_; }
 
+  /* Write the new value of the absl::string_view into the provided FFI handle. */
   ~MutableStringViewInternal() { *handle_ = StringView(view_); }
 
 private:

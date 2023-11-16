@@ -62,6 +62,12 @@ impl<'a> NamedGroup<'a> {
   pub const fn index(&self) -> &'a usize { unsafe { mem::transmute(&self.inner.index_) } }
 }
 
+impl<'a> fmt::Debug for NamedGroup<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "NamedGroup(i={}, name={:?})", self.index(), self.name())
+  }
+}
+
 #[repr(transparent)]
 pub struct NamedCapturingGroups<'a> {
   inner: re2_c::NamedCapturingGroups,
@@ -318,7 +324,7 @@ impl RE2 {
     if !unsafe {
       self
         .0
-        .full_match_n(text.into_native(), argv.as_mut_ptr(), N)
+        .full_match_n(text.into_native(), argv.as_mut_ptr(), argv.len())
     } {
       return None;
     }
@@ -386,7 +392,7 @@ impl RE2 {
     if !unsafe {
       self
         .0
-        .partial_match_n(text.into_native(), argv.as_mut_ptr(), N)
+        .partial_match_n(text.into_native(), argv.as_mut_ptr(), argv.len())
     } {
       return None;
     }
@@ -447,7 +453,7 @@ impl RE2 {
     if !unsafe {
       self
         .0
-        .consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), N)
+        .consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), argv.len())
     } {
       return None;
     }
@@ -513,7 +519,7 @@ impl RE2 {
     if !unsafe {
       self
         .0
-        .find_and_consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), N)
+        .find_and_consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), argv.len())
     } {
       return None;
     }
@@ -626,11 +632,11 @@ impl RE2 {
   /// let r = RE2::from_str("(foo)|(bar)baz")?;
   /// let msg = "barbazbla";
   ///
-  /// let [s1, s2, s3, s4] = r.match_routine::<3>(msg, 0..msg.len(), Anchor::Unanchored).unwrap();
-  /// assert_eq!(s1, "barbaz");
-  /// assert_eq!(s2, "");
-  /// assert_eq!(s3, "bar");
-  /// assert_eq!(s4, "");
+  /// let [s0, s1, s2, s3] = r.match_routine::<3>(msg, 0..msg.len(), Anchor::AnchorStart).unwrap();
+  /// assert_eq!(s0, "barbaz");
+  /// assert_eq!(s1, "");
+  /// assert_eq!(s2, "bar");
+  /// assert_eq!(s3, "");
   /// # Ok(())
   /// # }
   /// ```
@@ -651,7 +657,7 @@ impl RE2 {
         end,
         anchor.into_native(),
         submatches.as_mut_ptr(),
-        N + 1,
+        submatches.len(),
       )
     } {
       return None;
@@ -680,7 +686,6 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
-  #[inline]
   pub fn check_rewrite_string(&self, rewrite: &str) -> Result<(), RewriteError> {
     let rewrite = StringView::from_str(rewrite);
     let mut sw = StringWrapper::blank();
@@ -709,7 +714,6 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
-  #[inline]
   pub fn vector_rewrite<const N: usize>(
     &self,
     out: &mut StringWrapper,
@@ -757,7 +761,7 @@ impl fmt::Display for RE2 {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     let o = self.options();
     if o == Options::default() {
-      write!(f, "RE2({})", self.pattern())
+      write!(f, "/{}/", self.pattern())
     } else {
       write!(f, "RE2(/{}/, options={:?})", self.pattern(), o)
     }
