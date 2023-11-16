@@ -168,7 +168,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
         Err(HyperscanError::InsufficientSpace),
         HyperscanError::from_native(unsafe {
           hs::hs_compress_stream(
-            (&*live).as_ref(),
+            (*live).as_ref(),
             ptr::null_mut(),
             0,
             required_space.as_mut_ptr(),
@@ -182,7 +182,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
         ReserveResponse::MadeSpace(mut buf) => {
           HyperscanError::from_native(unsafe {
             hs::hs_compress_stream(
-              (&*live).as_ref(),
+              (*live).as_ref(),
               buf.as_mut_ptr(),
               required_space,
               &mut required_space,

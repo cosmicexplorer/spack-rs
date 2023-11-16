@@ -96,7 +96,7 @@ impl SetBuilder {
   #[inline]
   pub fn compile(self) -> Result<Set, SetCompileError> {
     let mut s: ManuallyDrop<Self> = ManuallyDrop::new(self);
-    if unsafe { (*s).0.compile() } {
+    if unsafe { s.0.compile() } {
       Ok(Set(re2_c::SetWrapper { set_: s.0.set_ }))
     } else {
       Err(SetCompileError::OutOfMemory)

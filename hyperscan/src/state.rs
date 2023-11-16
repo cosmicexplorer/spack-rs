@@ -53,7 +53,7 @@ impl Platform {
   }
 
   #[inline]
-  pub fn get() -> &'static Self { &*CACHED_PLATFORM }
+  pub fn get() -> &'static Self { &CACHED_PLATFORM }
 }
 
 impl AsRef<hs::hs_platform_info> for Platform {
@@ -67,21 +67,6 @@ pub trait Ops {
 pub trait HandleOps: Ops {
   type OClone;
   async fn try_clone(&self) -> Result<Self::OClone, Self::Err>;
-  /* fn sync_clone(&self) -> Result<Self::OClone, Self::Err> */
-  /* where */
-  /* Self: Send, */
-  /* Self::Err: fmt::Debug, */
-  /* Self::OClone: Send+fmt::Debug, */
-  /* { */
-  /* let (tx, rx) = oneshot::channel(); */
-  /* let s: *const Self = self; */
-  /* let s = s as usize; */
-  /* task::spawn(async move { */
-  /* let s: &mut Self = unsafe { &mut *(s as *mut Self) }; */
-  /* tx.send(s.try_clone().await).unwrap() */
-  /* }); */
-  /* rx.blocking_recv().unwrap() */
-  /* } */
 }
 
 pub trait ResourceOps: Ops {
@@ -89,20 +74,6 @@ pub trait ResourceOps: Ops {
   type Params;
   async fn try_open(p: Self::Params) -> Result<Self::OOpen, Self::Err>;
   async fn try_drop(&mut self) -> Result<(), Self::Err>;
-  /* fn sync_drop(&mut self) -> Result<(), Self::Err> */
-  /* where */
-  /* Self: Send, */
-  /* Self::Err: fmt::Debug, */
-  /* { */
-  /* let (tx, rx) = oneshot::channel(); */
-  /* let s: *mut Self = self; */
-  /* let s = s as usize; */
-  /* task::spawn(async move { */
-  /* let s: &mut Self = unsafe { &mut *s }; */
-  /* tx.send(s.try_drop().await).unwrap() */
-  /* }); */
-  /* rx.blocking_recv().unwrap() */
-  /* } */
 }
 
 #[derive(Debug)]

@@ -45,6 +45,9 @@ impl<'a> ByteSlice<'a> {
   pub const fn len(&self) -> usize { self.0.len() }
 
   #[inline(always)]
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline(always)]
   pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
 }
 
@@ -77,6 +80,9 @@ impl<'a> VectoredByteSlices<'a> {
 
   #[inline(always)]
   pub const fn len(&self) -> usize { self.0.len() }
+
+  #[inline(always)]
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
   #[inline(always)]
   pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }

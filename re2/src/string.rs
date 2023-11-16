@@ -58,6 +58,9 @@ impl<'a> StringView<'a> {
   const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
 
   #[inline]
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
 
   #[inline]
@@ -171,6 +174,9 @@ impl<'a> StringMut<'a> {
   const unsafe fn mut_data_pointer(&self) -> *mut u8 { mem::transmute(self.inner.data_) }
 
   #[inline]
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
 
   #[inline]
@@ -209,20 +215,20 @@ impl<'a> fmt::Display for StringMut<'a> {
 }
 
 impl<'a> cmp::PartialEq for StringMut<'a> {
-  fn eq(&self, other: &Self) -> bool { self.as_mut_slice().eq(&mut other.as_mut_slice()) }
+  fn eq(&self, other: &Self) -> bool { self.as_mut_slice().eq(&other.as_mut_slice()) }
 }
 
 impl<'a> cmp::Eq for StringMut<'a> {}
 
 impl<'a> cmp::PartialOrd for StringMut<'a> {
   fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self.as_mut_slice().partial_cmp(&mut other.as_mut_slice())
+    self.as_mut_slice().partial_cmp(&other.as_mut_slice())
   }
 }
 
 impl<'a> cmp::Ord for StringMut<'a> {
   fn cmp(&self, other: &Self) -> cmp::Ordering {
-    self.as_mut_slice().cmp(&mut other.as_mut_slice())
+    self.as_mut_slice().cmp(&other.as_mut_slice())
   }
 }
 

@@ -30,7 +30,7 @@ pub use string::{StringMut, StringView, StringWrapper};
 pub mod set;
 pub use set::{MatchedSetInfo, Set, SetBuilder};
 
-#[allow(unused, improper_ctypes)]
+#[allow(unused, improper_ctypes, clippy::all)]
 mod bindings;
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
@@ -158,7 +158,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("asdf")?;
+  /// let r: re2::RE2 = "asdf".parse()?;
   /// assert_eq!(r.pattern().as_str(), "asdf");
   /// # Ok(())
   /// # }
@@ -211,22 +211,6 @@ impl RE2 {
     })
   }
 
-  ///```
-  /// use re2::*;
-  ///
-  /// assert_eq!(
-  ///   RE2::from_str("a(sdf").err().unwrap(),
-  ///   CompileError {
-  ///     message: "missing ): a(sdf".to_string(),
-  ///     arg: "a(sdf".to_string(),
-  ///     code: RE2ErrorCode::MissingParen,
-  ///   },
-  /// );
-  /// ```
-  pub fn from_str(pattern: &str) -> Result<Self, CompileError> {
-    Self::compile(StringView::from_str(pattern), Options::default())
-  }
-
   pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
     let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
     s.check_error()?;
@@ -236,10 +220,11 @@ impl RE2 {
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::RE2;
-  /// assert_eq!(0, RE2::from_str("a.df")?.num_captures());
-  /// assert_eq!(1, RE2::from_str("a(.)df")?.num_captures());
-  /// assert_eq!(2, RE2::from_str("a((.)df)")?.num_captures());
-  /// assert_eq!(3, RE2::from_str("(?P<foo>a)((.)df)")?.num_captures());
+  ///
+  /// assert_eq!(0, "a.df".parse::<RE2>()?.num_captures());
+  /// assert_eq!(1, "a(.)df".parse::<RE2>()?.num_captures());
+  /// assert_eq!(2, "a((.)df)".parse::<RE2>()?.num_captures());
+  /// assert_eq!(3, "(?P<foo>a)((.)df)".parse::<RE2>()?.num_captures());
   /// # Ok(())
   /// # }
   /// ```
@@ -250,11 +235,11 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// assert_eq!(0, RE2::from_str("a(.)df")?.named_groups().count());
-  /// assert_eq!(1, RE2::from_str("a(?P<hey>.)df")?.named_groups().count());
+  /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
+  /// assert_eq!(1, "a(?P<hey>.)df".parse::<RE2>()?.named_groups().count());
   ///
   /// // Not all captures are named:
-  /// let r = RE2::from_str("a(?P<y>(?P<x>.)d(f)(?P<z>e))")?;
+  /// let r: RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e))".parse()?;
   /// assert_eq!(4, r.num_captures());
   ///
   /// // Results are sorted by number:
@@ -287,7 +272,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a.df")?;
+  /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.full_match("asdf"));
   /// assert!(!r.full_match("asdfe"));
   /// assert!(!r.full_match("basdf"));
@@ -302,7 +287,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
   /// let msg = "asdf";
@@ -346,7 +331,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a.df")?;
+  /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.partial_match("asdf"));
   /// assert!(r.partial_match("asdfe"));
   /// assert!(r.partial_match("basdf"));
@@ -410,7 +395,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a.{2}")?;
+  /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "asdf";
   /// assert!(r.consume(&mut s));
   /// assert_eq!(s, "f");
@@ -418,7 +403,7 @@ impl RE2 {
   /// # }
   /// ```
   pub fn consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     if !unsafe { self.0.consume(text_view.as_mut_native()) } {
       return false;
     }
@@ -428,7 +413,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
   /// let mut msg = "asdfe";
@@ -451,7 +436,7 @@ impl RE2 {
       return None;
     }
 
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let mut argv = [StringView::empty().into_native(); N];
 
     if !unsafe {
@@ -469,7 +454,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a.{2}")?;
+  /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "the asdf";
   /// assert!(r.find_and_consume(&mut s));
   /// assert_eq!(s, "f");
@@ -477,7 +462,7 @@ impl RE2 {
   /// # }
   /// ```
   pub fn find_and_consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
       return false;
     }
@@ -487,7 +472,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// let r = re2::RE2::from_str("a(.)d(f)")?;
+  /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
   /// let mut msg = "the asdfe";
@@ -513,7 +498,7 @@ impl RE2 {
       return None;
     }
 
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let mut argv = [StringView::empty().into_native(); N];
 
     if !unsafe {
@@ -533,7 +518,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str(".he")?;
+  /// let r: RE2 = ".he".parse()?;
   /// let mut s = StringWrapper::from_view(StringView::from_str("all the king's men"));
   /// assert!(r.replace(&mut s, "duh"));
   /// assert_eq!(s.as_view().as_str(), "all duh king's men");
@@ -550,7 +535,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str(".he")?;
+  /// let r: RE2 = ".he".parse()?;
   /// let mut s = StringWrapper::from_view(StringView::from_str(
   ///   "all the king's horses and all the king's men"));
   /// assert_eq!(2, r.global_replace(&mut s, "duh"));
@@ -575,7 +560,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str("(.h)e")?;
+  /// let r: RE2 = "(.h)e".parse()?;
   /// let mut s = StringWrapper::blank();
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
   /// assert_eq!(s.as_view().as_str(), "tha");
@@ -599,7 +584,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str("(foo)|(bar)baz")?;
+  /// let r: RE2 = "(foo)|(bar)baz".parse()?;
   /// let msg = "barbazbla";
   ///
   /// assert!(r.match_no_captures(msg, 0..msg.len(), Anchor::Unanchored));
@@ -625,7 +610,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str("(foo)|(bar)baz")?;
+  /// let r: RE2 = "(foo)|(bar)baz".parse()?;
   /// let msg = "barbazbla";
   ///
   /// let [s0, s1, s2, s3] = r.match_routine::<3>(msg, 0..msg.len(), Anchor::AnchorStart).unwrap();
@@ -670,7 +655,7 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::*;
   ///
-  /// let r = RE2::from_str("asdf")?;
+  /// let r: RE2 = "asdf".parse()?;
   /// r.check_rewrite_string("a").unwrap();
   /// r.check_rewrite_string(r"a\0b").unwrap();
   /// assert_eq!(
@@ -704,7 +689,7 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let mut sw = StringWrapper::blank();
-  /// let r = RE2::from_str("a(s+)d(f+)")?;
+  /// let r: RE2 = "a(s+)d(f+)".parse()?;
   /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
   /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
   /// # Ok(())
@@ -739,6 +724,27 @@ impl ops::Drop for RE2 {
     unsafe {
       self.0.clear();
     }
+  }
+}
+
+impl str::FromStr for RE2 {
+  type Err = CompileError;
+
+  ///```
+  /// use re2::*;
+  /// use std::str::FromStr;
+  ///
+  /// assert_eq!(
+  ///   RE2::from_str("a(sdf").err().unwrap(),
+  ///   CompileError {
+  ///     message: "missing ): a(sdf".to_string(),
+  ///     arg: "a(sdf".to_string(),
+  ///     code: RE2ErrorCode::MissingParen,
+  ///   },
+  /// );
+  /// ```
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Self::compile(StringView::from_str(s), Options::default())
   }
 }
 

@@ -79,8 +79,8 @@ impl Expression {
         hs::hs_expression_info(
           self.as_ptr(),
           flags.into_native(),
-          mem::transmute(&mut info.as_mut_ptr()),
-          mem::transmute(&mut compile_err.as_mut_ptr()),
+          &mut info.as_mut_ptr() as *mut *mut hs::hs_expr_info,
+          &mut compile_err.as_mut_ptr() as *mut *mut hs::hs_compile_error,
         )
       },
       compile_err.as_mut_ptr(),
@@ -102,8 +102,8 @@ impl Expression {
           self.as_ptr(),
           flags.into_native(),
           ext_flags.as_ref(),
-          mem::transmute(&mut info.as_mut_ptr()),
-          mem::transmute(&mut compile_err.as_mut_ptr()),
+          &mut info.as_mut_ptr() as *mut *mut hs::hs_expr_info,
+          &mut compile_err.as_mut_ptr() as *mut *mut hs::hs_compile_error,
         )
       },
       compile_err.as_mut_ptr(),
@@ -143,13 +143,13 @@ impl<'a> ExpressionSet<'a> {
 
   pub fn with_flags(mut self, flags: &[Flags]) -> Self {
     assert_eq!(self.ptrs.len(), flags.len());
-    self.flags = Some(flags.iter().cloned().collect());
+    self.flags = Some(flags.to_vec());
     self
   }
 
   pub fn with_ids(mut self, ids: &[ExprId]) -> Self {
     assert_eq!(self.ptrs.len(), ids.len());
-    self.ids = Some(ids.iter().cloned().collect());
+    self.ids = Some(ids.to_vec());
     self
   }
 
@@ -159,7 +159,7 @@ impl<'a> ExpressionSet<'a> {
       exts
         .iter()
         .map(|e| {
-          e.map(|e| unsafe { mem::transmute(e.as_ref()) })
+          e.map(|e| e.as_ref() as *const hs::hs_expr_ext)
             .unwrap_or(ptr::null())
         })
         .collect(),
@@ -176,10 +176,7 @@ impl<'a> ExpressionSet<'a> {
 
   #[inline]
   pub(crate) fn exts_ptr(&self) -> Option<*const *const hs::hs_expr_ext> {
-    self
-      .exts
-      .as_ref()
-      .map(|e| unsafe { mem::transmute(e.as_ptr()) })
+    self.exts.as_ref().map(|e| e.as_ptr())
   }
 
   #[inline]
