@@ -6,7 +6,6 @@
 #include <cassert>
 
 namespace re2_c_bindings {
-StringWrapper::StringWrapper() : inner_(nullptr) {}
 StringWrapper::StringWrapper(StringView s)
     : inner_(new std::string(s.data_, s.len_)) {}
 
@@ -29,7 +28,7 @@ StringView StringWrapper::as_view() const {
   return StringView(inner_->data(), inner_->size());
 }
 
-StringMut StringWrapper::as_mut() {
+StringMut StringWrapper::as_mut_view() {
   if (!inner_) {
     return StringMut();
   }
@@ -50,12 +49,11 @@ void NamedCapturingGroups::advance() {
 }
 
 bool NamedCapturingGroups::completed() const noexcept {
-  return it_ == named_groups_.end();
+  return it_ == named_groups_.cend();
 }
 
 void RE2Wrapper::quote_meta(const StringView pattern, StringWrapper *out) {
-  *out->get_mutable() =
-      std::move(re2::RE2::QuoteMeta(pattern.into_absl_view()));
+  *out->get_mutable() = re2::RE2::QuoteMeta(pattern.into_absl_view());
 }
 
 size_t RE2Wrapper::max_submatch(const StringView rewrite) {
@@ -105,43 +103,46 @@ NamedCapturingGroups RE2Wrapper::named_groups() const {
   return NamedCapturingGroups(re_->NamedCapturingGroups());
 }
 
+class CapturesInternal {
+public:
+  CapturesInternal(StringView captures[], const size_t n) : argv_(n) {
+    for (size_t i = 0; i < n; ++i) {
+      StringView *capture_output = &captures[i];
+      re2::RE2::Arg::Parser parser = CapturesInternal::parse_string_view;
+      argv_[i] = new re2::RE2::Arg(capture_output, parser);
+    }
+  }
+  ~CapturesInternal() {
+    for (auto p : argv_) {
+      delete p;
+    }
+  }
+
+  size_t size() const noexcept { return argv_.size(); }
+  const re2::RE2::Arg *const *data() const noexcept { return argv_.data(); }
+
+  /* TODO: enable the user to override this functionality to return false for a
+   failed parse with a custom function like in our hyperscan wrapper! */
+  static bool parse_string_view(const char *data, size_t len, void *dest) {
+    StringView *dest_sv = reinterpret_cast<StringView *>(dest);
+    dest_sv->data_ = data;
+    dest_sv->len_ = len;
+    return true;
+  }
+
+private:
+  std::vector<re2::RE2::Arg *> argv_;
+};
+
 bool RE2Wrapper::full_match(const StringView text) const {
   return re2::RE2::FullMatchN(text.into_absl_view(), *re_, nullptr, 0);
 }
 
-static bool parse_string_view(const char *data, size_t len, void *dest) {
-  StringView *dest_sv = reinterpret_cast<StringView *>(dest);
-  dest_sv->data_ = data;
-  dest_sv->len_ = len;
-  return true;
-}
-
-static std::vector<re2::RE2::Arg *> generate_n_args(StringView captures[],
-                                                    const size_t n) {
-  std::vector<re2::RE2::Arg *> argv;
-
-  for (size_t i = 0; i < n; ++i) {
-    StringView *capture_output = &captures[i];
-    re2::RE2::Arg::Parser parser = parse_string_view;
-    const auto a = new re2::RE2::Arg(capture_output, parser);
-    argv.push_back(a);
-  }
-
-  return argv;
-}
-
-static void free_n_args(std::vector<re2::RE2::Arg *> &&argv) {
-  for (auto p : argv) {
-    delete p;
-  }
-}
-
 bool RE2Wrapper::full_match_n(const StringView text, StringView captures[],
                               const size_t n) const {
-  auto argv = generate_n_args(captures, n);
-  bool ret = re2::RE2::FullMatchN(text.into_absl_view(), *re_, argv.data(), n);
-  free_n_args(std::move(argv));
-  return ret;
+  CapturesInternal argv(captures, n);
+  return re2::RE2::FullMatchN(text.into_absl_view(), *re_, argv.data(),
+                              argv.size());
 }
 
 bool RE2Wrapper::partial_match(const StringView text) const {
@@ -150,45 +151,48 @@ bool RE2Wrapper::partial_match(const StringView text) const {
 
 bool RE2Wrapper::partial_match_n(const StringView text, StringView captures[],
                                  const size_t n) const {
-  auto argv = generate_n_args(captures, n);
-  bool ret =
-      re2::RE2::PartialMatchN(text.into_absl_view(), *re_, argv.data(), n);
-  free_n_args(std::move(argv));
-  return ret;
+  CapturesInternal argv(captures, n);
+  return re2::RE2::PartialMatchN(text.into_absl_view(), *re_, argv.data(),
+                                 argv.size());
 }
 
+class MutableStringViewInternal {
+public:
+  MutableStringViewInternal(StringView *text)
+      : view_(text->into_absl_view()), handle_(text) {}
+
+  absl::string_view *as_mutable() noexcept { return &view_; }
+
+  ~MutableStringViewInternal() { *handle_ = StringView(view_); }
+
+private:
+  absl::string_view view_;
+  StringView *handle_;
+};
+
 bool RE2Wrapper::consume(StringView *text) const {
-  auto tv = text->into_absl_view();
-  bool ret = re2::RE2::ConsumeN(&tv, *re_, nullptr, 0);
-  *text = StringView(tv);
-  return ret;
+  MutableStringViewInternal tv(text);
+  return re2::RE2::ConsumeN(tv.as_mutable(), *re_, nullptr, 0);
 }
 
 bool RE2Wrapper::consume_n(StringView *text, StringView captures[],
                            const size_t n) const {
-  auto tv = text->into_absl_view();
-  auto argv = generate_n_args(captures, n);
-  bool ret = re2::RE2::ConsumeN(&tv, *re_, argv.data(), n);
-  free_n_args(std::move(argv));
-  *text = StringView(tv);
-  return ret;
+  MutableStringViewInternal tv(text);
+  CapturesInternal argv(captures, n);
+  return re2::RE2::ConsumeN(tv.as_mutable(), *re_, argv.data(), argv.size());
 }
 
 bool RE2Wrapper::find_and_consume(StringView *text) const {
-  auto tv = text->into_absl_view();
-  bool ret = re2::RE2::FindAndConsumeN(&tv, *re_, nullptr, 0);
-  *text = StringView(tv);
-  return ret;
+  MutableStringViewInternal tv(text);
+  return re2::RE2::FindAndConsumeN(tv.as_mutable(), *re_, nullptr, 0);
 }
 
 bool RE2Wrapper::find_and_consume_n(StringView *text, StringView captures[],
                                     size_t n) const {
-  auto tv = text->into_absl_view();
-  auto argv = generate_n_args(captures, n);
-  bool ret = re2::RE2::FindAndConsumeN(&tv, *re_, argv.data(), n);
-  free_n_args(std::move(argv));
-  *text = StringView(tv);
-  return ret;
+  MutableStringViewInternal tv(text);
+  CapturesInternal argv(captures, n);
+  return re2::RE2::FindAndConsumeN(tv.as_mutable(), *re_, argv.data(),
+                                   argv.size());
 }
 
 bool RE2Wrapper::replace(StringWrapper *inout, const StringView rewrite) const {
@@ -222,13 +226,15 @@ bool RE2Wrapper::match_routine(const StringView text, size_t startpos,
                                const size_t nsubmatch) const {
   std::vector<absl::string_view> submatches(nsubmatch);
 
-  bool ret = re_->Match(text.into_absl_view(), startpos, endpos, re_anchor,
-                        submatches.data(), submatches.size());
+  if (!re_->Match(text.into_absl_view(), startpos, endpos, re_anchor,
+                  submatches.data(), submatches.size())) {
+    return false;
+  }
 
   for (size_t i = 0; i < submatches.size(); ++i) {
     submatch_args[i] = submatches[i];
   }
-  return ret;
+  return true;
 }
 
 bool RE2Wrapper::check_rewrite_string(const StringView rewrite,

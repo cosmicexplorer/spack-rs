@@ -2055,7 +2055,7 @@ pub mod root {
       );
     }
     #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug)]
     pub struct StringWrapper {
       pub inner_: *mut root::std::string,
     }
@@ -2099,18 +2099,14 @@ pub mod root {
       ) -> root::re2_c_bindings::StringView;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapper6as_mutEv"]
-      pub fn StringWrapper_as_mut(
+      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapper11as_mut_viewEv"]
+      pub fn StringWrapper_as_mut_view(
         this: *mut root::re2_c_bindings::StringWrapper,
       ) -> root::re2_c_bindings::StringMut;
     }
     extern "C" {
-      #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperC1Ev"]
-      pub fn StringWrapper_StringWrapper(this: *mut root::re2_c_bindings::StringWrapper);
-    }
-    extern "C" {
       #[link_name = "\u{1}_ZN14re2_c_bindings13StringWrapperC1ENS_10StringViewE"]
-      pub fn StringWrapper_StringWrapper1(
+      pub fn StringWrapper_StringWrapper(
         this: *mut root::re2_c_bindings::StringWrapper,
         s: root::re2_c_bindings::StringView,
       );
@@ -2128,21 +2124,14 @@ pub mod root {
       }
 
       #[inline]
-      pub unsafe fn as_mut(&mut self) -> root::re2_c_bindings::StringMut {
-        StringWrapper_as_mut(self)
+      pub unsafe fn as_mut_view(&mut self) -> root::re2_c_bindings::StringMut {
+        StringWrapper_as_mut_view(self)
       }
 
       #[inline]
-      pub unsafe fn new() -> Self {
+      pub unsafe fn new(s: root::re2_c_bindings::StringView) -> Self {
         let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
-        StringWrapper_StringWrapper(__bindgen_tmp.as_mut_ptr());
-        __bindgen_tmp.assume_init()
-      }
-
-      #[inline]
-      pub unsafe fn new1(s: root::re2_c_bindings::StringView) -> Self {
-        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
-        StringWrapper_StringWrapper1(__bindgen_tmp.as_mut_ptr(), s);
+        StringWrapper_StringWrapper(__bindgen_tmp.as_mut_ptr(), s);
         __bindgen_tmp.assume_init()
       }
     }
@@ -2259,7 +2248,7 @@ pub mod root {
       pub unsafe fn completed(&self) -> bool { NamedCapturingGroups_completed(self) }
     }
     #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug)]
     pub struct RE2Wrapper {
       pub re_: *mut root::re2::RE2,
     }

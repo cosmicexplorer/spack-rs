@@ -32,7 +32,12 @@ pub use string::{StringMut, StringView, StringWrapper};
 
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
-use std::{cmp, fmt, hash, marker::PhantomData, mem::MaybeUninit, ops, str};
+use std::{
+  cmp, fmt, hash,
+  marker::PhantomData,
+  mem::{self, MaybeUninit},
+  ops, str,
+};
 
 #[repr(transparent)]
 pub struct NamedGroup<'a> {
@@ -55,7 +60,7 @@ impl<'a> NamedGroup<'a> {
   }
 
   #[inline]
-  pub const fn index(&self) -> &usize { &self.inner.index_ }
+  pub const fn index(&self) -> &'a usize { unsafe { mem::transmute(&self.inner.index_) } }
 }
 
 #[repr(transparent)]
@@ -74,7 +79,7 @@ impl<'a> NamedCapturingGroups<'a> {
   }
 
   #[inline]
-  pub fn deref(&self) -> NamedGroup<'a> {
+  fn deref(&self) -> NamedGroup<'a> {
     let mut out: MaybeUninit<re2_c::NamedGroup> = MaybeUninit::uninit();
     unsafe {
       self.inner.deref(out.as_mut_ptr());
@@ -83,14 +88,14 @@ impl<'a> NamedCapturingGroups<'a> {
   }
 
   #[inline]
-  pub fn advance(&mut self) {
+  fn advance(&mut self) {
     unsafe {
       self.inner.advance();
     }
   }
 
   #[inline]
-  pub fn completed(&self) -> bool { unsafe { self.inner.completed() } }
+  fn completed(&self) -> bool { unsafe { self.inner.completed() } }
 }
 
 impl<'a> Iterator for NamedCapturingGroups<'a> {
@@ -143,6 +148,13 @@ impl RE2 {
     RE2ErrorCode::from_native(unsafe { self.0.error_code() })
   }
 
+  ///```
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// let r = re2::RE2::from_str("asdf")?;
+  /// assert_eq!(r.pattern().as_str(), "asdf");
+  /// # Ok(())
+  /// # }
+  /// ```
   #[inline]
   pub fn pattern(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.pattern()) } }
 
@@ -398,9 +410,11 @@ impl RE2 {
   /// ```
   pub fn consume(&self, text: &mut &str) -> bool {
     let mut text_view = StringView::from_str(*text);
-    let ret = unsafe { self.0.consume(text_view.as_mut_native()) };
+    if !unsafe { self.0.consume(text_view.as_mut_native()) } {
+      return false;
+    }
     *text = text_view.as_str();
-    ret
+    true
   }
 
   ///```
@@ -459,9 +473,11 @@ impl RE2 {
   /// ```
   pub fn find_and_consume(&self, text: &mut &str) -> bool {
     let mut text_view = StringView::from_str(*text);
-    let ret = unsafe { self.0.find_and_consume(text_view.as_mut_native()) };
+    if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
+      return false;
+    }
     *text = text_view.as_str();
-    ret
+    true
   }
 
   ///```

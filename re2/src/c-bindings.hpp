@@ -16,8 +16,8 @@ struct StringView {
   StringView(const char *data, size_t len) : data_(data), len_(len) {}
   StringView(absl::string_view s) : data_(s.data()), len_(s.length()) {}
 
-  StringView(const StringView &rhs) = default;
-  StringView &operator=(const StringView &rhs) = default;
+  StringView(const StringView &) = default;
+  StringView &operator=(const StringView &) = default;
 
   absl::string_view into_absl_view() const {
     return absl::string_view(data_, len_);
@@ -31,24 +31,31 @@ struct StringMut {
   StringMut() : data_(nullptr), len_(0) {}
   StringMut(char *data, size_t len) : data_(data), len_(len) {}
 
-  StringMut(const StringMut &rhs) = default;
-  StringMut &operator=(const StringMut &rhs) = default;
+  StringMut(const StringMut &) = default;
+  StringMut &operator=(const StringMut &) = default;
 };
 
 class StringWrapper {
 public:
-  StringWrapper();
+  StringWrapper() : inner_(nullptr) {}
   StringWrapper(StringView s);
+
+  ~StringWrapper() { clear(); }
 
   StringWrapper(StringWrapper &&rhs) : inner_(rhs.inner_) {}
   StringWrapper(const StringWrapper &) = delete;
   StringWrapper &operator=(const StringWrapper &) = delete;
+  StringWrapper &operator=(StringWrapper &&rhs) {
+    clear();
+    inner_ = rhs.inner_;
+    return *this;
+  }
 
   void clear();
   void resize(size_t len);
 
   StringView as_view() const;
-  StringMut as_mut();
+  StringMut as_mut_view();
 
   std::string *get_mutable() {
     if (!inner_) {
@@ -65,8 +72,8 @@ struct NamedGroup {
   StringView name_;
   size_t index_;
 
-  NamedGroup(const NamedGroup &rhs) = default;
-  NamedGroup &operator=(const NamedGroup &rhs) = default;
+  NamedGroup(const NamedGroup &) = default;
+  NamedGroup &operator=(const NamedGroup &) = default;
 };
 
 class NamedCapturingGroups {
@@ -89,6 +96,16 @@ public:
   static size_t max_submatch(StringView rewrite);
 
   RE2Wrapper(StringView pattern, const re2::RE2::Options &options);
+  ~RE2Wrapper() { clear(); }
+
+  RE2Wrapper(RE2Wrapper &&rhs) : re_(rhs.re_) {}
+  RE2Wrapper(const RE2Wrapper &) = delete;
+  RE2Wrapper &operator=(const RE2Wrapper &) = delete;
+  RE2Wrapper &operator=(RE2Wrapper &&rhs) {
+    clear();
+    re_ = rhs.re_;
+    return *this;
+  }
 
   void clear();
 

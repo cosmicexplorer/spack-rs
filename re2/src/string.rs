@@ -72,6 +72,14 @@ impl<'a> StringView<'a> {
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 }
 
+impl<'a> From<&'a [u8]> for StringView<'a> {
+  fn from(x: &'a [u8]) -> Self { Self::from_slice(x) }
+}
+
+impl<'a> From<&'a str> for StringView<'a> {
+  fn from(x: &'a str) -> Self { Self::from_str(x) }
+}
+
 impl<'a> Default for StringView<'a> {
   fn default() -> Self { Self::empty() }
 }
@@ -151,6 +159,7 @@ impl<'a> StringMut<'a> {
     unsafe { Self::from_native(inner) }
   }
 
+  /* NB: not const bc .as_bytes_mut() isn't const!! */
   #[inline]
   pub fn from_mut_str(s: &'a mut str) -> Self { Self::from_mut_slice(unsafe { s.as_bytes_mut() }) }
 
@@ -169,6 +178,14 @@ impl<'a> StringMut<'a> {
   pub const fn as_mut_str(&self) -> &'a mut str {
     unsafe { str::from_utf8_unchecked_mut(self.as_mut_slice()) }
   }
+}
+
+impl<'a> From<&'a mut [u8]> for StringMut<'a> {
+  fn from(x: &'a mut [u8]) -> Self { Self::from_mut_slice(x) }
+}
+
+impl<'a> From<&'a mut str> for StringMut<'a> {
+  fn from(x: &'a mut str) -> Self { Self::from_mut_str(x) }
 }
 
 impl<'a> Default for StringMut<'a> {
@@ -208,12 +225,6 @@ impl<'a> hash::Hash for StringMut<'a> {
   }
 }
 
-///```
-/// use re2::*;
-///
-/// let s = StringWrapper::from_view(StringView::from_str("asdf"));
-/// assert_eq!(s.as_view().as_str(), "asdf");
-/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct StringWrapper(re2_c::StringWrapper);
@@ -224,39 +235,39 @@ impl StringWrapper {
   /// assert_eq!(s.as_view().as_str(), "");
   /// ```
   #[inline]
-  pub fn blank() -> Self { Self(unsafe { re2_c::StringWrapper::new() }) }
+  pub const fn blank() -> Self {
+    Self(re2_c::StringWrapper {
+      inner_: ptr::null_mut(),
+    })
+  }
 
   #[inline]
   pub fn from_view(s: StringView<'_>) -> Self {
-    Self(unsafe { re2_c::StringWrapper::new1(s.into_native()) })
+    Self(unsafe { re2_c::StringWrapper::new(s.into_native()) })
   }
 
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringWrapper { &mut self.0 }
 
   ///```
-  /// use re2::*;
-  ///
-  /// let s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// let s = re2::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// ```
   #[inline]
   pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
 
   ///```
-  /// use re2::*;
-  ///
-  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
-  /// s.as_mut().as_mut_slice()[2] = b'e';
+  /// let mut s = re2::StringWrapper::from_view("asdf".into());
+  /// s.as_mut_view().as_mut_slice()[2] = b'e';
   /// assert_eq!(s.as_view().as_str(), "asef");
   /// ```
   #[inline]
-  pub fn as_mut(&mut self) -> StringMut<'_> { unsafe { StringMut::from_native(self.0.as_mut()) } }
+  pub fn as_mut_view(&mut self) -> StringMut<'_> {
+    unsafe { StringMut::from_native(self.0.as_mut_view()) }
+  }
 
   ///```
-  /// use re2::*;
-  ///
-  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// let mut s = re2::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// s.resize(2);
   /// assert_eq!(s.as_view().as_str(), "as");
@@ -273,9 +284,7 @@ impl StringWrapper {
   }
 
   ///```
-  /// use re2::*;
-  ///
-  /// let mut s = StringWrapper::from_view(StringView::from_str("asdf"));
+  /// let mut s = re2::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// s.clear();
   /// assert_eq!(s.as_view().as_str(), "");

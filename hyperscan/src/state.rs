@@ -20,7 +20,7 @@ use crate::{
 use async_stream::try_stream;
 use futures_core::stream::Stream;
 use once_cell::sync::Lazy;
-use tokio::{task};
+use tokio::task;
 
 use std::{mem, ops, pin::Pin, ptr};
 
