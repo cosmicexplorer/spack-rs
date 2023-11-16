@@ -551,8 +551,9 @@ pub mod declarative {
   pub async fn resolve_dependencies() -> eyre::Result<Vec<prefix::Prefix>> {
     use crate::{commands::*, subprocess::spack::SpackInvocation, utils::metadata};
 
-
     use std::borrow::Cow;
+
+    println!("cargo:rerun-if-changed=Cargo.toml");
 
     /* Parse `cargo metadata` for the entire workspace. */
     let metadata = metadata::get_metadata().await?;
