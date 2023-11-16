@@ -210,22 +210,22 @@ impl<'db> Scratch<'db> {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
-  ///   .scan(b"aardvark".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .scan("aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
-  ///   .scan(b"imbibe".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .scan("imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
   ///
   /// let ret = scratch
-  ///   .scan(b"abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
+  ///   .scan("abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
   ///   .try_for_each(|_| async { Ok(()) })
   ///   .await;
   /// assert!(matches![ret, Err(HyperscanError::ScanTerminated)]);
@@ -292,15 +292,15 @@ impl<'db> Scratch<'db> {
   ///
   /// let scan_flags = ScanFlags::default();
   /// let slices = vec![
-  ///   b"aardvark".into(),
-  ///   b"imbibe".into(),
-  ///   b"leas".into(),
-  ///   b"dfeg".into(),
+  ///   "aardvark".into(),
+  ///   "imbibe".into(),
+  ///   "leas".into(),
+  ///   "dfeg".into(),
   /// ];
-  /// let data = VectoredByteSlices(slices.as_ref());
+  /// let data = VectoredByteSlices::from_slices(slices.as_ref());
   /// let matches: Vec<Vec<&str>> = scratch
   ///   .scan_vectored(data, scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.into_iter().map(|s| s.decode_utf8().unwrap()).collect()) })
+  ///   .and_then(|m| async move { Ok(m.source.into_iter().map(|s| s.as_str()).collect()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &[

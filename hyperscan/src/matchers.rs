@@ -18,13 +18,25 @@ use std::{
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct ByteSlice<'a>(pub &'a [u8]);
+pub struct ByteSlice<'a>(&'a [u8]);
 
 impl<'a> ByteSlice<'a> {
   #[inline(always)]
   pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
     self.0.get(range).map(Self)
   }
+
+  #[inline(always)]
+  pub const fn from_str(data: &'a str) -> Self { Self(data.as_bytes()) }
+
+  #[inline(always)]
+  pub const fn from_slice(data: &'a [u8]) -> Self { Self(data) }
+
+  #[inline(always)]
+  pub const fn as_slice(&self) -> &'a [u8] { unsafe { mem::transmute(self.0) } }
+
+  #[inline(always)]
+  pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 
   #[inline(always)]
   pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
@@ -34,9 +46,6 @@ impl<'a> ByteSlice<'a> {
 
   #[inline(always)]
   pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
-
-  #[inline]
-  pub fn decode_utf8(&self) -> Result<&'a str, str::Utf8Error> { str::from_utf8(&self.0) }
 }
 
 impl<'a> From<&'a [u8]> for ByteSlice<'a> {
@@ -47,14 +56,21 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
   fn from(x: &'a [u8; N]) -> Self { Self(x.as_ref()) }
 }
 
+impl<'a> From<&'a str> for ByteSlice<'a> {
+  fn from(x: &'a str) -> Self { Self(x.as_bytes()) }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct VectoredByteSlices<'a>(pub &'a [ByteSlice<'a>]);
+pub struct VectoredByteSlices<'a>(&'a [ByteSlice<'a>]);
 
 impl<'a> VectoredByteSlices<'a> {
   #[inline(always)]
+  pub const fn from_slices(data: &'a [ByteSlice<'a>]) -> Self { Self(data) }
+
+  #[inline(always)]
   pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
-    let lengths: Vec<c_uint> = self.0.iter().map(|col| col.len() as c_uint).collect();
+    let lengths: Vec<c_uint> = self.0.iter().map(|col| col.native_len()).collect();
     let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
     (data_pointers, lengths)
   }
@@ -141,10 +157,21 @@ impl<'a> From<&'a [ByteSlice<'a>]> for VectoredByteSlices<'a> {
   fn from(x: &'a [ByteSlice<'a>]) -> Self { Self(x) }
 }
 
+impl<'a, const N: usize> From<&'a [ByteSlice<'a>; N]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [ByteSlice<'a>; N]) -> Self { Self(x.as_ref()) }
+}
+
 impl<'a> From<&'a [&'a [u8]]> for VectoredByteSlices<'a> {
   fn from(x: &'a [&'a [u8]]) -> Self {
     let x: &'a [ByteSlice<'a>] = unsafe { mem::transmute(x) };
     Self(x)
+  }
+}
+
+impl<'a, const N: usize> From<&'a [&'a [u8]; N]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [&'a [u8]; N]) -> Self {
+    let x: &'a [ByteSlice<'a>; N] = unsafe { mem::transmute(x) };
+    x.into()
   }
 }
 
@@ -327,7 +354,6 @@ pub mod contiguous_slice {
       source: matched_substring,
       flags,
     };
-    dbg!(m.source.decode_utf8().unwrap());
 
     let result = slice_matcher.handle_match(&m);
     if result == MatchResult::Continue {
@@ -399,7 +425,6 @@ pub mod vectored_slice {
       flags,
       context,
     } = MatchEvent::coerce_args(id, from, to, flags, context);
-    eprintln!("oh dear!");
     let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
       MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
     let matched_substring = slice_matcher.index_range(range);
@@ -408,12 +433,6 @@ pub mod vectored_slice {
       source: matched_substring,
       flags,
     };
-    dbg!(&m);
-    dbg!(m
-      .source
-      .iter()
-      .map(|s| s.decode_utf8().unwrap())
-      .collect::<Vec<_>>());
 
     let result = slice_matcher.handle_match(&m);
     if result == MatchResult::Continue {

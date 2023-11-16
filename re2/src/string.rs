@@ -76,6 +76,10 @@ impl<'a> From<&'a [u8]> for StringView<'a> {
   fn from(x: &'a [u8]) -> Self { Self::from_slice(x) }
 }
 
+impl<'a, const N: usize> From<&'a [u8; N]> for StringView<'a> {
+  fn from(x: &'a [u8; N]) -> Self { Self::from_slice(x.as_ref()) }
+}
+
 impl<'a> From<&'a str> for StringView<'a> {
   fn from(x: &'a str) -> Self { Self::from_str(x) }
 }
@@ -182,6 +186,10 @@ impl<'a> StringMut<'a> {
 
 impl<'a> From<&'a mut [u8]> for StringMut<'a> {
   fn from(x: &'a mut [u8]) -> Self { Self::from_mut_slice(x) }
+}
+
+impl<'a, const N: usize> From<&'a mut [u8; N]> for StringMut<'a> {
+  fn from(x: &'a mut [u8; N]) -> Self { Self::from_mut_slice(x.as_mut()) }
 }
 
 impl<'a> From<&'a mut str> for StringMut<'a> {

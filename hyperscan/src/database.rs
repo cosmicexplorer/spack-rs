@@ -48,11 +48,10 @@ impl Database {
   /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let scratch = Pin::new(&mut scratch);
   ///
-  /// let data = ByteSlice(b"hello");
   /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(data, scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .scan("hello".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["hell"]);
@@ -106,15 +105,15 @@ impl Database {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
-  ///   .scan(b"aardvark".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .scan("aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(b"imbibe".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.decode_utf8().unwrap()) })
+  ///   .scan("imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
