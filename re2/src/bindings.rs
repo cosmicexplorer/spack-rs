@@ -552,8 +552,8 @@ pub mod root {
       pub prefix_: root::std::string,
       pub prog_: *mut root::re2::Prog,
       pub rprog_: *mut root::re2::Prog,
-      pub named_groups_: *const [u64; 6usize],
-      pub group_names_: *const u8,
+      pub named_groups_: *const u8,
+      pub group_names_: *const [u64; 6usize],
       pub rprog_once_: root::absl::lts_20230125::once_flag,
       pub named_groups_once_: root::absl::lts_20230125::once_flag,
       pub group_names_once_: root::absl::lts_20230125::once_flag,
@@ -1056,11 +1056,11 @@ pub mod root {
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE220NamedCapturingGroupsB5cxx11Ev"]
-      pub fn RE2_NamedCapturingGroups(this: *const root::re2::RE2) -> *const [u64; 6usize];
+      pub fn RE2_NamedCapturingGroups(this: *const root::re2::RE2) -> *const u8;
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE219CapturingGroupNamesB5cxx11Ev"]
-      pub fn RE2_CapturingGroupNames(this: *const root::re2::RE2) -> *const u8;
+      pub fn RE2_CapturingGroupNames(this: *const root::re2::RE2) -> *const [u64; 6usize];
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE25MatchESt17basic_string_viewIcSt11char_traitsIcEEmmNS0_6AnchorEPS4_i"]
@@ -1326,12 +1326,12 @@ pub mod root {
       }
 
       #[inline]
-      pub unsafe fn NamedCapturingGroups(&self) -> *const [u64; 6usize] {
-        RE2_NamedCapturingGroups(self)
-      }
+      pub unsafe fn NamedCapturingGroups(&self) -> *const u8 { RE2_NamedCapturingGroups(self) }
 
       #[inline]
-      pub unsafe fn CapturingGroupNames(&self) -> *const u8 { RE2_CapturingGroupNames(self) }
+      pub unsafe fn CapturingGroupNames(&self) -> *const [u64; 6usize] {
+        RE2_CapturingGroupNames(self)
+      }
 
       #[inline]
       pub unsafe fn Match(

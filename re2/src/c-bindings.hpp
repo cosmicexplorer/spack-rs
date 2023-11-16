@@ -78,7 +78,7 @@ struct NamedGroup {
 
 class NamedCapturingGroups {
 public:
-  NamedCapturingGroups(const std::map<std::string, int> &m)
+  NamedCapturingGroups(const std::map<int, std::string> &m)
       : named_groups_(m), it_(m.cbegin()) {}
 
   void deref(NamedGroup *out) const;
@@ -86,8 +86,8 @@ public:
   bool completed() const noexcept;
 
 private:
-  const std::map<std::string, int> &named_groups_;
-  std::map<std::string, int>::const_iterator it_;
+  const std::map<int, std::string> &named_groups_;
+  std::map<int, std::string>::const_iterator it_;
 };
 
 class RE2Wrapper {

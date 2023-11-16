@@ -18,9 +18,6 @@
 #![feature(const_str_from_utf8_unchecked_mut)]
 #![allow(incomplete_features)]
 
-#[allow(unused, improper_ctypes)]
-mod bindings;
-
 pub mod error;
 pub use error::{CompileError, RE2ErrorCode, RewriteError};
 
@@ -30,6 +27,8 @@ pub use options::{Anchor, CannedOptions, Encoding, Options};
 pub mod string;
 pub use string::{StringMut, StringView, StringWrapper};
 
+#[allow(unused, improper_ctypes)]
+mod bindings;
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
 use std::{
@@ -246,14 +245,14 @@ impl RE2 {
   /// assert_eq!(1, RE2::from_str("a(?P<hey>.)df")?.named_groups().count());
   ///
   /// // Not all captures are named:
-  /// let r = RE2::from_str("a(?P<y>(?P<x>.)d(f))")?;
-  /// assert_eq!(3, r.num_captures());
+  /// let r = RE2::from_str("a(?P<y>(?P<x>.)d(f)(?P<z>e))")?;
+  /// assert_eq!(4, r.num_captures());
   ///
-  /// // Results are sorted by name (not number!):
+  /// // Results are sorted by number:
   /// let groups: Vec<(&str, usize)> = r.named_groups()
   ///   .map(|g| (g.name().as_str(), *g.index()))
   ///   .collect();
-  /// assert_eq!(vec![("x", 2), ("y", 1)], groups);
+  /// assert_eq!(vec![("y", 1), ("x", 2), ("z", 4)], groups);
   /// # Ok(())
   /// # }
   /// ```

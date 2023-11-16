@@ -38,9 +38,9 @@ StringMut StringWrapper::as_mut_view() {
 void NamedCapturingGroups::deref(NamedGroup *out) const {
   assert(!completed());
 
-  out->name_ = absl::string_view(it_->first);
-  assert(it_->second > 0);
-  out->index_ = it_->second;
+  out->name_ = absl::string_view(it_->second);
+  assert(it_->first > 0);
+  out->index_ = it_->first;
 }
 
 void NamedCapturingGroups::advance() {
@@ -53,7 +53,8 @@ bool NamedCapturingGroups::completed() const noexcept {
 }
 
 void RE2Wrapper::quote_meta(const StringView pattern, StringWrapper *out) {
-  *out->get_mutable() = re2::RE2::QuoteMeta(pattern.into_absl_view());
+  *out->get_mutable() =
+      std::move(re2::RE2::QuoteMeta(pattern.into_absl_view()));
 }
 
 size_t RE2Wrapper::max_submatch(const StringView rewrite) {
@@ -100,7 +101,7 @@ size_t RE2Wrapper::num_captures() const noexcept {
 }
 
 NamedCapturingGroups RE2Wrapper::named_groups() const {
-  return NamedCapturingGroups(re_->NamedCapturingGroups());
+  return NamedCapturingGroups(re_->CapturingGroupNames());
 }
 
 class CapturesInternal {
