@@ -164,7 +164,8 @@ public:
 
   absl::string_view *as_mutable() noexcept { return &view_; }
 
-  /* Write the new value of the absl::string_view into the provided FFI handle. */
+  /* Write the new value of the absl::string_view into the provided FFI handle.
+   */
   ~MutableStringViewInternal() { *handle_ = StringView(view_); }
 
 private:
@@ -256,6 +257,50 @@ bool RE2Wrapper::vector_rewrite(StringWrapper *out, const StringView rewrite,
 
   return re_->Rewrite(out->get_mutable(), rewrite.into_absl_view(),
                       match_components.data(), match_components.size());
+}
+
+void MatchedSetInfo::clear() {
+  delete matches_;
+  matches_ = nullptr;
+}
+
+const int *MatchedSetInfo::data() const noexcept {
+  if (!matches_) {
+    return nullptr;
+  }
+  return matches_->data();
+}
+
+size_t MatchedSetInfo::size() const noexcept {
+  if (!matches_) {
+    return 0;
+  }
+  return matches_->size();
+}
+
+SetWrapper::SetWrapper(const re2::RE2::Options &options,
+                       re2::RE2::Anchor anchor)
+    : set_(new re2::RE2::Set(options, anchor)) {}
+
+void SetWrapper::clear() {
+  delete set_;
+  set_ = nullptr;
+}
+
+int SetWrapper::add(const StringView pattern, StringWrapper *error) {
+  return set_->Add(pattern.into_absl_view(), error->get_mutable());
+}
+
+bool SetWrapper::compile() { return set_->Compile(); }
+
+bool SetWrapper::match_routine(const StringView text, MatchedSetInfo *v) const {
+  return set_->Match(text.into_absl_view(), v->get_mutable());
+}
+
+bool SetWrapper::match_routine_with_error(
+    const StringView text, MatchedSetInfo *v,
+    re2::RE2::Set::ErrorInfo *error_info) const {
+  return set_->Match(text.into_absl_view(), v->get_mutable(), error_info);
 }
 
 } /* namespace re2_c_bindings */

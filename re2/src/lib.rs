@@ -27,6 +27,9 @@ pub use options::{Anchor, CannedOptions, Encoding, Options};
 pub mod string;
 pub use string::{StringMut, StringView, StringWrapper};
 
+pub mod set;
+pub use set::{MatchedSetInfo, Set, SetBuilder};
+
 #[allow(unused, improper_ctypes)]
 mod bindings;
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};

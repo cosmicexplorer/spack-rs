@@ -8,6 +8,8 @@ use crate::re2;
 use displaydoc::Display;
 use thiserror::Error;
 
+use std::os::raw::c_uint;
+
 #[derive(
   Debug,
   Display,
@@ -66,7 +68,7 @@ impl RE2ErrorCode {
     if x == 0 {
       Ok(())
     } else {
-      let s: Self = (x as u32).into();
+      let s: Self = (x as c_uint).into();
       Err(s)
     }
   }
@@ -85,4 +87,73 @@ pub struct CompileError {
 #[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
 pub struct RewriteError {
   pub message: String,
+}
+
+#[derive(
+  Debug,
+  Display,
+  Error,
+  Copy,
+  Clone,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Hash,
+  num_enum::IntoPrimitive,
+  num_enum::FromPrimitive,
+)]
+#[repr(u32)]
+pub enum SetErrorKind {
+  /// not compiled
+  NotCompiled = re2::RE2_Set_ErrorKind_kNotCompiled,
+  /// out of memory
+  OutOfMemory = re2::RE2_Set_ErrorKind_kOutOfMemory,
+  /// inconsistent
+  Inconsistent = re2::RE2_Set_ErrorKind_kInconsistent,
+  /// unknown error (not within re2 spec)
+  #[num_enum(default)]
+  UnknownError = 300,
+}
+
+impl SetErrorKind {
+  #[inline]
+  pub(crate) fn from_native(x: re2::RE2_Set_ErrorKind) -> Result<(), Self> {
+    static_assertions::const_assert_eq!(0, re2::RE2_Set_ErrorKind_kNoError);
+    if x == 0 {
+      Ok(())
+    } else {
+      let s: Self = (x as c_uint).into();
+      Err(s)
+    }
+  }
+}
+
+/// set error kind={kind}
+#[derive(Debug, Display, Error, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct SetErrorInfo {
+  #[from]
+  pub kind: SetErrorKind,
+}
+
+impl SetErrorInfo {
+  #[inline]
+  pub(crate) fn from_native(x: re2::RE2_Set_ErrorInfo) -> Result<(), Self> {
+    let re2::RE2_Set_ErrorInfo { kind } = x;
+    SetErrorKind::from_native(kind)?;
+    Ok(())
+  }
+}
+
+/// error parsing pattern for set: {message}
+#[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
+pub struct SetPatternError {
+  pub message: String,
+}
+
+#[derive(Debug, Display, Error, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SetCompileError {
+  /// out of memory
+  OutOfMemory,
 }

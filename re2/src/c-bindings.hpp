@@ -5,6 +5,7 @@
 #define __RE2_C_BINDINGS_H__
 
 #include "re2/re2.h"
+#include "re2/set.h"
 
 namespace re2_c_bindings {
 
@@ -145,6 +146,65 @@ public:
 
 private:
   re2::RE2 *re_;
+};
+
+class MatchedSetInfo {
+public:
+  MatchedSetInfo() : matches_(nullptr) {}
+
+  ~MatchedSetInfo() { clear(); }
+
+  MatchedSetInfo(MatchedSetInfo &&rhs) : matches_(rhs.matches_) {}
+  MatchedSetInfo(const MatchedSetInfo &) = delete;
+  MatchedSetInfo &operator=(const MatchedSetInfo &) = delete;
+  MatchedSetInfo &operator=(MatchedSetInfo &&rhs) {
+    clear();
+    matches_ = rhs.matches_;
+    return *this;
+  }
+
+  void clear();
+  const int *data() const noexcept;
+  size_t size() const noexcept;
+
+  std::vector<int> *get_mutable() {
+    if (!matches_) {
+      matches_ = new std::vector<int>();
+    }
+    /* Avoids reallocating anything, but also resets size to 0. */
+    matches_->clear();
+    return matches_;
+  }
+
+private:
+  std::vector<int> *matches_;
+};
+
+class SetWrapper {
+public:
+  SetWrapper(const re2::RE2::Options &options, re2::RE2::Anchor anchor);
+  ~SetWrapper() { clear(); }
+
+  SetWrapper(SetWrapper &&rhs) : set_(rhs.set_) {}
+  SetWrapper(const SetWrapper &) = delete;
+  SetWrapper &operator=(const SetWrapper &) = delete;
+  SetWrapper &operator=(SetWrapper &&rhs) {
+    clear();
+    set_ = rhs.set_;
+    return *this;
+  }
+
+  void clear();
+
+  int add(StringView pattern, StringWrapper *error);
+  bool compile();
+
+  bool match_routine(StringView text, MatchedSetInfo *v) const;
+  bool match_routine_with_error(StringView text, MatchedSetInfo *v,
+                                re2::RE2::Set::ErrorInfo *error_info) const;
+
+private:
+  re2::RE2::Set *set_;
 };
 
 } /* namespace re2_c_bindings */

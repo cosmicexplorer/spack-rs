@@ -251,6 +251,21 @@ pub mod root {
       pub _address: u8,
     }
     pub type atomic_value_type = u8;
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct default_delete {
+      pub _address: u8,
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct unique_ptr {
+      pub _address: u8,
+    }
+    pub type unique_ptr__DeleterConstraint = u8;
+    pub type unique_ptr_pointer = u8;
+    pub type unique_ptr_element_type = u8;
+    pub type unique_ptr_deleter_type = u8;
+    pub type unique_ptr___safe_conversion_up = u8;
   }
   pub mod __gnu_cxx {
     #[allow(unused_imports)]
@@ -557,11 +572,6 @@ pub mod root {
       pub rprog_once_: root::absl::lts_20230125::once_flag,
       pub named_groups_once_: root::absl::lts_20230125::once_flag,
       pub group_names_once_: root::absl::lts_20230125::once_flag,
-    }
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone)]
-    pub struct RE2_Set {
-      _unused: [u8; 0],
     }
     pub const RE2_ErrorCode_NoError: root::re2::RE2_ErrorCode = 0;
     pub const RE2_ErrorCode_ErrorInternal: root::re2::RE2_ErrorCode = 1;
@@ -969,14 +979,14 @@ pub mod root {
       #[link_name = "\u{1}_ZNK3re23RE213ProgramFanoutEPSt6vectorIiSaIiEE"]
       pub fn RE2_ProgramFanout(
         this: *const root::re2::RE2,
-        histogram: *mut u8,
+        histogram: *mut [u64; 3usize],
       ) -> ::std::os::raw::c_int;
     }
     extern "C" {
       #[link_name = "\u{1}_ZNK3re23RE220ReverseProgramFanoutEPSt6vectorIiSaIiEE"]
       pub fn RE2_ReverseProgramFanout(
         this: *const root::re2::RE2,
-        histogram: *mut u8,
+        histogram: *mut [u64; 3usize],
       ) -> ::std::os::raw::c_int;
     }
     extern "C" {
@@ -1231,12 +1241,15 @@ pub mod root {
       }
 
       #[inline]
-      pub unsafe fn ProgramFanout(&self, histogram: *mut u8) -> ::std::os::raw::c_int {
+      pub unsafe fn ProgramFanout(&self, histogram: *mut [u64; 3usize]) -> ::std::os::raw::c_int {
         RE2_ProgramFanout(self, histogram)
       }
 
       #[inline]
-      pub unsafe fn ReverseProgramFanout(&self, histogram: *mut u8) -> ::std::os::raw::c_int {
+      pub unsafe fn ReverseProgramFanout(
+        &self,
+        histogram: *mut [u64; 3usize],
+      ) -> ::std::os::raw::c_int {
         RE2_ReverseProgramFanout(self, histogram)
       }
 
@@ -1968,6 +1981,224 @@ pub mod root {
         pub fn GetDFASearchFailureHook() -> root::re2::hooks::DFASearchFailureCallback;
       }
     }
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct RE2_Set {
+      pub options_: root::re2::RE2_Options,
+      pub anchor_: root::re2::RE2_Anchor,
+      pub elem_: [u64; 3usize],
+      pub compiled_: bool,
+      pub size_: ::std::os::raw::c_int,
+      pub prog_: u64,
+    }
+    pub const RE2_Set_ErrorKind_kNoError: root::re2::RE2_Set_ErrorKind = 0;
+    pub const RE2_Set_ErrorKind_kNotCompiled: root::re2::RE2_Set_ErrorKind = 1;
+    pub const RE2_Set_ErrorKind_kOutOfMemory: root::re2::RE2_Set_ErrorKind = 2;
+    pub const RE2_Set_ErrorKind_kInconsistent: root::re2::RE2_Set_ErrorKind = 3;
+    pub type RE2_Set_ErrorKind = ::std::os::raw::c_uint;
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone)]
+    pub struct RE2_Set_ErrorInfo {
+      pub kind: root::re2::RE2_Set_ErrorKind,
+    }
+    #[test]
+    fn bindgen_test_layout_RE2_Set_ErrorInfo() {
+      const UNINIT: ::std::mem::MaybeUninit<RE2_Set_ErrorInfo> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<RE2_Set_ErrorInfo>(),
+        4usize,
+        concat!("Size of: ", stringify!(RE2_Set_ErrorInfo))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<RE2_Set_ErrorInfo>(),
+        4usize,
+        concat!("Alignment of ", stringify!(RE2_Set_ErrorInfo))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).kind) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set_ErrorInfo),
+          "::",
+          stringify!(kind)
+        )
+      );
+    }
+    pub type RE2_Set_Elem = u8;
+    #[test]
+    fn bindgen_test_layout_RE2_Set() {
+      const UNINIT: ::std::mem::MaybeUninit<RE2_Set> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<RE2_Set>(),
+        72usize,
+        concat!("Size of: ", stringify!(RE2_Set))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<RE2_Set>(),
+        8usize,
+        concat!("Alignment of ", stringify!(RE2_Set))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).options_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(options_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).anchor_) as usize - ptr as usize },
+        24usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(anchor_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).elem_) as usize - ptr as usize },
+        32usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(elem_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).compiled_) as usize - ptr as usize },
+        56usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(compiled_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).size_) as usize - ptr as usize },
+        60usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(size_)
+        )
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).prog_) as usize - ptr as usize },
+        64usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(RE2_Set),
+          "::",
+          stringify!(prog_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE23Set3AddESt17basic_string_viewIcSt11char_traitsIcEEPNSt7__cxx1112basic_stringIcS4_SaIcEEE"]
+      pub fn RE2_Set_Add(
+        this: *mut root::re2::RE2_Set,
+        pattern: root::absl::lts_20230125::string_view,
+        error: *mut root::std::string,
+      ) -> ::std::os::raw::c_int;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE23Set7CompileEv"]
+      pub fn RE2_Set_Compile(this: *mut root::re2::RE2_Set) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEE"]
+      pub fn RE2_Set_Match(
+        this: *const root::re2::RE2_Set,
+        text: root::absl::lts_20230125::string_view,
+        v: *mut [u64; 3usize],
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK3re23RE23Set5MatchESt17basic_string_viewIcSt11char_traitsIcEEPSt6vectorIiSaIiEEPNS1_9ErrorInfoE"]
+      pub fn RE2_Set_Match1(
+        this: *const root::re2::RE2_Set,
+        text: root::absl::lts_20230125::string_view,
+        v: *mut [u64; 3usize],
+        error_info: *mut root::re2::RE2_Set_ErrorInfo,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE23SetC1ERKNS0_7OptionsENS0_6AnchorE"]
+      pub fn RE2_Set_Set(
+        this: *mut root::re2::RE2_Set,
+        options: *const root::re2::RE2_Options,
+        anchor: root::re2::RE2_Anchor,
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE23SetC1EOS1_"]
+      pub fn RE2_Set_Set1(this: *mut root::re2::RE2_Set, other: *mut root::re2::RE2_Set);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN3re23RE23SetD1Ev"]
+      pub fn RE2_Set_Set_destructor(this: *mut root::re2::RE2_Set);
+    }
+    impl RE2_Set {
+      #[inline]
+      pub unsafe fn Add(
+        &mut self,
+        pattern: root::absl::lts_20230125::string_view,
+        error: *mut root::std::string,
+      ) -> ::std::os::raw::c_int {
+        RE2_Set_Add(self, pattern, error)
+      }
+
+      #[inline]
+      pub unsafe fn Compile(&mut self) -> bool { RE2_Set_Compile(self) }
+
+      #[inline]
+      pub unsafe fn Match(
+        &self,
+        text: root::absl::lts_20230125::string_view,
+        v: *mut [u64; 3usize],
+      ) -> bool {
+        RE2_Set_Match(self, text, v)
+      }
+
+      #[inline]
+      pub unsafe fn Match1(
+        &self,
+        text: root::absl::lts_20230125::string_view,
+        v: *mut [u64; 3usize],
+        error_info: *mut root::re2::RE2_Set_ErrorInfo,
+      ) -> bool {
+        RE2_Set_Match1(self, text, v, error_info)
+      }
+
+      #[inline]
+      pub unsafe fn new(
+        options: *const root::re2::RE2_Options,
+        anchor: root::re2::RE2_Anchor,
+      ) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        RE2_Set_Set(__bindgen_tmp.as_mut_ptr(), options, anchor);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn new1(other: *mut root::re2::RE2_Set) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        RE2_Set_Set1(__bindgen_tmp.as_mut_ptr(), other);
+        __bindgen_tmp.assume_init()
+      }
+
+      #[inline]
+      pub unsafe fn destruct(&mut self) { RE2_Set_Set_destructor(self) }
+    }
   }
   pub mod re2_c_bindings {
     #[allow(unused_imports)]
@@ -2658,6 +2889,176 @@ pub mod root {
       ) -> Self {
         let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
         RE2Wrapper_RE2Wrapper(__bindgen_tmp.as_mut_ptr(), pattern, options);
+        __bindgen_tmp.assume_init()
+      }
+    }
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct MatchedSetInfo {
+      pub matches_: *mut [u64; 3usize],
+    }
+    #[test]
+    fn bindgen_test_layout_MatchedSetInfo() {
+      const UNINIT: ::std::mem::MaybeUninit<MatchedSetInfo> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<MatchedSetInfo>(),
+        8usize,
+        concat!("Size of: ", stringify!(MatchedSetInfo))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<MatchedSetInfo>(),
+        8usize,
+        concat!("Alignment of ", stringify!(MatchedSetInfo))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).matches_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(MatchedSetInfo),
+          "::",
+          stringify!(matches_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings14MatchedSetInfo5clearEv"]
+      pub fn MatchedSetInfo_clear(this: *mut root::re2_c_bindings::MatchedSetInfo);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings14MatchedSetInfo4dataEv"]
+      pub fn MatchedSetInfo_data(
+        this: *const root::re2_c_bindings::MatchedSetInfo,
+      ) -> *const ::std::os::raw::c_int;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings14MatchedSetInfo4sizeEv"]
+      pub fn MatchedSetInfo_size(this: *const root::re2_c_bindings::MatchedSetInfo) -> usize;
+    }
+    impl MatchedSetInfo {
+      #[inline]
+      pub unsafe fn clear(&mut self) { MatchedSetInfo_clear(self) }
+
+      #[inline]
+      pub unsafe fn data(&self) -> *const ::std::os::raw::c_int { MatchedSetInfo_data(self) }
+
+      #[inline]
+      pub unsafe fn size(&self) -> usize { MatchedSetInfo_size(self) }
+    }
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct SetWrapper {
+      pub set_: *mut root::re2::RE2_Set,
+    }
+    #[test]
+    fn bindgen_test_layout_SetWrapper() {
+      const UNINIT: ::std::mem::MaybeUninit<SetWrapper> = ::std::mem::MaybeUninit::uninit();
+      let ptr = UNINIT.as_ptr();
+      assert_eq!(
+        ::std::mem::size_of::<SetWrapper>(),
+        8usize,
+        concat!("Size of: ", stringify!(SetWrapper))
+      );
+      assert_eq!(
+        ::std::mem::align_of::<SetWrapper>(),
+        8usize,
+        concat!("Alignment of ", stringify!(SetWrapper))
+      );
+      assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).set_) as usize - ptr as usize },
+        0usize,
+        concat!(
+          "Offset of field: ",
+          stringify!(SetWrapper),
+          "::",
+          stringify!(set_)
+        )
+      );
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10SetWrapper5clearEv"]
+      pub fn SetWrapper_clear(this: *mut root::re2_c_bindings::SetWrapper);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10SetWrapper3addENS_10StringViewEPNS_13StringWrapperE"]
+      pub fn SetWrapper_add(
+        this: *mut root::re2_c_bindings::SetWrapper,
+        pattern: root::re2_c_bindings::StringView,
+        error: *mut root::re2_c_bindings::StringWrapper,
+      ) -> ::std::os::raw::c_int;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10SetWrapper7compileEv"]
+      pub fn SetWrapper_compile(this: *mut root::re2_c_bindings::SetWrapper) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10SetWrapper13match_routineENS_10StringViewEPNS_14MatchedSetInfoE"]
+      pub fn SetWrapper_match_routine(
+        this: *const root::re2_c_bindings::SetWrapper,
+        text: root::re2_c_bindings::StringView,
+        v: *mut root::re2_c_bindings::MatchedSetInfo,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings10SetWrapper24match_routine_with_errorENS_10StringViewEPNS_14MatchedSetInfoEPN3re23RE23Set9ErrorInfoE"]
+      pub fn SetWrapper_match_routine_with_error(
+        this: *const root::re2_c_bindings::SetWrapper,
+        text: root::re2_c_bindings::StringView,
+        v: *mut root::re2_c_bindings::MatchedSetInfo,
+        error_info: *mut root::re2::RE2_Set_ErrorInfo,
+      ) -> bool;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings10SetWrapperC1ERKN3re23RE27OptionsENS2_6AnchorE"]
+      pub fn SetWrapper_SetWrapper(
+        this: *mut root::re2_c_bindings::SetWrapper,
+        options: *const root::re2::RE2_Options,
+        anchor: root::re2::RE2_Anchor,
+      );
+    }
+    impl SetWrapper {
+      #[inline]
+      pub unsafe fn clear(&mut self) { SetWrapper_clear(self) }
+
+      #[inline]
+      pub unsafe fn add(
+        &mut self,
+        pattern: root::re2_c_bindings::StringView,
+        error: *mut root::re2_c_bindings::StringWrapper,
+      ) -> ::std::os::raw::c_int {
+        SetWrapper_add(self, pattern, error)
+      }
+
+      #[inline]
+      pub unsafe fn compile(&mut self) -> bool { SetWrapper_compile(self) }
+
+      #[inline]
+      pub unsafe fn match_routine(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        v: *mut root::re2_c_bindings::MatchedSetInfo,
+      ) -> bool {
+        SetWrapper_match_routine(self, text, v)
+      }
+
+      #[inline]
+      pub unsafe fn match_routine_with_error(
+        &self,
+        text: root::re2_c_bindings::StringView,
+        v: *mut root::re2_c_bindings::MatchedSetInfo,
+        error_info: *mut root::re2::RE2_Set_ErrorInfo,
+      ) -> bool {
+        SetWrapper_match_routine_with_error(self, text, v, error_info)
+      }
+
+      #[inline]
+      pub unsafe fn new(
+        options: *const root::re2::RE2_Options,
+        anchor: root::re2::RE2_Anchor,
+      ) -> Self {
+        let mut __bindgen_tmp = ::std::mem::MaybeUninit::uninit();
+        SetWrapper_SetWrapper(__bindgen_tmp.as_mut_ptr(), options, anchor);
         __bindgen_tmp.assume_init()
       }
     }
