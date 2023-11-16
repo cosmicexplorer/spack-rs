@@ -267,6 +267,21 @@ impl RE2 {
     unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
   }
 
+  #[inline]
+  const unsafe fn empty_result<'a, const N: usize>() -> [&'a str; N] {
+    let ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    MaybeUninit::array_assume_init(ret)
+  }
+
+  #[inline]
+  unsafe fn convert_string_views<'a, const N: usize>(argv: [re2_c::StringView; N]) -> [&'a str; N] {
+    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(StringView::from_native(input).as_str());
+    }
+    MaybeUninit::array_assume_init(ret)
+  }
+
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// let r = re2::RE2::from_str("a.df")?;
@@ -280,12 +295,6 @@ impl RE2 {
   pub fn full_match(&self, text: &str) -> bool {
     let text = StringView::from_str(text);
     unsafe { self.0.full_match(text.into_native()) }
-  }
-
-  #[inline]
-  const unsafe fn empty_result<'a, const N: usize>() -> [&'a str; N] {
-    let ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    MaybeUninit::array_assume_init(ret)
   }
 
   ///```
@@ -329,11 +338,7 @@ impl RE2 {
       return None;
     }
 
-    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(unsafe { StringView::from_native(input) }.as_str());
-    }
-    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+    Some(unsafe { Self::convert_string_views(argv) })
   }
 
   ///```
@@ -397,11 +402,7 @@ impl RE2 {
       return None;
     }
 
-    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(unsafe { StringView::from_native(input) }.as_str());
-    }
-    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+    Some(unsafe { Self::convert_string_views(argv) })
   }
 
   ///```
@@ -460,11 +461,7 @@ impl RE2 {
 
     *text = text_view.as_str();
 
-    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(unsafe { StringView::from_native(input) }.as_str());
-    }
-    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+    Some(unsafe { Self::convert_string_views(argv) })
   }
 
   ///```
@@ -526,11 +523,7 @@ impl RE2 {
 
     *text = text_view.as_str();
 
-    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(unsafe { StringView::from_native(input) }.as_str());
-    }
-    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+    Some(unsafe { Self::convert_string_views(argv) })
   }
 
   ///```
