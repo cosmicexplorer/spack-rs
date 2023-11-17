@@ -186,10 +186,6 @@ impl<'a, const N: usize> From<&'a [&'a [u8]; N]> for VectoredByteSlices<'a> {
 #[repr(transparent)]
 pub struct ExpressionIndex(pub c_uint);
 
-impl ExpressionIndex {
-  pub const WHOLE_PATTERN: Self = Self(0);
-}
-
 /// <range index {0}>
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]

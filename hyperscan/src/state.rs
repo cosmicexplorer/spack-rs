@@ -254,7 +254,7 @@ impl<'db> Scratch<'db> {
   /// let asdf: Expression = "asdf".parse()?;
   /// let expr_set = ExpressionSet::from_exprs(&[&a_plus, &b_plus, &asdf])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8, Flags::UTF8])
-  ///   .with_ids(&[ExprId(1), ExprId(2), ExprId(3)]);
+  ///   .with_ids(&[ExprId(0), ExprId(3), ExprId(2)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::VECTORED)?;
   ///
@@ -269,16 +269,16 @@ impl<'db> Scratch<'db> {
   ///   "dfeg".into(),
   /// ];
   /// let data = VectoredByteSlices::from_slices(slices.as_ref());
-  /// let matches: Vec<Vec<&str>> = scratch
+  /// let matches: Vec<(u32, Vec<&str>)> = scratch
   ///   .scan_vectored(data, scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.into_iter().map(|s| s.as_str()).collect()) })
+  ///   .and_then(|m| async move { Ok((m.id.0, m.source.into_iter().map(|s| s.as_str()).collect())) })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &[
-  ///   vec!["a"], vec!["aa"], vec!["aardva"],
-  ///   vec!["aardvark", "imb"], vec!["aardvark", "imbib"],
-  ///   vec!["aardvark", "imbibe", "lea"],
-  ///   vec!["aardvark", "imbibe", "leas", "df"],
+  /// assert_eq!(matches, vec![
+  ///   (0, vec!["a"]), (0, vec!["aa"]), (0, vec!["aardva"]),
+  ///   (3, vec!["aardvark", "imb"]), (3, vec!["aardvark", "imbib"]),
+  ///   (0, vec!["aardvark", "imbibe", "lea"]),
+  ///   (2, vec!["aardvark", "imbibe", "leas", "df"]),
   /// ]);
   /// # Ok(())
   /// # })}
