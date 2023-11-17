@@ -34,7 +34,7 @@ pub struct InputIndex(pub u32);
 /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
-/// let expr = Expression::new("a+")?;
+/// let expr: Expression = "a+".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 ///
 /// let flags = ScanFlags::default();
@@ -647,7 +647,7 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
   /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
   /// use futures_util::StreamExt;
   ///
-  /// let expr = Expression::new("a+")?;
+  /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
   ///
   /// let flags = ScanFlags::default();
@@ -691,7 +691,7 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
 /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
-/// let expr = Expression::new("a+")?;
+/// let expr: Expression = "a+".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 ///
 /// let flags = ScanFlags::default();

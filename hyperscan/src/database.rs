@@ -38,10 +38,8 @@ impl Database {
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
-  /// let expr = Expression::new("(he)ll")?;
-  /// let flags = Flags::UTF8;
-  /// let mode = Mode::BLOCK;
-  /// let db = Database::compile(&expr, flags, mode)?;
+  /// let expr: Expression = "(he)ll".parse()?;
+  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK)?;
   ///
   /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let scratch = Pin::new(&mut scratch);
@@ -88,8 +86,8 @@ impl Database {
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
-  /// let a_expr = Expression::new("a+")?;
-  /// let b_expr = Expression::new("b+")?;
+  /// let a_expr: Expression = "a+".parse()?;
+  /// let b_expr: Expression = "b+".parse()?;
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
   ///   .with_ids(&[ExprId(1), ExprId(2)]);

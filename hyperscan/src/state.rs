@@ -170,8 +170,8 @@ impl<'db> Scratch<'db> {
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
-  /// let a_expr = Expression::new("a+")?;
-  /// let b_expr = Expression::new("b+")?;
+  /// let a_expr: Expression = "a+".parse()?;
+  /// let b_expr: Expression = "b+".parse()?;
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
   ///   .with_ids(&[ExprId(1), ExprId(2)]);
@@ -249,14 +249,10 @@ impl<'db> Scratch<'db> {
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
-  /// let a_plus = Expression::new("a+")?;
-  /// let b_plus = Expression::new("b+")?;
-  /// let asdf = Expression::new("asdf")?;
-  /// let expr_set = ExpressionSet::from_exprs(&[
-  ///   &a_plus,
-  ///   &b_plus,
-  ///   &asdf,
-  /// ])
+  /// let a_plus: Expression = "a+".parse()?;
+  /// let b_plus: Expression = "b+".parse()?;
+  /// let asdf: Expression = "asdf".parse()?;
+  /// let expr_set = ExpressionSet::from_exprs(&[&a_plus, &b_plus, &asdf])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8, Flags::UTF8])
   ///   .with_ids(&[ExprId(1), ExprId(2), ExprId(3)]);
   ///

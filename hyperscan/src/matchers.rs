@@ -52,15 +52,15 @@ impl<'a> ByteSlice<'a> {
 }
 
 impl<'a> From<&'a [u8]> for ByteSlice<'a> {
-  fn from(x: &'a [u8]) -> Self { Self(x) }
+  fn from(x: &'a [u8]) -> Self { Self::from_slice(x) }
 }
 
 impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
-  fn from(x: &'a [u8; N]) -> Self { Self(x.as_ref()) }
+  fn from(x: &'a [u8; N]) -> Self { Self::from_slice(x.as_ref()) }
 }
 
 impl<'a> From<&'a str> for ByteSlice<'a> {
-  fn from(x: &'a str) -> Self { Self(x.as_bytes()) }
+  fn from(x: &'a str) -> Self { Self::from_str(x) }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -160,11 +160,11 @@ impl<'a> VectoredByteSlices<'a> {
 }
 
 impl<'a> From<&'a [ByteSlice<'a>]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [ByteSlice<'a>]) -> Self { Self(x) }
+  fn from(x: &'a [ByteSlice<'a>]) -> Self { Self::from_slices(x) }
 }
 
 impl<'a, const N: usize> From<&'a [ByteSlice<'a>; N]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [ByteSlice<'a>; N]) -> Self { Self(x.as_ref()) }
+  fn from(x: &'a [ByteSlice<'a>; N]) -> Self { Self::from_slices(x.as_ref()) }
 }
 
 impl<'a> From<&'a [&'a [u8]]> for VectoredByteSlices<'a> {

@@ -25,7 +25,7 @@ use std::{
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
 /// use hyperscan::{expression::*, flags::Flags};
 ///
-/// let expr = Expression::new("(he)llo")?;
+/// let expr: Expression = "(he)llo".parse()?;
 /// let info = expr.info(Flags::default())?;
 /// assert_eq!(info, ExprInfo {
 ///   min_width: ExprWidth::parse_min_width(0),
@@ -49,9 +49,10 @@ pub struct Expression(CString);
 
 impl fmt::Debug for Expression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    match self.try_decode_utf8() {
+    let b = self.as_bytes();
+    match str::from_utf8(b) {
       Ok(s) => write!(f, "Expression({:?})", s),
-      Err(_) => write!(f, "Expression({:?})", self.as_bytes()),
+      Err(_) => write!(f, "Expression({:?})", b),
     }
   }
 }
@@ -61,9 +62,6 @@ impl Expression {
   pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
 
   #[inline]
-  fn try_decode_utf8(&self) -> Result<&str, str::Utf8Error> { str::from_utf8(self.as_bytes()) }
-
-  #[inline]
   pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
   #[inline]
@@ -71,6 +69,7 @@ impl Expression {
     Ok(Self(CString::new(x)?))
   }
 
+  #[inline]
   pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
     let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
@@ -89,6 +88,7 @@ impl Expression {
     Ok(info)
   }
 
+  #[inline]
   pub fn ext_info(
     &self,
     flags: Flags,
@@ -115,6 +115,12 @@ impl Expression {
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile(self, flags, mode)
   }
+}
+
+impl str::FromStr for Expression {
+  type Err = HyperscanCompileError;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
