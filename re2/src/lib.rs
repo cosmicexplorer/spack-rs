@@ -127,7 +127,7 @@ impl RE2 {
   ///```
   /// use re2::*;
   ///
-  /// let s = StringView::from_str("1.5-1.8?");
+  /// let s: StringView = "1.5-1.8?".into();
   /// let q = RE2::quote_meta(s);
   /// assert_eq!(q.as_view().as_str(), r"1\.5\-1\.8\?");
   /// ```
@@ -139,12 +139,12 @@ impl RE2 {
   }
 
   ///```
-  /// use re2::*;
+  /// use re2::RE2;
   ///
-  /// assert_eq!(0, RE2::max_submatch(StringView::from_str("asdf")));
-  /// assert_eq!(0, RE2::max_submatch(StringView::from_str(r"\0asdf")));
-  /// assert_eq!(1, RE2::max_submatch(StringView::from_str(r"\0a\1sdf")));
-  /// assert_eq!(3, RE2::max_submatch(StringView::from_str(r"\3a\1sdf")));
+  /// assert_eq!(0, RE2::max_submatch("asdf".into()));
+  /// assert_eq!(0, RE2::max_submatch(r"\0asdf".into()));
+  /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
+  /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
   /// ```
   #[inline]
   pub fn max_submatch(rewrite: StringView<'_>) -> usize {
@@ -171,7 +171,7 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let o: Options = CannedOptions::POSIX.into();
-  /// let r = RE2::compile(StringView::from_str("asdf"), o)?;
+  /// let r = RE2::compile("asdf".into(), o)?;
   /// assert_eq!(o, r.options());
   /// assert_ne!(o, Options::default());
   /// # Ok(())
@@ -185,7 +185,7 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let o: Options = CannedOptions::POSIX.into();
-  /// let r = RE2::compile(StringView::from_str("asdf"), o)?;
+  /// let r = RE2::compile("asdf".into(), o)?;
   /// assert_eq!(o, r.options());
   /// assert_ne!(o, Options::default());
   ///
@@ -350,8 +350,7 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let o: Options = CannedOptions::POSIX.into();
-  /// let p = StringView::from_str("a(.+)d(f)");
-  /// let r = RE2::compile(p, o)?;
+  /// let r = RE2::compile("a(.+)d(f)".into(), o)?;
   /// assert_eq!(2, r.num_captures());
   ///
   /// let msg = "the asdf is withdfin me";
@@ -519,7 +518,7 @@ impl RE2 {
   /// use re2::*;
   ///
   /// let r: RE2 = ".he".parse()?;
-  /// let mut s = StringWrapper::from_view(StringView::from_str("all the king's men"));
+  /// let mut s = StringWrapper::from_view("all the king's men".into());
   /// assert!(r.replace(&mut s, "duh"));
   /// assert_eq!(s.as_view().as_str(), "all duh king's men");
   /// # Ok(())
