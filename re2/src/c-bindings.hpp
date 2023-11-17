@@ -46,11 +46,6 @@ public:
   StringWrapper(StringWrapper &&rhs) : inner_(rhs.inner_) {}
   StringWrapper(const StringWrapper &) = delete;
   StringWrapper &operator=(const StringWrapper &) = delete;
-  StringWrapper &operator=(StringWrapper &&rhs) {
-    clear();
-    inner_ = rhs.inner_;
-    return *this;
-  }
 
   void clear();
   void resize(size_t len);
@@ -160,11 +155,6 @@ public:
   MatchedSetInfo(MatchedSetInfo &&rhs) : matches_(rhs.matches_) {}
   MatchedSetInfo(const MatchedSetInfo &) = delete;
   MatchedSetInfo &operator=(const MatchedSetInfo &) = delete;
-  MatchedSetInfo &operator=(MatchedSetInfo &&rhs) {
-    clear();
-    matches_ = rhs.matches_;
-    return *this;
-  }
 
   void clear();
   const int *data() const noexcept;
@@ -191,11 +181,6 @@ public:
   SetWrapper(SetWrapper &&rhs) : set_(rhs.set_) {}
   SetWrapper(const SetWrapper &) = delete;
   SetWrapper &operator=(const SetWrapper &) = delete;
-  SetWrapper &operator=(SetWrapper &&rhs) {
-    clear();
-    set_ = rhs.set_;
-    return *this;
-  }
 
   void clear();
 
