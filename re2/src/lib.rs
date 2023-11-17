@@ -125,8 +125,15 @@ pub struct RE2(re2_c::RE2Wrapper);
 
 impl RE2 {
   ///```
-  /// let q = re2::RE2::quote_meta("1.5-1.8?".into());
-  /// assert_eq!(q.as_view().as_str(), r"1\.5\-1\.8\?");
+  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// use re2::RE2;
+  ///
+  /// let q = RE2::quote_meta("1.5-1.8?".into());
+  /// let r: RE2 = q.as_view().as_str().parse()?;
+  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern().as_str());
+  /// assert!(r.full_match("1.5-1.8?"));
+  /// # Ok(())
+  /// # }
   /// ```
   #[inline]
   pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
