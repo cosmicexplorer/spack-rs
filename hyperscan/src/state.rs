@@ -132,10 +132,7 @@ impl<'db> Scratch<'db> {
     Ok(unsafe { n.assume_init() })
   }
 
-  pub(crate) fn db_ptr(&self) -> *const hs::hs_database {
-    let db: &Database = &self.db.as_ref();
-    db.as_ref_native()
-  }
+  pub(crate) fn db_ref_native(&self) -> &hs::hs_database { self.db.get_ref().as_ref_native() }
 
   fn into_slice_ctx(m: SliceMatcher) -> usize {
     let ctx: *mut SliceMatcher = Box::into_raw(Box::new(m));
@@ -224,7 +221,7 @@ impl<'db> Scratch<'db> {
       let parent_slice = matcher.parent_slice();
       HyperscanError::from_native(unsafe {
         hs::hs_scan(
-          scratch.db_ptr(),
+          scratch.db_ref_native(),
           parent_slice.as_ptr(),
           parent_slice.native_len(),
           flags.into_native(),
@@ -309,7 +306,7 @@ impl<'db> Scratch<'db> {
       let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
-          scratch.db_ptr(),
+          scratch.db_ref_native(),
           data_pointers.as_ptr(),
           lengths.as_ptr(),
           parent_slices.native_len(),
