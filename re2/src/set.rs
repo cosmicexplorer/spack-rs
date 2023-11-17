@@ -69,7 +69,7 @@ impl SetBuilder {
   }
 
   ///```
-  /// use re2::{*, error::*};
+  /// use re2::{options::*, error::*, set::*};
   ///
   /// let mut b = SetBuilder::new(Options::default(), Anchor::Unanchored);
   /// assert_eq!(
@@ -113,7 +113,7 @@ impl ops::Drop for SetBuilder {
 }
 
 ///```
-/// use re2::*;
+/// use re2::{set::*, options::*};
 ///
 /// let mut b = SetBuilder::new(Options::default(), Anchor::Unanchored);
 /// assert_eq!(0, b.add("a+").unwrap().as_index());
@@ -125,7 +125,7 @@ pub struct Set(pub(crate) re2_c::SetWrapper);
 
 impl Set {
   ///```
-  /// use re2::*;
+  /// use re2::{set::*, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let mut b = SetBuilder::new(o, Anchor::Unanchored);
@@ -155,7 +155,7 @@ impl Set {
   }
 
   ///```
-  /// use re2::*;
+  /// use re2::{set::*, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let mut b = SetBuilder::new(o, Anchor::Unanchored);

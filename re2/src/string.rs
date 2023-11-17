@@ -8,7 +8,7 @@ use crate::re2_c;
 use std::{cmp, fmt, hash, marker::PhantomData, mem, ops, os::raw::c_char, ptr, slice, str};
 
 ///```
-/// use re2::StringView;
+/// use re2::string::StringView;
 ///
 /// let s = StringView::from_str("asdf");
 /// assert_eq!(s.as_str(), "asdf");
@@ -124,7 +124,7 @@ impl<'a> hash::Hash for StringView<'a> {
 }
 
 ///```
-/// use re2::StringMut;
+/// use re2::string::StringMut;
 ///
 /// let mut s = "asdf".to_string();
 /// let s1 = StringMut::from_mut_str(&mut s);
@@ -250,7 +250,7 @@ pub struct StringWrapper(re2_c::StringWrapper);
 
 impl StringWrapper {
   ///```
-  /// let s = re2::StringWrapper::blank();
+  /// let s = re2::string::StringWrapper::blank();
   /// assert_eq!(s.as_view().as_str(), "");
   /// ```
   #[inline]
@@ -269,14 +269,14 @@ impl StringWrapper {
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringWrapper { &mut self.0 }
 
   ///```
-  /// let s = re2::StringWrapper::from_view("asdf".into());
+  /// let s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// ```
   #[inline]
   pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
 
   ///```
-  /// let mut s = re2::StringWrapper::from_view("asdf".into());
+  /// let mut s = re2::string::StringWrapper::from_view("asdf".into());
   /// s.as_mut_view().as_mut_slice()[2] = b'e';
   /// assert_eq!(s.as_view().as_str(), "asef");
   /// ```
@@ -286,7 +286,7 @@ impl StringWrapper {
   }
 
   ///```
-  /// let mut s = re2::StringWrapper::from_view("asdf".into());
+  /// let mut s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// s.resize(2);
   /// assert_eq!(s.as_view().as_str(), "as");
@@ -303,7 +303,7 @@ impl StringWrapper {
   }
 
   ///```
-  /// let mut s = re2::StringWrapper::from_view("asdf".into());
+  /// let mut s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// s.clear();
   /// assert_eq!(s.as_view().as_str(), "");

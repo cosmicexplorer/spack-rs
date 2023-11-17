@@ -20,16 +20,15 @@
 #![allow(incomplete_features)]
 
 pub mod error;
-pub use error::{CompileError, RE2ErrorCode, RewriteError};
+use error::{CompileError, RE2ErrorCode, RewriteError};
 
 pub mod options;
-pub use options::{Anchor, CannedOptions, Encoding, Options};
+use options::{Anchor, Options};
 
 pub mod string;
-pub use string::{StringMut, StringView, StringWrapper};
+use string::{StringView, StringWrapper};
 
 pub mod set;
-pub use set::{MatchedSetInfo, Set, SetBuilder};
 
 #[allow(unused, improper_ctypes, clippy::all)]
 mod bindings;
@@ -126,10 +125,7 @@ pub struct RE2(re2_c::RE2Wrapper);
 
 impl RE2 {
   ///```
-  /// use re2::*;
-  ///
-  /// let s: StringView = "1.5-1.8?".into();
-  /// let q = RE2::quote_meta(s);
+  /// let q = re2::RE2::quote_meta("1.5-1.8?".into());
   /// assert_eq!(q.as_view().as_str(), r"1\.5\-1\.8\?");
   /// ```
   #[inline]
@@ -169,7 +165,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let r = RE2::compile("asdf".into(), o)?;
@@ -183,7 +179,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let r = RE2::compile("asdf".into(), o)?;
@@ -234,7 +230,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::RE2;
   ///
   /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
   /// assert_eq!(1, "a(?P<hey>.)df".parse::<RE2>()?.named_groups().count());
@@ -351,7 +347,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{*, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let r = RE2::compile("a(.+)d(f)".into(), o)?;
@@ -533,10 +529,8 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
-  ///
-  /// let r: RE2 = ".he".parse()?;
-  /// let mut s = StringWrapper::from_view("all the king's men".into());
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
   /// assert!(r.replace(&mut s, "duh"));
   /// assert_eq!(s.as_view().as_str(), "all duh king's men");
   /// # Ok(())
@@ -550,11 +544,9 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
-  ///
-  /// let r: RE2 = ".he".parse()?;
-  /// let mut s = StringWrapper::from_view(StringView::from_str(
-  ///   "all the king's horses and all the king's men"));
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view(
+  ///   "all the king's horses and all the king's men".into());
   /// assert_eq!(2, r.global_replace(&mut s, "duh"));
   /// assert_eq!(
   ///   s.as_view().as_str(),
@@ -575,10 +567,8 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
-  ///
-  /// let r: RE2 = "(.h)e".parse()?;
-  /// let mut s = StringWrapper::blank();
+  /// let r: re2::RE2 = "(.h)e".parse()?;
+  /// let mut s = re2::string::StringWrapper::blank();
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
   /// assert_eq!(s.as_view().as_str(), "tha");
   /// # Ok(())
@@ -599,7 +589,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
   /// let msg = "barbazbla";
@@ -625,7 +615,7 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
+  /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
   /// let msg = "barbazbla";
@@ -666,13 +656,11 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
-  ///
-  /// let r: RE2 = "asdf".parse()?;
+  /// let r: re2::RE2 = "asdf".parse()?;
   /// r.check_rewrite_string("a").unwrap();
   /// r.check_rewrite_string(r"a\0b").unwrap();
   /// assert_eq!(
-  ///   RewriteError {
+  ///   re2::error::RewriteError {
   ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
   ///   },
   ///   r.check_rewrite_string(r"a\0b\1").err().unwrap(),
@@ -699,10 +687,8 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
-  /// use re2::*;
-  ///
-  /// let mut sw = StringWrapper::blank();
-  /// let r: RE2 = "a(s+)d(f+)".parse()?;
+  /// let mut sw = re2::string::StringWrapper::blank();
+  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
   /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
   /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
   /// # Ok(())
@@ -745,15 +731,12 @@ impl str::FromStr for RE2 {
   type Err = CompileError;
 
   ///```
-  /// use re2::*;
-  /// use std::str::FromStr;
-  ///
   /// assert_eq!(
-  ///   RE2::from_str("a(sdf").err().unwrap(),
-  ///   CompileError {
+  ///   "a(sdf".parse::<re2::RE2>().err().unwrap(),
+  ///   re2::error::CompileError {
   ///     message: "missing ): a(sdf".to_string(),
   ///     arg: "a(sdf".to_string(),
-  ///     code: RE2ErrorCode::MissingParen,
+  ///     code: re2::error::RE2ErrorCode::MissingParen,
   ///   },
   /// );
   /// ```
