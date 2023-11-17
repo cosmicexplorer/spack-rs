@@ -415,7 +415,11 @@ impl RE2 {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
-  /// let mut msg = "asdfe";
+  /// let mut msg = "asdfasdfe";
+  /// // The 0 case still works, but just calls .consume():
+  /// assert!(r.consume_capturing::<0>(&mut msg).is_some());
+  /// assert_eq!(msg, "asdfe");
+  ///
   /// let [s1, s2] = r.consume_capturing(&mut msg).unwrap();
   /// assert_eq!(s1, "s");
   /// assert_eq!(s2, "f");
@@ -474,7 +478,11 @@ impl RE2 {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
-  /// let mut msg = "the asdfe";
+  /// let mut msg = "the asdf and the asdfe";
+  /// // The 0 case still works, but just calls .find_and_consume():
+  /// assert!(r.find_and_consume_capturing::<0>(&mut msg).is_some());
+  /// assert_eq!(msg, " and the asdfe");
+  ///
   /// let [s1, s2] = r.find_and_consume_capturing(&mut msg).unwrap();
   /// assert_eq!(s1, "s");
   /// assert_eq!(s2, "f");

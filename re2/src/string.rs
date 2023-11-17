@@ -69,10 +69,11 @@ impl<'a> StringView<'a> {
   }
 
   #[inline]
-  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringView { &mut self.inner }
-
-  #[inline]
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
+
+  /* Used in "consume" methods which may update a string view to a substring upon match. */
+  #[inline]
+  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringView { &mut self.inner }
 }
 
 impl<'a> From<&'a [u8]> for StringView<'a> {
@@ -131,6 +132,12 @@ impl<'a> hash::Hash for StringView<'a> {
 /// s1.as_mut_slice()[2] = b'e';
 /// assert_eq!(s1.as_mut_str(), "asef");
 /// assert_eq!(StringMut::empty().as_mut_str(), "");
+///
+/// let mut s = *b"asdf";
+/// let s1 = StringMut::from_mut_slice(&mut s);
+/// assert_eq!(s1.as_mut_str(), "asdf");
+/// s1.as_mut_slice()[2] = b'e';
+/// assert_eq!(s1.as_mut_str(), "asef");
 /// ```
 #[derive(Copy, Clone)]
 #[repr(transparent)]
@@ -227,9 +234,7 @@ impl<'a> cmp::PartialOrd for StringMut<'a> {
 }
 
 impl<'a> cmp::Ord for StringMut<'a> {
-  fn cmp(&self, other: &Self) -> cmp::Ordering {
-    self.as_mut_slice().cmp(&other.as_mut_slice())
-  }
+  fn cmp(&self, other: &Self) -> cmp::Ordering { self.as_mut_slice().cmp(&other.as_mut_slice()) }
 }
 
 impl<'a> hash::Hash for StringMut<'a> {
