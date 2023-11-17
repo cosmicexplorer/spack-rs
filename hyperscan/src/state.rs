@@ -165,7 +165,7 @@ impl<'db> Scratch<'db> {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*, error::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}, state::*, error::*};
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
@@ -185,7 +185,7 @@ impl<'db> Scratch<'db> {
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
   ///   .scan("aardvark".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
@@ -193,7 +193,7 @@ impl<'db> Scratch<'db> {
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
   ///   .scan("imbibe".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
@@ -244,7 +244,7 @@ impl<'db> Scratch<'db> {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, vectored_slice::*}, state::*};
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
@@ -267,10 +267,10 @@ impl<'db> Scratch<'db> {
   ///   "dfeg".into(),
   /// ];
   /// let matches: Vec<(u32, String)> = scratch
-  ///   .scan_vectored((&data).into(), ScanFlags::default(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move {
-  ///     let joined = m.source.into_iter().map(|s| s.as_str()).collect::<Vec<_>>().concat();
-  ///     Ok((m.id.0, joined))
+  ///   .scan_vectored(data.as_ref().into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
+  ///     let joined = source.into_iter().map(|s| s.as_str()).collect::<Vec<_>>().concat();
+  ///     Ok((id, joined))
   ///   })
   ///   .try_collect()
   ///   .await?;
