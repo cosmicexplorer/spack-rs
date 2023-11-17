@@ -219,7 +219,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
       let mut inner = ptr::null_mut();
       HyperscanError::from_native(unsafe {
         hs::hs_expand_stream(
-          scratch.db_ref_native(),
+          scratch.db_ref_native().get_ref(),
           &mut inner,
           buf.as_ptr(),
           buf.capacity(),

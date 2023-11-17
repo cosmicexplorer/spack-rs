@@ -122,7 +122,7 @@ impl<'db> ResourceOps for Scratch<'db> {
 }
 
 impl<'db> Scratch<'db> {
-  pub fn pinned_db(self: Pin<&Self>) -> Pin<&'db Database> { self.db }
+  pub fn pinned_db(&self) -> Pin<&'db Database> { self.db }
 
   pub fn get_size(&self) -> Result<usize, HyperscanError> {
     let mut n = mem::MaybeUninit::<usize>::uninit();
@@ -132,7 +132,9 @@ impl<'db> Scratch<'db> {
     Ok(unsafe { n.assume_init() })
   }
 
-  pub(crate) fn db_ref_native(&self) -> &hs::hs_database { self.db.get_ref().as_ref_native() }
+  pub(crate) fn db_ref_native(&self) -> Pin<&'db hs::hs_database> {
+    unsafe { self.db.map_unchecked(|db| db.as_ref_native()) }
+  }
 
   fn into_slice_ctx(m: SliceMatcher) -> usize {
     let ctx: *mut SliceMatcher = Box::into_raw(Box::new(m));
@@ -221,7 +223,7 @@ impl<'db> Scratch<'db> {
       let parent_slice = matcher.parent_slice();
       HyperscanError::from_native(unsafe {
         hs::hs_scan(
-          scratch.db_ref_native(),
+          scratch.db_ref_native().get_ref(),
           parent_slice.as_ptr(),
           parent_slice.native_len(),
           flags.into_native(),
@@ -306,7 +308,7 @@ impl<'db> Scratch<'db> {
       let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
       HyperscanError::from_native(unsafe {
         hs::hs_scan_vector(
-          scratch.db_ref_native(),
+          scratch.db_ref_native().get_ref(),
           data_pointers.as_ptr(),
           lengths.as_ptr(),
           parent_slices.native_len(),
