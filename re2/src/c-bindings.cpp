@@ -104,34 +104,12 @@ NamedCapturingGroups RE2Wrapper::named_groups() const {
   return NamedCapturingGroups(re_->CapturingGroupNames());
 }
 
-class CapturesInternal {
-public:
-  CapturesInternal(StringView captures[], const size_t n) : argv_(n) {
-    for (size_t i = 0; i < n; ++i) {
-      StringView *capture_output = &captures[i];
-      re2::RE2::Arg::Parser parser = CapturesInternal::parse_string_view;
-      argv_[i] = new re2::RE2::Arg(capture_output, parser);
-    }
-  }
-  ~CapturesInternal() {
-    for (auto p : argv_) {
-      delete p;
-    }
-  }
-
-  size_t size() const noexcept { return argv_.size(); }
-  const re2::RE2::Arg *const *data() const noexcept { return argv_.data(); }
-
-  static bool parse_string_view(const char *data, size_t len, void *dest) {
-    StringView *dest_sv = reinterpret_cast<StringView *>(dest);
-    dest_sv->data_ = data;
-    dest_sv->len_ = len;
-    return true;
-  }
-
-private:
-  std::vector<re2::RE2::Arg *> argv_;
-};
+static bool parse_string_view(const char *data, size_t len, void *dest) {
+  StringView *dest_sv = reinterpret_cast<StringView *>(dest);
+  dest_sv->data_ = data;
+  dest_sv->len_ = len;
+  return true;
+}
 
 bool RE2Wrapper::full_match(const StringView text) const {
   return re2::RE2::FullMatchN(text.into_absl_view(), *re_, nullptr, 0);
@@ -139,9 +117,19 @@ bool RE2Wrapper::full_match(const StringView text) const {
 
 bool RE2Wrapper::full_match_n(const StringView text, StringView captures[],
                               const size_t n) const {
-  CapturesInternal argv(captures, n);
-  return re2::RE2::FullMatchN(text.into_absl_view(), *re_, argv.data(),
-                              argv.size());
+  /* TODO: alloca only works on linux! */
+  re2::RE2::Arg *argv =
+      reinterpret_cast<re2::RE2::Arg *>(alloca(n * sizeof(re2::RE2::Arg)));
+  re2::RE2::Arg **argv_ref =
+      reinterpret_cast<re2::RE2::Arg **>(alloca(n * sizeof(re2::RE2::Arg *)));
+  for (size_t i = 0; i < n; ++i) {
+    StringView *capture_output = &captures[i];
+    re2::RE2::Arg::Parser parser = parse_string_view;
+    argv[i] = re2::RE2::Arg(capture_output, parser);
+    argv_ref[i] = &argv[i];
+  }
+
+  return re2::RE2::FullMatchN(text.into_absl_view(), *re_, argv_ref, n);
 }
 
 bool RE2Wrapper::partial_match(const StringView text) const {
@@ -150,9 +138,19 @@ bool RE2Wrapper::partial_match(const StringView text) const {
 
 bool RE2Wrapper::partial_match_n(const StringView text, StringView captures[],
                                  const size_t n) const {
-  CapturesInternal argv(captures, n);
-  return re2::RE2::PartialMatchN(text.into_absl_view(), *re_, argv.data(),
-                                 argv.size());
+  /* TODO: alloca only works on linux! */
+  re2::RE2::Arg *argv =
+      reinterpret_cast<re2::RE2::Arg *>(alloca(n * sizeof(re2::RE2::Arg)));
+  re2::RE2::Arg **argv_ref =
+      reinterpret_cast<re2::RE2::Arg **>(alloca(n * sizeof(re2::RE2::Arg *)));
+  for (size_t i = 0; i < n; ++i) {
+    StringView *capture_output = &captures[i];
+    re2::RE2::Arg::Parser parser = parse_string_view;
+    argv[i] = re2::RE2::Arg(capture_output, parser);
+    argv_ref[i] = &argv[i];
+  }
+
+  return re2::RE2::PartialMatchN(text.into_absl_view(), *re_, argv_ref, n);
 }
 
 class MutableStringViewInternal {
@@ -162,8 +160,7 @@ public:
 
   absl::string_view *as_mutable() noexcept { return &view_; }
 
-  /* Write the new value of the absl::string_view into the provided FFI handle.
-   */
+  /* Write the new value of the absl::string_view back into the FFI handle. */
   ~MutableStringViewInternal() { *handle_ = StringView(view_); }
 
 private:
@@ -178,9 +175,20 @@ bool RE2Wrapper::consume(StringView *text) const {
 
 bool RE2Wrapper::consume_n(StringView *text, StringView captures[],
                            const size_t n) const {
+  /* TODO: alloca only works on linux! */
+  re2::RE2::Arg *argv =
+      reinterpret_cast<re2::RE2::Arg *>(alloca(n * sizeof(re2::RE2::Arg)));
+  re2::RE2::Arg **argv_ref =
+      reinterpret_cast<re2::RE2::Arg **>(alloca(n * sizeof(re2::RE2::Arg *)));
+  for (size_t i = 0; i < n; ++i) {
+    StringView *capture_output = &captures[i];
+    re2::RE2::Arg::Parser parser = parse_string_view;
+    argv[i] = re2::RE2::Arg(capture_output, parser);
+    argv_ref[i] = &argv[i];
+  }
+
   MutableStringViewInternal tv(text);
-  CapturesInternal argv(captures, n);
-  return re2::RE2::ConsumeN(tv.as_mutable(), *re_, argv.data(), argv.size());
+  return re2::RE2::ConsumeN(tv.as_mutable(), *re_, argv_ref, n);
 }
 
 bool RE2Wrapper::find_and_consume(StringView *text) const {
@@ -190,10 +198,20 @@ bool RE2Wrapper::find_and_consume(StringView *text) const {
 
 bool RE2Wrapper::find_and_consume_n(StringView *text, StringView captures[],
                                     const size_t n) const {
+  /* TODO: alloca only works on linux! */
+  re2::RE2::Arg *argv =
+      reinterpret_cast<re2::RE2::Arg *>(alloca(n * sizeof(re2::RE2::Arg)));
+  re2::RE2::Arg **argv_ref =
+      reinterpret_cast<re2::RE2::Arg **>(alloca(n * sizeof(re2::RE2::Arg *)));
+  for (size_t i = 0; i < n; ++i) {
+    StringView *capture_output = &captures[i];
+    re2::RE2::Arg::Parser parser = parse_string_view;
+    argv[i] = re2::RE2::Arg(capture_output, parser);
+    argv_ref[i] = &argv[i];
+  }
+
   MutableStringViewInternal tv(text);
-  CapturesInternal argv(captures, n);
-  return re2::RE2::FindAndConsumeN(tv.as_mutable(), *re_, argv.data(),
-                                   argv.size());
+  return re2::RE2::FindAndConsumeN(tv.as_mutable(), *re_, argv_ref, n);
 }
 
 bool RE2Wrapper::replace(StringWrapper *inout, const StringView rewrite) const {
@@ -215,24 +233,28 @@ bool RE2Wrapper::extract(const StringView text, const StringView rewrite,
                            rewrite.into_absl_view(), out->get_mutable());
 }
 
-bool RE2Wrapper::match_single(const StringView text, size_t startpos,
-                              size_t endpos, re2::RE2::Anchor re_anchor) const {
+bool RE2Wrapper::match_single(const StringView text, const size_t startpos,
+                              const size_t endpos,
+                              const re2::RE2::Anchor re_anchor) const {
   return re_->Match(text.into_absl_view(), startpos, endpos, re_anchor, nullptr,
                     0);
 }
 
-bool RE2Wrapper::match_routine(const StringView text, size_t startpos,
-                               size_t endpos, re2::RE2::Anchor re_anchor,
+bool RE2Wrapper::match_routine(const StringView text, const size_t startpos,
+                               const size_t endpos,
+                               const re2::RE2::Anchor re_anchor,
                                StringView submatch_args[],
                                const size_t nsubmatch) const {
-  std::vector<absl::string_view> submatches(nsubmatch);
+  /* TODO: alloca only works on linux! */
+  absl::string_view *submatches = reinterpret_cast<absl::string_view *>(
+      alloca(nsubmatch * sizeof(absl::string_view)));
 
   if (!re_->Match(text.into_absl_view(), startpos, endpos, re_anchor,
-                  submatches.data(), submatches.size())) {
+                  submatches, nsubmatch)) {
     return false;
   }
 
-  for (size_t i = 0; i < submatches.size(); ++i) {
+  for (size_t i = 0; i < nsubmatch; ++i) {
     submatch_args[i] = submatches[i];
   }
   return true;
@@ -247,14 +269,16 @@ bool RE2Wrapper::check_rewrite_string(const StringView rewrite,
 bool RE2Wrapper::vector_rewrite(StringWrapper *out, const StringView rewrite,
                                 const StringView *vec,
                                 const size_t veclen) const {
-  std::vector<absl::string_view> match_components(veclen);
+  /* TODO: alloca only works on linux! */
+  absl::string_view *match_components = reinterpret_cast<absl::string_view *>(
+      alloca(veclen * sizeof(absl::string_view)));
 
   for (size_t i = 0; i < veclen; ++i) {
     match_components[i] = vec[i].into_absl_view();
   }
 
   return re_->Rewrite(out->get_mutable(), rewrite.into_absl_view(),
-                      match_components.data(), match_components.size());
+                      match_components, veclen);
 }
 
 void MatchedSetInfo::clear() {
