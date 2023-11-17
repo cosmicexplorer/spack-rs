@@ -16,6 +16,7 @@
 #![feature(const_mut_refs)]
 #![feature(const_slice_from_raw_parts_mut)]
 #![feature(const_str_from_utf8_unchecked_mut)]
+#![feature(maybe_uninit_slice)]
 #![allow(incomplete_features)]
 
 pub mod error;
@@ -256,9 +257,10 @@ impl RE2 {
   }
 
   #[inline]
-  const unsafe fn empty_result<'a, const N: usize>() -> [&'a str; N] {
+  fn empty_result<'a, const N: usize>() -> [&'a str; N] {
+    assert_eq!(N, 0);
     let ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    MaybeUninit::array_assume_init(ret)
+    unsafe { MaybeUninit::array_assume_init(ret) }
   }
 
   #[inline]
@@ -306,7 +308,7 @@ impl RE2 {
   pub fn full_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
     if N == 0 {
       return if self.full_match(text) {
-        Some(unsafe { Self::empty_result() })
+        Some(Self::empty_result())
       } else {
         None
       };
@@ -316,17 +318,19 @@ impl RE2 {
     }
 
     let text = StringView::from_str(text);
-    let mut argv = [StringView::empty().into_native(); N];
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
 
     if !unsafe {
-      self
-        .0
-        .full_match_n(text.into_native(), argv.as_mut_ptr(), argv.len())
+      self.0.full_match_n(
+        text.into_native(),
+        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        argv.len(),
+      )
     } {
       return None;
     }
 
-    Some(unsafe { Self::convert_string_views(argv) })
+    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
   }
 
   ///```
@@ -369,7 +373,7 @@ impl RE2 {
   pub fn partial_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
     if N == 0 {
       return if self.partial_match(text) {
-        Some(unsafe { Self::empty_result() })
+        Some(Self::empty_result())
       } else {
         None
       };
@@ -379,17 +383,19 @@ impl RE2 {
     }
 
     let text = StringView::from_str(text);
-    let mut argv = [StringView::empty().into_native(); N];
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
 
     if !unsafe {
-      self
-        .0
-        .partial_match_n(text.into_native(), argv.as_mut_ptr(), argv.len())
+      self.0.partial_match_n(
+        text.into_native(),
+        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        argv.len(),
+      )
     } {
       return None;
     }
 
-    Some(unsafe { Self::convert_string_views(argv) })
+    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
   }
 
   ///```
@@ -430,7 +436,7 @@ impl RE2 {
   pub fn consume_capturing<'a, const N: usize>(&self, text: &mut &'a str) -> Option<[&'a str; N]> {
     if N == 0 {
       return if self.consume(text) {
-        Some(unsafe { Self::empty_result() })
+        Some(Self::empty_result())
       } else {
         None
       };
@@ -440,19 +446,21 @@ impl RE2 {
     }
 
     let mut text_view = StringView::from_str(text);
-    let mut argv = [StringView::empty().into_native(); N];
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
 
     if !unsafe {
-      self
-        .0
-        .consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), argv.len())
+      self.0.consume_n(
+        text_view.as_mut_native(),
+        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        argv.len(),
+      )
     } {
       return None;
     }
 
     *text = text_view.as_str();
 
-    Some(unsafe { Self::convert_string_views(argv) })
+    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
   }
 
   ///```
@@ -496,7 +504,7 @@ impl RE2 {
   ) -> Option<[&'a str; N]> {
     if N == 0 {
       return if self.find_and_consume(text) {
-        Some(unsafe { Self::empty_result() })
+        Some(Self::empty_result())
       } else {
         None
       };
@@ -506,19 +514,21 @@ impl RE2 {
     }
 
     let mut text_view = StringView::from_str(text);
-    let mut argv = [StringView::empty().into_native(); N];
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
 
     if !unsafe {
-      self
-        .0
-        .find_and_consume_n(text_view.as_mut_native(), argv.as_mut_ptr(), argv.len())
+      self.0.find_and_consume_n(
+        text_view.as_mut_native(),
+        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        argv.len(),
+      )
     } {
       return None;
     }
 
     *text = text_view.as_str();
 
-    Some(unsafe { Self::convert_string_views(argv) })
+    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
   }
 
   ///```
@@ -636,7 +646,7 @@ impl RE2 {
   ) -> Option<[&'a str; N + 1]> {
     let text = StringView::from_str(text);
     let ops::Range { start, end } = range;
-    let mut submatches = [StringView::empty().into_native(); N + 1];
+    let mut submatches: [MaybeUninit<re2_c::StringView>; N + 1] = MaybeUninit::uninit_array();
 
     if !unsafe {
       self.0.match_routine(
@@ -644,18 +654,14 @@ impl RE2 {
         start,
         end,
         anchor.into_native(),
-        submatches.as_mut_ptr(),
+        MaybeUninit::slice_as_mut_ptr(&mut submatches),
         submatches.len(),
       )
     } {
       return None;
     }
 
-    let mut ret: [MaybeUninit<&'a str>; N + 1] = MaybeUninit::uninit_array();
-    for (output, input) in ret.iter_mut().zip(submatches.into_iter()) {
-      output.write(unsafe { StringView::from_native(input) }.as_str());
-    }
-    Some(unsafe { MaybeUninit::array_assume_init(ret) })
+    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(submatches)) })
   }
 
   ///```
@@ -710,10 +716,11 @@ impl RE2 {
   ) -> bool {
     let rewrite = StringView::from_str(rewrite);
 
-    let mut input_views = [StringView::empty().into_native(); N];
+    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
     for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
-      *sv = StringView::from_str(s).into_native();
+      sv.write(StringView::from_str(s).into_native());
     }
+    let input_views = unsafe { MaybeUninit::array_assume_init(input_views) };
 
     unsafe {
       self.0.vector_rewrite(
