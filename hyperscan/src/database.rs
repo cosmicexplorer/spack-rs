@@ -16,15 +16,13 @@ use std::{ops, os::raw::c_uint, pin::Pin, ptr};
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
 
-impl AsRef<hs::hs_database> for Database {
-  fn as_ref(&self) -> &hs::hs_database { unsafe { &*self.0 } }
-}
-
-impl AsMut<hs::hs_database> for Database {
-  fn as_mut(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
-}
-
 impl Database {
+  #[inline]
+  pub(crate) const fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
+
+  #[inline]
+  pub(crate) const fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
+
   fn validate_flags_and_mode(
     flags: Flags,
     mode: Mode,
@@ -162,7 +160,7 @@ impl Database {
   }
 
   fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_database(self.get_mut().as_mut()) })
+    HyperscanError::from_native(unsafe { hs::hs_free_database(self.get_mut().as_mut_native()) })
   }
 }
 

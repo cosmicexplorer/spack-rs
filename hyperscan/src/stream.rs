@@ -168,7 +168,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
         Err(HyperscanError::InsufficientSpace),
         HyperscanError::from_native(unsafe {
           hs::hs_compress_stream(
-            (*live).as_ref(),
+            (*live).as_ref_native(),
             ptr::null_mut(),
             0,
             required_space.as_mut_ptr(),
@@ -182,7 +182,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
         ReserveResponse::MadeSpace(mut buf) => {
           HyperscanError::from_native(unsafe {
             hs::hs_compress_stream(
-              (*live).as_ref(),
+              (*live).as_ref_native(),
               buf.as_mut_ptr(),
               required_space,
               &mut required_space,
@@ -235,7 +235,7 @@ impl<'db> CompressedStream<'db, AcceptMatches> {
     let s = s as usize;
 
     let mut scratch = self.scratch.clone();
-    let p_scratch: *mut hs::hs_scratch = Arc::make_mut(&mut scratch).as_mut();
+    let p_scratch: *mut hs::hs_scratch = Arc::make_mut(&mut scratch).as_mut_native();
     let p_scratch = p_scratch as usize;
 
     let mut matcher = self.matcher.clone();
@@ -324,12 +324,12 @@ pub struct LiveStream<'db> {
 unsafe impl<'db> Send for LiveStream<'db> {}
 unsafe impl<'db> Sync for LiveStream<'db> {}
 
-impl<'db> AsRef<hs::hs_stream> for LiveStream<'db> {
-  fn as_ref(&self) -> &hs::hs_stream { unsafe { &*self.inner } }
-}
+impl<'db> LiveStream<'db> {
+  #[inline]
+  pub(crate) const fn as_ref_native(&self) -> &hs::hs_stream { unsafe { &*self.inner } }
 
-impl<'db> AsMut<hs::hs_stream> for LiveStream<'db> {
-  fn as_mut(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.inner } }
+  #[inline]
+  pub(crate) const fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.inner } }
 }
 
 impl<'db> Ops for LiveStream<'db> {
@@ -341,7 +341,9 @@ impl<'db> HandleOps for LiveStream<'db> {
 
   async fn try_clone(&self) -> Result<Self, HyperscanError> {
     let mut stream_ptr = ptr::null_mut();
-    HyperscanError::from_native(unsafe { hs::hs_copy_stream(&mut stream_ptr, self.as_ref()) })?;
+    HyperscanError::from_native(unsafe {
+      hs::hs_copy_stream(&mut stream_ptr, self.as_ref_native())
+    })?;
     Ok(Self {
       inner: stream_ptr,
       _ph: PhantomData,
@@ -357,7 +359,7 @@ impl<'db> ResourceOps for LiveStream<'db> {
     let (flags, db) = p;
     let mut stream_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
-      hs::hs_open_stream(db.as_ref(), flags.into_native(), &mut stream_ptr)
+      hs::hs_open_stream(db.as_ref_native(), flags.into_native(), &mut stream_ptr)
     })?;
     Ok(Self {
       inner: stream_ptr,
@@ -367,7 +369,7 @@ impl<'db> ResourceOps for LiveStream<'db> {
 
   async fn try_drop(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
-      hs::hs_close_stream(self.as_mut(), ptr::null_mut(), None, ptr::null_mut())
+      hs::hs_close_stream(self.as_mut_native(), ptr::null_mut(), None, ptr::null_mut())
     })
   }
 }
@@ -376,7 +378,7 @@ impl<'db> StreamOps for LiveStream<'db> {
   async fn try_reset(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe {
       hs::hs_reset_stream(
-        self.as_mut(),
+        self.as_mut_native(),
         ScanFlags::default().into_native(),
         ptr::null_mut(),
         None,
@@ -390,7 +392,7 @@ impl<'db> StreamOps for LiveStream<'db> {
     HyperscanError::from_native(unsafe {
       hs::hs_reset_and_copy_stream(
         to.as_mut_ptr(),
-        self.as_ref(),
+        self.as_ref_native(),
         ptr::null_mut(),
         None,
         ptr::null_mut(),
@@ -450,8 +452,8 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
 
       HyperscanError::from_native(unsafe {
         hs::hs_close_stream(
-          live.as_mut(),
-          Arc::make_mut(scratch).as_mut(),
+          live.as_mut_native(),
+          Arc::make_mut(scratch).as_mut_native(),
           Some(match_slice_stream),
           matcher as *mut c_void,
         )
@@ -492,10 +494,10 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
 
       HyperscanError::from_native(unsafe {
         hs::hs_reset_stream(
-          live.as_mut(),
+          live.as_mut_native(),
           /* FIXME: pass in ScanFlags!!!! */
           ScanFlags::default().into_native(),
-          Arc::make_mut(scratch).as_mut(),
+          Arc::make_mut(scratch).as_mut_native(),
           Some(match_slice_stream),
           matcher as *mut c_void,
         )
@@ -525,8 +527,8 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
       HyperscanError::from_native(unsafe {
         hs::hs_reset_and_copy_stream(
           to.as_mut_ptr(),
-          live.as_ref(),
-          Arc::make_mut(scratch).as_mut(),
+          live.as_ref_native(),
+          Arc::make_mut(scratch).as_mut_native(),
           Some(match_slice_stream),
           matcher as *mut c_void,
         )
@@ -604,11 +606,11 @@ impl<'db> StreamSink<'db, AcceptMatches> {
       let p_matcher = p_matcher as usize;
       HyperscanError::from_native(unsafe {
         hs::hs_scan_stream(
-          live.as_mut(),
+          live.as_mut_native(),
           data as *const c_char,
           data_len,
           flags.into_native(),
-          Arc::make_mut(scratch).as_mut(),
+          Arc::make_mut(scratch).as_mut_native(),
           Some(match_slice_stream),
           p_matcher as *mut c_void,
         )

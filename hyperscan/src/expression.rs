@@ -101,7 +101,7 @@ impl Expression {
         hs::hs_expression_ext_info(
           self.as_ptr(),
           flags.into_native(),
-          ext_flags.as_ref(),
+          ext_flags.as_ref_native(),
           &mut info.as_mut_ptr() as *mut *mut hs::hs_expr_info,
           &mut compile_err.as_mut_ptr() as *mut *mut hs::hs_compile_error,
         )
@@ -159,7 +159,7 @@ impl<'a> ExpressionSet<'a> {
       exts
         .iter()
         .map(|e| {
-          e.map(|e| e.as_ref() as *const hs::hs_expr_ext)
+          e.map(|e| e.as_ref_native() as *const hs::hs_expr_ext)
             .unwrap_or(ptr::null())
         })
         .collect(),
@@ -442,14 +442,9 @@ impl ExprExt {
     }
     self
   }
-}
 
-impl AsRef<hs::hs_expr_ext> for ExprExt {
-  fn as_ref(&self) -> &hs::hs_expr_ext { &self.0 }
-}
-
-impl AsMut<hs::hs_expr_ext> for ExprExt {
-  fn as_mut(&mut self) -> &mut hs::hs_expr_ext { &mut self.0 }
+  #[inline]
+  pub(crate) const fn as_ref_native(&self) -> &hs::hs_expr_ext { &self.0 }
 }
 
 impl ops::BitOr for ExprExt {

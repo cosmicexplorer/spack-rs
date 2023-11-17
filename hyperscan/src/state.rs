@@ -91,7 +91,9 @@ impl<'db> HandleOps for Scratch<'db> {
 
   async fn try_clone(&self) -> Result<Scratch<'db>, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
-    HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })?;
+    HyperscanError::from_native(unsafe {
+      hs::hs_clone_scratch(self.as_ref_native(), &mut scratch_ptr)
+    })?;
     Ok(Self {
       inner: scratch_ptr,
       db: self.db,
@@ -106,7 +108,7 @@ impl<'db> ResourceOps for Scratch<'db> {
   async fn try_open(db: Pin<&'db Database>) -> Result<Scratch<'db>, HyperscanError> {
     let mut scratch_ptr = ptr::null_mut();
     HyperscanError::from_native(unsafe {
-      hs::hs_alloc_scratch(db.get_ref().as_ref(), &mut scratch_ptr)
+      hs::hs_alloc_scratch(db.get_ref().as_ref_native(), &mut scratch_ptr)
     })?;
     Ok(Self {
       inner: scratch_ptr,
@@ -115,7 +117,7 @@ impl<'db> ResourceOps for Scratch<'db> {
   }
 
   async fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) })
+    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut_native()) })
   }
 }
 
@@ -124,13 +126,15 @@ impl<'db> Scratch<'db> {
 
   pub fn get_size(&self) -> Result<usize, HyperscanError> {
     let mut n = mem::MaybeUninit::<usize>::uninit();
-    HyperscanError::from_native(unsafe { hs::hs_scratch_size(self.as_ref(), n.as_mut_ptr()) })?;
+    HyperscanError::from_native(unsafe {
+      hs::hs_scratch_size(self.as_ref_native(), n.as_mut_ptr())
+    })?;
     Ok(unsafe { n.assume_init() })
   }
 
   pub(crate) fn db_ptr(&self) -> *const hs::hs_database {
     let db: &Database = &self.db.as_ref();
-    db.as_ref()
+    db.as_ref_native()
   }
 
   fn into_slice_ctx(m: SliceMatcher) -> usize {
@@ -224,7 +228,7 @@ impl<'db> Scratch<'db> {
           parent_slice.as_ptr(),
           parent_slice.native_len(),
           flags.into_native(),
-          scratch.get_mut().as_mut(),
+          scratch.get_mut().as_mut_native(),
           Some(match_slice_ref),
           mem::transmute(matcher.as_mut().get_mut()),
         )
@@ -313,7 +317,7 @@ impl<'db> Scratch<'db> {
           lengths.as_ptr(),
           parent_slices.native_len(),
           flags.into_native(),
-          scratch.get_mut().as_mut(),
+          scratch.get_mut().as_mut_native(),
           Some(match_slice_vectored_ref),
           mem::transmute(matcher.as_mut().get_mut()),
         )
@@ -331,15 +335,17 @@ impl<'db> Scratch<'db> {
 
 impl<'db> ops::Drop for Scratch<'db> {
   fn drop(&mut self) {
-    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut()) }).unwrap();
+    HyperscanError::from_native(unsafe { hs::hs_free_scratch(self.as_mut_native()) }).unwrap();
   }
 }
 
 impl<'db> Clone for Scratch<'db> {
   fn clone(&self) -> Self {
     let mut scratch_ptr = ptr::null_mut();
-    HyperscanError::from_native(unsafe { hs::hs_clone_scratch(self.as_ref(), &mut scratch_ptr) })
-      .unwrap();
+    HyperscanError::from_native(unsafe {
+      hs::hs_clone_scratch(self.as_ref_native(), &mut scratch_ptr)
+    })
+    .unwrap();
     Self {
       inner: scratch_ptr,
       db: self.db,
@@ -347,12 +353,14 @@ impl<'db> Clone for Scratch<'db> {
   }
 }
 
-impl<'db> AsRef<hs::hs_scratch> for Scratch<'db> {
-  fn as_ref(&self) -> &hs::hs_scratch { unsafe { &*self.inner } }
-}
+impl<'db> Scratch<'db> {
+  #[inline]
+  pub(crate) const fn as_ref_native(&self) -> &hs::hs_scratch { unsafe { &*self.inner } }
 
-impl<'db> AsMut<hs::hs_scratch> for Scratch<'db> {
-  fn as_mut(&mut self) -> &mut hs::hs_scratch { unsafe { &mut *self.inner } }
+  #[inline]
+  pub(crate) const fn as_mut_native(&mut self) -> &mut hs::hs_scratch {
+    unsafe { &mut *self.inner }
+  }
 }
 
 unsafe impl<'db> Send for Scratch<'db> {}
