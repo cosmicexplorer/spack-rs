@@ -76,7 +76,7 @@ impl SetBuilder {
   ///   SetPatternError { message: "missing ): as(df".to_string() },
   ///   b.add("as(df").err().unwrap(),
   /// );
-  ///```
+  /// ```
   #[inline]
   pub fn add(&mut self, pattern: &str) -> Result<ExpressionIndex, SetPatternError> {
     let pattern = StringView::from_str(pattern);

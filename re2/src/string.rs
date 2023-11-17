@@ -71,7 +71,8 @@ impl<'a> StringView<'a> {
   #[inline]
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 
-  /* Used in "consume" methods which may update a string view to a substring upon match. */
+  /* Used in "consume" methods which may update a string view to a substring
+   * upon match. */
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringView { &mut self.inner }
 }

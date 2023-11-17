@@ -146,6 +146,7 @@ impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
 
 pub struct CompressedStream<'db, S> {
   pub buf: Vec<c_char>,
+  pub flags: ScanFlags,
   pub scratch: Arc<Scratch<'db>>,
   pub matcher: Arc<StreamMatcher<S>>,
 }
@@ -154,6 +155,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
   pub(crate) async fn compress(
     into: CompressReserveBehavior,
     live: &LiveStream<'db>,
+    flags: ScanFlags,
     scratch: &Arc<Scratch<'db>>,
     matcher: &Arc<StreamMatcher<S>>,
   ) -> Result<Self, CompressionError> {
@@ -197,6 +199,7 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
 
     Ok(Self {
       buf,
+      flags,
       scratch: scratch.clone(),
       matcher: matcher.clone(),
     })
@@ -206,23 +209,29 @@ impl<'db, S: Send+Sync> CompressedStream<'db, S> {
     let s: *const Self = self;
     let s = s as usize;
 
-    let inner: *mut hs::hs_stream = task::spawn_blocking(move || {
-      let Self { scratch, buf, .. } = unsafe { &*(s as *const Self) };
+    let (inner, flags) = task::spawn_blocking(move || {
+      let Self {
+        scratch,
+        buf,
+        flags,
+        ..
+      } = unsafe { &*(s as *const Self) };
       let mut inner = ptr::null_mut();
       HyperscanError::from_native(unsafe {
         hs::hs_expand_stream(scratch.db_ptr(), &mut inner, buf.as_ptr(), buf.capacity())
       })?;
-      Ok::<_, HyperscanError>(inner as usize)
+      Ok::<_, HyperscanError>((inner as usize, *flags))
     })
     .await
-    .unwrap()? as *mut hs::hs_stream;
+    .unwrap()?;
 
     let live = LiveStream {
-      inner,
+      inner: inner as *mut hs::hs_stream,
       _ph: PhantomData,
     };
     Ok(StreamSink {
       live,
+      flags,
       scratch: self.scratch.clone(),
       matcher: self.matcher.clone(),
     })
@@ -242,8 +251,8 @@ impl<'db> CompressedStream<'db, AcceptMatches> {
     let p_matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(&mut matcher);
     let p_matcher_n = p_matcher as usize;
 
-    let inner: *mut hs::hs_stream = task::spawn_blocking(move || {
-      let Self { buf, .. } = unsafe { &*(s as *const Self) };
+    let (inner, flags) = task::spawn_blocking(move || {
+      let Self { buf, flags, .. } = unsafe { &*(s as *const Self) };
 
       let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit();
       HyperscanError::from_native(unsafe {
@@ -256,19 +265,20 @@ impl<'db> CompressedStream<'db, AcceptMatches> {
           p_matcher_n as *mut c_void,
         )
       })?;
-      Ok::<_, HyperscanError>(stream.as_mut_ptr() as usize)
+      Ok::<_, HyperscanError>((stream.as_mut_ptr() as usize, *flags))
     })
     .await
-    .unwrap()? as *mut hs::hs_stream;
+    .unwrap()?;
 
     let live = LiveStream {
-      inner,
+      inner: inner as *mut hs::hs_stream,
       _ph: PhantomData,
     };
 
     unsafe { &mut *p_matcher }.try_reset().await?;
     Ok(StreamSink {
       live,
+      flags,
       scratch,
       matcher,
     })
@@ -407,6 +417,7 @@ impl<'db> StreamOps for LiveStream<'db> {
 
 pub struct StreamSink<'db, S> {
   live: LiveStream<'db>,
+  flags: ScanFlags,
   scratch: Arc<Scratch<'db>>,
   matcher: Arc<StreamMatcher<S>>,
 }
@@ -432,6 +443,7 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
     });
     Ok(Self {
       live,
+      flags,
       scratch,
       matcher,
     })
@@ -446,6 +458,7 @@ impl<'db> ResourceOps for StreamSink<'db, AcceptMatches> {
         live,
         scratch,
         matcher,
+        ..
       } = unsafe { &mut *(s as *mut Self) };
       let matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(matcher);
       let matcher = matcher as usize;
@@ -472,6 +485,7 @@ impl<'db, S: HandleOps<OClone=S, Err=HyperscanError>> HandleOps for StreamSink<'
   async fn try_clone(&self) -> Result<Self, S::Err> {
     Ok(Self {
       live: self.live.try_clone().await?,
+      flags: self.flags,
       scratch: self.scratch.clone(),
       matcher: self.matcher.clone(),
     })
@@ -488,6 +502,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
         live,
         scratch,
         matcher,
+        flags,
       } = unsafe { &mut *(s as *mut Self) };
       let matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(matcher);
       let matcher = matcher as usize;
@@ -495,8 +510,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
       HyperscanError::from_native(unsafe {
         hs::hs_reset_stream(
           live.as_mut_native(),
-          /* FIXME: pass in ScanFlags!!!! */
-          ScanFlags::default().into_native(),
+          flags.into_native(),
           Arc::make_mut(scratch).as_mut_native(),
           Some(match_slice_stream),
           matcher as *mut c_void,
@@ -514,9 +528,10 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
     let s: *const Self = self;
     let s = s as usize;
 
-    let to = task::spawn_blocking(move || {
+    let (to, flags) = task::spawn_blocking(move || {
       let Self {
         live,
+        flags,
         scratch,
         matcher,
       } = unsafe { &mut *(s as *mut Self) };
@@ -533,7 +548,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
           matcher as *mut c_void,
         )
       })?;
-      Ok::<_, Self::Err>(to.as_mut_ptr() as usize)
+      Ok::<_, Self::Err>((to.as_mut_ptr() as usize, *flags))
     })
     .await
     .unwrap()?;
@@ -546,6 +561,7 @@ impl<'db> StreamOps for StreamSink<'db, AcceptMatches> {
 
     Ok(Self {
       live,
+      flags,
       scratch: self.scratch.clone(),
       matcher,
     })
@@ -592,6 +608,7 @@ impl<'db> StreamSink<'db, AcceptMatches> {
   ) -> Result<(), HyperscanError> {
     let data_len = data.native_len();
     let data = data.as_ptr() as usize;
+    self.flags = flags;
     let s: *mut Self = self;
     let s = s as usize;
 
@@ -600,6 +617,7 @@ impl<'db> StreamSink<'db, AcceptMatches> {
         live,
         scratch,
         matcher,
+        flags,
       } = unsafe { &mut *(s as *mut Self) };
       let matcher = Arc::make_mut(matcher);
       let p_matcher: *mut StreamMatcher<AcceptMatches> = matcher;
@@ -660,10 +678,11 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
   ) -> Result<CompressedStream<'db, S>, CompressionError> {
     let Self {
       live,
+      flags,
       scratch,
       matcher,
     } = self;
-    CompressedStream::compress(into, live, scratch, matcher).await
+    CompressedStream::compress(into, live, *flags, scratch, matcher).await
   }
 }
 
