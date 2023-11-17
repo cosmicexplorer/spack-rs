@@ -260,24 +260,28 @@ impl<'db> Scratch<'db> {
   /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
   /// let scratch = Pin::new(&mut scratch);
   ///
-  /// let scan_flags = ScanFlags::default();
-  /// let slices = vec![
+  /// let data: [ByteSlice<'_>; 4] = [
   ///   "aardvark".into(),
   ///   "imbibe".into(),
   ///   "leas".into(),
   ///   "dfeg".into(),
   /// ];
-  /// let data = VectoredByteSlices::from_slices(slices.as_ref());
-  /// let matches: Vec<(u32, Vec<&str>)> = scratch
-  ///   .scan_vectored(data, scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok((m.id.0, m.source.into_iter().map(|s| s.as_str()).collect())) })
+  /// let matches: Vec<(u32, String)> = scratch
+  ///   .scan_vectored((&data).into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .and_then(|m| async move {
+  ///     let joined = m.source.into_iter().map(|s| s.as_str()).collect::<Vec<_>>().concat();
+  ///     Ok((m.id.0, joined))
+  ///   })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(matches, vec![
-  ///   (0, vec!["a"]), (0, vec!["aa"]), (0, vec!["aardva"]),
-  ///   (3, vec!["aardvark", "imb"]), (3, vec!["aardvark", "imbib"]),
-  ///   (0, vec!["aardvark", "imbibe", "lea"]),
-  ///   (2, vec!["aardvark", "imbibe", "leas", "df"]),
+  ///   (0, "a".to_string()),
+  ///   (0, "aa".to_string()),
+  ///   (0, "aardva".to_string()),
+  ///   (3, "aardvarkimb".to_string()),
+  ///   (3, "aardvarkimbib".to_string()),
+  ///   (0, "aardvarkimbibelea".to_string()),
+  ///   (2, "aardvarkimbibeleasdf".to_string()),
   /// ]);
   /// # Ok(())
   /// # })}
