@@ -122,8 +122,6 @@ public:
   size_t size() const noexcept { return argv_.size(); }
   const re2::RE2::Arg *const *data() const noexcept { return argv_.data(); }
 
-  /* TODO: enable the user to override this functionality to return false for a
-   failed parse with a custom function like in our hyperscan wrapper! */
   static bool parse_string_view(const char *data, size_t len, void *dest) {
     StringView *dest_sv = reinterpret_cast<StringView *>(dest);
     dest_sv->data_ = data;
@@ -191,7 +189,7 @@ bool RE2Wrapper::find_and_consume(StringView *text) const {
 }
 
 bool RE2Wrapper::find_and_consume_n(StringView *text, StringView captures[],
-                                    size_t n) const {
+                                    const size_t n) const {
   MutableStringViewInternal tv(text);
   CapturesInternal argv(captures, n);
   return re2::RE2::FindAndConsumeN(tv.as_mutable(), *re_, argv.data(),

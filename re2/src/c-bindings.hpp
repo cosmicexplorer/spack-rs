@@ -122,10 +122,13 @@ public:
 
   bool full_match(StringView text) const;
   bool full_match_n(StringView text, StringView captures[], size_t n) const;
+
   bool partial_match(StringView text) const;
   bool partial_match_n(StringView text, StringView captures[], size_t n) const;
+
   bool consume(StringView *text) const;
   bool consume_n(StringView *text, StringView captures[], size_t n) const;
+
   bool find_and_consume(StringView *text) const;
   bool find_and_consume_n(StringView *text, StringView captures[],
                           size_t n) const;
