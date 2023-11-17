@@ -294,6 +294,7 @@ impl<'db> Scratch<'db> {
     * takes up more than pointer space! */
     static_assertions::assert_eq_size!([u8; 4], u32);
     static_assertions::assert_eq_size!(&u8, *const u8);
+    static_assertions::assert_eq_size!(&[u8; 4], *const u8);
     static_assertions::const_assert!(mem::size_of::<&[u8]>() > mem::size_of::<*const u8>());
 
     let (matcher, mut matches_rx) = VectoredSliceMatcher::new::<32, _>(data, &mut f);
@@ -335,7 +336,9 @@ impl<'db> ops::Drop for Scratch<'db> {
   }
 }
 
-/* This impl is necessary to employ Arc::make_mut() elsewhere! */
+/* This impl is necessary to employ Arc::make_mut() in our stream processing
+ * code! */
+/* FIXME: make .try_clone() sync? */
 impl<'db> Clone for Scratch<'db> {
   fn clone(&self) -> Self {
     let mut scratch_ptr = ptr::null_mut();
