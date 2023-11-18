@@ -211,7 +211,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}, state::*};
   /// use futures_util::TryStreamExt;
   /// use std::pin::Pin;
   ///
@@ -227,20 +227,24 @@ impl Database {
   /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
-  /// let matches: Vec<&str> = scratch
+  /// let matches: Vec<(u32, &str)> = scratch
   ///   .as_mut()
   ///   .scan("he\0llo".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
+  ///     Ok((id, source.as_str()))
+  ///   })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &["he\0ll"]);
+  /// assert_eq!(&matches, &[(2, "he\0ll")]);
   ///
-  /// let matches: Vec<&str> = scratch
+  /// let matches: Vec<(u32, &str)> = scratch
   ///   .scan("fr\0e\0edom".into(), scan_flags, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
+  ///     Ok((id, source.as_str()))
+  ///   })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &["fr\0e\0e"]);
+  /// assert_eq!(&matches, &[(1, "fr\0e\0e")]);
   /// # Ok(())
   /// # })}
   /// ```
