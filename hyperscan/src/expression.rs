@@ -33,7 +33,7 @@ use std::{
 ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
 ///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
 /// });
-/// let ext = ExprExt::default();
+/// let ext = ExprExt::from_min_length(2);
 /// let info = expr.ext_info(Flags::default(), &ext)?;
 /// assert_eq!(info, ExprInfo {
 ///   min_width: ExprWidth::parse_min_width(0),

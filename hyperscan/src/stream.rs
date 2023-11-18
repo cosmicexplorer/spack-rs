@@ -34,7 +34,7 @@ pub struct InputIndex(pub u32);
 /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
-/// let expr: Expression = r"\w+".parse()?;
+/// let expr: Expression = r"\b\w+\b".parse()?;
 /// let db = expr.compile(
 ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
 ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
@@ -59,13 +59,13 @@ pub struct InputIndex(pub u32);
 /// let results: Vec<(InputIndex, &str)> =
 ///   rx.map(|StreamMatch { input, range, .. }| (input, &msgs[range])).collect().await;
 /// assert_eq!(results, vec![
-///   (InputIndex(0), "a"), (InputIndex(0), "aa"), (InputIndex(0), "aar"), (InputIndex(0), "aard"), (InputIndex(0), "aardv"), (InputIndex(0), "aardva"), (InputIndex(0), "aardvar"), (InputIndex(0), "aardvark"),
-///   (InputIndex(1), "a"), (InputIndex(1), "as"), (InputIndex(1), "asd"), (InputIndex(1), "asdf"),
-///   (InputIndex(1), "w"), (InputIndex(1), "wa"), (InputIndex(1), "was"),
-///   (InputIndex(1), "a"),
-///   (InputIndex(1), "f"), (InputIndex(1), "fr"), (InputIndex(1), "fri"), (InputIndex(1), "frie"), (InputIndex(1), "frien"), (InputIndex(1), "friend"),
-///   (InputIndex(2), "a"), (InputIndex(2), "af"), (InputIndex(2), "aft"), (InputIndex(2), "afte"), (InputIndex(2), "after"),
-///   (InputIndex(2), "a"), (InputIndex(2), "al"), (InputIndex(2), "all"),
+///   (InputIndex(1), "aardvark"),
+///   (InputIndex(2), "asdf"),
+///   (InputIndex(2), "was"),
+///   (InputIndex(2), "a"),
+///   (InputIndex(2), "friend"),
+///   (InputIndex(3), "after"),
+///   (InputIndex(3), "all"),
 /// ]);
 /// # Ok(())
 /// # })}
@@ -631,6 +631,7 @@ impl<'db> StreamSink<'db, AcceptMatches> {
         flags,
       } = unsafe { &mut *(s as *mut Self) };
       let matcher = Arc::make_mut(matcher);
+      let _ = matcher.get_next_input_index();
       let p_matcher: *mut StreamMatcher<AcceptMatches> = matcher;
       let p_matcher = p_matcher as usize;
       HyperscanError::from_native(unsafe {
@@ -644,7 +645,6 @@ impl<'db> StreamSink<'db, AcceptMatches> {
           p_matcher as *mut c_void,
         )
       })?;
-      let _ = matcher.get_next_input_index();
       Ok(())
     })
     .await
@@ -659,7 +659,10 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
   /// use futures_util::StreamExt;
   ///
   /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+  /// let db = expr.compile(
+  ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
+  ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+  /// )?;
   ///
   /// let flags = ScanFlags::default();
   /// let Streamer { mut sink, mut rx } = Streamer::try_open((flags, &db, 32)).await?;
@@ -679,7 +682,7 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
   /// rx.close();
   /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
   /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
-  /// assert_eq!(results, vec!["a", "aa", "aardva"]);
+  /// assert_eq!(results, vec!["a", "aa", "a"]);
   /// # Ok(())
   /// # })}
   /// ```
@@ -712,7 +715,6 @@ impl<'db, S: Send+Sync> StreamSink<'db, S> {
 /// let msg = "aardvark";
 /// sink.scan(msg.as_bytes().into(), flags).await?;
 /// sink.try_drop().await?;
-/// // NB: This line is necessary to avoid a deadlock!!! (why??)
 /// std::mem::drop(sink);
 ///
 /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;

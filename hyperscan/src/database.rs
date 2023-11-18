@@ -137,9 +137,12 @@ impl Database {
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
+  /// // Example of providing ExprExt info (not available in ::compile()!):
+  /// let ext = ExprExt::from_min_length(1);
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
-  ///   .with_ids(&[ExprId(1), ExprId(2)]);
+  ///   .with_ids(&[ExprId(1), ExprId(2)])
+  ///   .with_exts(&[None, Some(&ext)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
