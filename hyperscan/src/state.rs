@@ -171,8 +171,9 @@ impl<'db> Scratch<'db> {
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
+  /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
-  ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
+  ///   .with_flags(&[flags, flags])
   ///   .with_ids(&[ExprId(1), ExprId(2)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
@@ -188,15 +189,15 @@ impl<'db> Scratch<'db> {
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &["a", "aa", "aardva"]);
+  /// assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   /// let matches: Vec<&str> = scratch
   ///   .as_mut()
-  ///   .scan("imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan("imbibbe".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
-  /// assert_eq!(&matches, &["imb", "imbib"]);
+  /// assert_eq!(&matches, &["b", "b", "bb"]);
   ///
   /// let ret = scratch
   ///   .scan("abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
@@ -251,8 +252,9 @@ impl<'db> Scratch<'db> {
   /// let a_plus: Expression = "a+".parse()?;
   /// let b_plus: Expression = "b+".parse()?;
   /// let asdf: Expression = "asdf".parse()?;
+  /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
   /// let expr_set = ExpressionSet::from_exprs(&[&a_plus, &b_plus, &asdf])
-  ///   .with_flags(&[Flags::UTF8, Flags::UTF8, Flags::UTF8])
+  ///   .with_flags(&[flags, flags, flags])
   ///   .with_ids(&[ExprId(0), ExprId(3), ExprId(2)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::VECTORED)?;
@@ -262,7 +264,7 @@ impl<'db> Scratch<'db> {
   ///
   /// let data: [ByteSlice<'_>; 4] = [
   ///   "aardvark".into(),
-  ///   "imbibe".into(),
+  ///   "imbibbe".into(),
   ///   "leas".into(),
   ///   "dfeg".into(),
   /// ];
@@ -277,11 +279,12 @@ impl<'db> Scratch<'db> {
   /// assert_eq!(matches, vec![
   ///   (0, "a".to_string()),
   ///   (0, "aa".to_string()),
-  ///   (0, "aardva".to_string()),
-  ///   (3, "aardvarkimb".to_string()),
-  ///   (3, "aardvarkimbib".to_string()),
-  ///   (0, "aardvarkimbibelea".to_string()),
-  ///   (2, "aardvarkimbibeleasdf".to_string()),
+  ///   (0, "a".to_string()),
+  ///   (3, "b".to_string()),
+  ///   (3, "b".to_string()),
+  ///   (3, "bb".to_string()),
+  ///   (0, "a".to_string()),
+  ///   (2, "asdf".to_string()),
   /// ]);
   /// # Ok(())
   /// # })}

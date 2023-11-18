@@ -154,7 +154,7 @@ impl<'a> VectoredByteSlices<'a> {
   pub fn index_range(&self, range: ops::Range<usize>) -> Option<Vec<ByteSlice<'a>>> {
     let ops::Range { start, end } = range;
     let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
-    let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end)?;
+    let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end - start)?;
     self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
   }
 }

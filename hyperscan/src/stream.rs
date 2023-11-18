@@ -34,17 +34,20 @@ pub struct InputIndex(pub u32);
 /// use hyperscan::{expression::*, flags::*, state::*, stream::*};
 /// use futures_util::StreamExt;
 ///
-/// let expr: Expression = "a+".parse()?;
-/// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+/// let expr: Expression = r"\w+".parse()?;
+/// let db = expr.compile(
+///   Flags::UTF8 | Flags::SOM_LEFTMOST,
+///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+/// )?;
 ///
 /// let flags = ScanFlags::default();
 /// let Streamer { mut sink, rx } = Streamer::try_open((flags, &db, 32)).await?;
 /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
 ///
-/// let msg1 = "aardvark";
+/// let msg1 = "aardvark ";
 /// sink.scan(msg1.as_bytes().into(), flags).await?;
 ///
-/// let msg2 = "asdf was a friend";
+/// let msg2 = "asdf was a friend ";
 /// sink.scan(msg2.as_bytes().into(), flags).await?;
 ///
 /// let msg3 = "after all";
@@ -56,10 +59,13 @@ pub struct InputIndex(pub u32);
 /// let results: Vec<(InputIndex, &str)> =
 ///   rx.map(|StreamMatch { input, range, .. }| (input, &msgs[range])).collect().await;
 /// assert_eq!(results, vec![
-///   (InputIndex(0), "a"), (InputIndex(0), "aa"), (InputIndex(0), "aardva"),
-///   (InputIndex(1), "aardvarka"), (InputIndex(1), "aardvarkasdf wa"),
-///   (InputIndex(1), "aardvarkasdf was a"), (InputIndex(2), "aardvarkasdf was a frienda"),
-///   (InputIndex(2), "aardvarkasdf was a friendafter a"),
+///   (InputIndex(0), "a"), (InputIndex(0), "aa"), (InputIndex(0), "aar"), (InputIndex(0), "aard"), (InputIndex(0), "aardv"), (InputIndex(0), "aardva"), (InputIndex(0), "aardvar"), (InputIndex(0), "aardvark"),
+///   (InputIndex(1), "a"), (InputIndex(1), "as"), (InputIndex(1), "asd"), (InputIndex(1), "asdf"),
+///   (InputIndex(1), "w"), (InputIndex(1), "wa"), (InputIndex(1), "was"),
+///   (InputIndex(1), "a"),
+///   (InputIndex(1), "f"), (InputIndex(1), "fr"), (InputIndex(1), "fri"), (InputIndex(1), "frie"), (InputIndex(1), "frien"), (InputIndex(1), "friend"),
+///   (InputIndex(2), "a"), (InputIndex(2), "af"), (InputIndex(2), "aft"), (InputIndex(2), "afte"), (InputIndex(2), "after"),
+///   (InputIndex(2), "a"), (InputIndex(2), "al"), (InputIndex(2), "all"),
 /// ]);
 /// # Ok(())
 /// # })}
