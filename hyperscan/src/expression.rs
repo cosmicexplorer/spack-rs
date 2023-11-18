@@ -501,3 +501,67 @@ impl ops::BitOrAssign for ExprExt {
     *self = self.bitor(rhs);
   }
 }
+
+#[derive(Debug, Clone)]
+pub struct LiteralSet<'a> {
+  ptrs: Vec<*const c_char>,
+  lens: Vec<usize>,
+  flags: Option<Vec<Flags>>,
+  ids: Option<Vec<ExprId>>,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> LiteralSet<'a> {
+  pub fn from_lits(lits: &[&'a Literal]) -> Self {
+    Self {
+      ptrs: lits.iter().map(|l| l.as_ptr()).collect(),
+      lens: lits.iter().map(|l| l.as_bytes().len()).collect(),
+      flags: None,
+      ids: None,
+      _ph: PhantomData,
+    }
+  }
+
+  pub fn with_flags(mut self, flags: &[Flags]) -> Self {
+    assert_eq!(self.ptrs.len(), flags.len());
+    self.flags = Some(flags.to_vec());
+    self
+  }
+
+  pub fn with_ids(mut self, ids: &[ExprId]) -> Self {
+    assert_eq!(self.ptrs.len(), ids.len());
+    self.ids = Some(ids.to_vec());
+    self
+  }
+
+  pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
+    Database::compile_multi_literal(&self, mode)
+  }
+
+  #[inline]
+  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+
+  #[inline]
+  pub(crate) fn literals_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
+
+  #[inline]
+  pub(crate) fn lengths_ptr(&self) -> *const usize { self.lens.as_ptr() }
+
+  #[inline]
+  pub(crate) fn flags_ptr(&self) -> *const c_uint {
+    self
+      .flags
+      .as_ref()
+      .map(|f| unsafe { mem::transmute(f.as_ptr()) })
+      .unwrap_or(ptr::null())
+  }
+
+  #[inline]
+  pub(crate) fn ids_ptr(&self) -> *const c_uint {
+    self
+      .ids
+      .as_ref()
+      .map(|i| unsafe { mem::transmute(i.as_ptr()) })
+      .unwrap_or(ptr::null())
+  }
+}

@@ -5,7 +5,7 @@
 
 use crate::{
   error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
-  expression::{Expression, ExpressionSet, Literal},
+  expression::{Expression, ExpressionSet, Literal, LiteralSet},
   flags::{Flags, Mode},
   hs,
   state::Platform,
@@ -200,6 +200,69 @@ impl Database {
             &mut compile_err,
           )
         }
+      },
+      compile_err,
+    )?;
+    Ok(Self(db))
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::pin::Pin;
+  ///
+  /// let hell_lit: Literal = "he\0ll".parse()?;
+  /// let free_lit: Literal = "fr\0e\0e".parse()?;
+  /// let lit_set = LiteralSet::from_lits(&[&hell_lit, &free_lit])
+  ///   .with_flags(&[Flags::default(), Flags::default()])
+  ///   .with_ids(&[ExprId(2), ExprId(1)]);
+  ///
+  /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
+  /// let mut scratch = Pin::new(&mut scratch);
+  ///
+  /// let scan_flags = ScanFlags::default();
+  /// let matches: Vec<&str> = scratch
+  ///   .as_mut()
+  ///   .scan("he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["he\0ll"]);
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan("fr\0e\0edom".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["fr\0e\0e"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn compile_multi_literal(
+    literal_set: &LiteralSet,
+    mode: Mode,
+  ) -> Result<Self, HyperscanCompileError> {
+    mode.validate_db_type()?;
+    let platform = Platform::get();
+
+    let mut db = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
+    HyperscanError::copy_from_native_compile_error(
+      unsafe {
+        hs::hs_compile_lit_multi(
+          literal_set.literals_ptr(),
+          literal_set.flags_ptr(),
+          literal_set.ids_ptr(),
+          literal_set.lengths_ptr(),
+          literal_set.num_elements(),
+          mode.into_native(),
+          platform.as_ref(),
+          &mut db,
+          &mut compile_err,
+        )
       },
       compile_err,
     )?;
