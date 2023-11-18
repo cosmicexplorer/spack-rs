@@ -5,7 +5,7 @@
 
 use crate::{
   error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
-  expression::{Expression, ExpressionSet},
+  expression::{Expression, ExpressionSet, Literal},
   flags::{Flags, Mode},
   hs,
   state::Platform,
@@ -69,6 +69,55 @@ impl Database {
         hs::hs_compile(
           expression.as_ptr(),
           flags,
+          mode,
+          platform.as_ref(),
+          &mut db,
+          &mut compile_err,
+        )
+      },
+      compile_err,
+    )?;
+    Ok(Self(db))
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::pin::Pin;
+  ///
+  /// let expr: Literal = "he\0ll".parse()?;
+  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
+  /// let scratch = Pin::new(&mut scratch);
+  ///
+  /// let scan_flags = ScanFlags::default();
+  /// let matches: Vec<&str> = scratch
+  ///   .scan("he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["he\0ll"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn compile_literal(
+    literal: &Literal,
+    flags: Flags,
+    mode: Mode,
+  ) -> Result<Self, HyperscanCompileError> {
+    let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
+    let platform = Platform::get();
+
+    let mut db = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
+    HyperscanError::copy_from_native_compile_error(
+      unsafe {
+        hs::hs_compile_lit(
+          literal.as_ptr(),
+          flags,
+          literal.as_bytes().len(),
           mode,
           platform.as_ref(),
           &mut db,

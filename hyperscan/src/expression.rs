@@ -123,6 +123,42 @@ impl str::FromStr for Expression {
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
 
+#[derive(Clone)]
+pub struct Literal(Vec<u8>);
+
+impl fmt::Debug for Literal {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_bytes();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "Literal({:?})", s),
+      Err(_) => write!(f, "Literal({:?})", b),
+    }
+  }
+}
+
+impl Literal {
+  #[inline]
+  pub fn as_bytes(&self) -> &[u8] { &self.0 }
+
+  #[inline]
+  pub(crate) fn as_ptr(&self) -> *const c_char {
+    unsafe { mem::transmute(self.as_bytes().as_ptr()) }
+  }
+
+  #[inline]
+  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
+
+  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
+    Database::compile_literal(self, flags, mode)
+  }
+}
+
+impl str::FromStr for Literal {
+  type Err = HyperscanCompileError;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ExprId(pub c_uint);
