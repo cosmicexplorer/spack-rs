@@ -30,11 +30,37 @@ impl MatchedSetInfo {
   }
 
   #[inline]
-  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
+  pub(crate) const fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
 
   #[inline]
   pub fn as_slice(&self) -> &[ExpressionIndex] {
-    unsafe { slice::from_raw_parts(mem::transmute(self.0.data()), self.0.size()) }
+    unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+  }
+
+  #[inline]
+  pub fn capacity(&self) -> usize { unsafe { self.0.capacity() } }
+
+  #[inline]
+  pub fn reserve(&mut self, to: usize) {
+    unsafe {
+      self.0.reserve(to);
+    }
+  }
+
+  #[inline]
+  pub fn len(&self) -> usize { unsafe { self.0.size() } }
+
+  #[inline]
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline]
+  unsafe fn data_pointer(&self) -> *const ExpressionIndex { mem::transmute(self.0.data()) }
+
+  #[inline]
+  pub fn clear_visible_elements(&mut self) {
+    unsafe {
+      self.0.clear_visible_elements();
+    }
   }
 }
 

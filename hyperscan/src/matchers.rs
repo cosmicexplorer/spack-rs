@@ -321,7 +321,7 @@ pub mod contiguous_slice {
     }
 
     #[inline]
-    pub(crate) fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
+    pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
 
     #[inline(always)]
     pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
@@ -399,7 +399,7 @@ pub mod vectored_slice {
       (s, matches_rx)
     }
 
-    pub(crate) fn parent_slices(&self) -> VectoredByteSlices<'data> { self.parent_slices }
+    pub fn parent_slices(&self) -> VectoredByteSlices<'data> { self.parent_slices }
 
     pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
       self.parent_slices.index_range(range).unwrap()

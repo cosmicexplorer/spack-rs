@@ -287,18 +287,21 @@ void MatchedSetInfo::clear() {
 }
 
 const int *MatchedSetInfo::data() const noexcept {
-  if (!matches_) {
-    return nullptr;
-  }
-  return matches_->data();
+  return get_mutable()->data();
 }
 
-size_t MatchedSetInfo::size() const noexcept {
-  if (!matches_) {
-    return 0;
-  }
-  return matches_->size();
+size_t MatchedSetInfo::size() const noexcept { return get_mutable()->size(); }
+
+size_t MatchedSetInfo::capacity() const noexcept {
+  return get_mutable()->capacity();
 }
+
+void MatchedSetInfo::clear_visible_elements() {
+  /* Avoids reallocating anything, but also resets size to 0. */
+  get_mutable()->clear();
+}
+
+void MatchedSetInfo::reserve(const size_t to) { get_mutable()->reserve(to); }
 
 SetWrapper::SetWrapper(const re2::RE2::Options &options,
                        re2::RE2::Anchor anchor)

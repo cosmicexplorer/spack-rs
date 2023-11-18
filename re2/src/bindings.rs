@@ -2936,6 +2936,18 @@ pub mod root {
       #[link_name = "\u{1}_ZNK14re2_c_bindings14MatchedSetInfo4sizeEv"]
       pub fn MatchedSetInfo_size(this: *const root::re2_c_bindings::MatchedSetInfo) -> usize;
     }
+    extern "C" {
+      #[link_name = "\u{1}_ZNK14re2_c_bindings14MatchedSetInfo8capacityEv"]
+      pub fn MatchedSetInfo_capacity(this: *const root::re2_c_bindings::MatchedSetInfo) -> usize;
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings14MatchedSetInfo22clear_visible_elementsEv"]
+      pub fn MatchedSetInfo_clear_visible_elements(this: *mut root::re2_c_bindings::MatchedSetInfo);
+    }
+    extern "C" {
+      #[link_name = "\u{1}_ZN14re2_c_bindings14MatchedSetInfo7reserveEm"]
+      pub fn MatchedSetInfo_reserve(this: *mut root::re2_c_bindings::MatchedSetInfo, to: usize);
+    }
     impl MatchedSetInfo {
       #[inline]
       pub unsafe fn clear(&mut self) { MatchedSetInfo_clear(self) }
@@ -2945,6 +2957,17 @@ pub mod root {
 
       #[inline]
       pub unsafe fn size(&self) -> usize { MatchedSetInfo_size(self) }
+
+      #[inline]
+      pub unsafe fn capacity(&self) -> usize { MatchedSetInfo_capacity(self) }
+
+      #[inline]
+      pub unsafe fn clear_visible_elements(&mut self) {
+        MatchedSetInfo_clear_visible_elements(self)
+      }
+
+      #[inline]
+      pub unsafe fn reserve(&mut self, to: usize) { MatchedSetInfo_reserve(self, to) }
     }
     #[repr(C)]
     #[derive(Debug)]

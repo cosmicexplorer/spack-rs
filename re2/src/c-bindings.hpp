@@ -157,20 +157,22 @@ public:
   MatchedSetInfo &operator=(const MatchedSetInfo &) = delete;
 
   void clear();
+
   const int *data() const noexcept;
   size_t size() const noexcept;
+  size_t capacity() const noexcept;
+  void clear_visible_elements();
+  void reserve(size_t to);
 
-  std::vector<int> *get_mutable() {
+  std::vector<int> *get_mutable() const {
     if (!matches_) {
       matches_ = new std::vector<int>();
     }
-    /* Avoids reallocating anything, but also resets size to 0. */
-    matches_->clear();
     return matches_;
   }
 
 private:
-  std::vector<int> *matches_;
+  mutable std::vector<int> *matches_;
 };
 
 class SetWrapper {
