@@ -11,7 +11,16 @@ use crate::{
   state::Platform,
 };
 
-use std::{mem::MaybeUninit, ops, os::raw::c_uint, pin::Pin, ptr};
+use libc;
+
+use std::{
+  ffi::CStr,
+  mem::MaybeUninit,
+  ops,
+  os::raw::{c_char, c_uint, c_void},
+  pin::Pin,
+  ptr,
+};
 
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
@@ -292,7 +301,7 @@ impl Database {
   /// assert!(db_size < 2000);
   /// # Ok(())
   /// # }
-  ///```
+  /// ```
   #[inline]
   pub fn database_size(&self) -> Result<usize, HyperscanError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
@@ -316,7 +325,7 @@ impl Database {
   /// assert!(stream_size < 20);
   /// # Ok(())
   /// # }
-  ///```
+  /// ```
   #[inline]
   pub fn stream_size(&self) -> Result<usize, HyperscanError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
@@ -325,6 +334,8 @@ impl Database {
     })?;
     Ok(unsafe { ret.assume_init() })
   }
+
+  pub fn info(&self) -> Result<DbInfo, HyperscanError> { DbInfo::extract_db_info(self) }
 
   #[inline]
   fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
@@ -338,3 +349,35 @@ impl ops::Drop for Database {
 
 unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
+
+#[derive(Debug, Clone)]
+pub struct DbInfo(pub String);
+
+impl DbInfo {
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
+  /// use hyperscan::{expression::*, flags::*, database::*};
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  /// let info = DbInfo::extract_db_info(&db)?;
+  /// assert_eq!(&info.0, "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanError> {
+    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_database_info(db.as_ref_native(), info.as_mut_ptr())
+    })?;
+    let info = unsafe { info.assume_init() };
+    let ret = unsafe { CStr::from_ptr(info) }
+      .to_string_lossy()
+      .to_string();
+    /* FIXME: make this work with whatever allocator was used! */
+    unsafe {
+      libc::free(info as *mut c_void);
+    }
+    Ok(Self(ret))
+  }
+}

@@ -15,6 +15,7 @@
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(async_fn_in_trait)]
 #![feature(impl_trait_projections)]
+#![feature(allocator_api)]
 #![allow(incomplete_features)]
 
 #[allow(unused, non_camel_case_types, clippy::all)]
@@ -33,6 +34,8 @@ pub mod expression;
 pub mod database;
 
 pub mod matchers;
+
+pub mod alloc;
 
 pub(crate) use bindings::root as hs;
 

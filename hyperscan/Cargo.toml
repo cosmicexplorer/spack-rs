@@ -34,6 +34,7 @@ async-stream.workspace  = true
 displaydoc.workspace    = true
 futures-core.workspace  = true
 futures-util.workspace  = true
+libc.workspace          = true
 num_enum.workspace      = true
 once_cell.workspace     = true
 parking_lot.workspace   = true
