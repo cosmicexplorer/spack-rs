@@ -35,3 +35,21 @@ pub mod database;
 pub mod matchers;
 
 pub(crate) use bindings::root as hs;
+
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// hyperscan::check_valid_platform()?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn check_valid_platform() -> Result<(), error::HyperscanError> {
+  error::HyperscanError::from_native(unsafe { hs::hs_valid_platform() })
+}
+
+///```
+/// let v = hyperscan::version().to_str().unwrap();
+/// assert!(v.starts_with("5.4.2 2023"));
+/// ```
+pub fn version() -> &'static std::ffi::CStr {
+  unsafe { std::ffi::CStr::from_ptr(hs::hs_version()) }
+}
