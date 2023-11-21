@@ -11,7 +11,7 @@ use crate::{
   state::Platform,
 };
 
-use std::{ops, os::raw::c_uint, pin::Pin, ptr};
+use std::{mem::MaybeUninit, ops, os::raw::c_uint, pin::Pin, ptr};
 
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
@@ -137,8 +137,10 @@ impl Database {
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
+  ///
   /// // Example of providing ExprExt info (not available in ::compile()!):
   /// let ext = ExprExt::from_min_length(1);
+  ///
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
   ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
   ///   .with_ids(&[ExprId(1), ExprId(2)])
@@ -276,6 +278,55 @@ impl Database {
     Ok(Self(db))
   }
 
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
+  /// use hyperscan::{expression::*, flags::*};
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  /// let db_size = db.database_size()?;
+  ///
+  /// // Size may vary across architectures:
+  /// assert_eq!(db_size, 936);
+  /// assert!(db_size > 500);
+  /// assert!(db_size < 2000);
+  /// # Ok(())
+  /// # }
+  ///```
+  #[inline]
+  pub fn database_size(&self) -> Result<usize, HyperscanError> {
+    let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_database_size(self.as_ref_native(), ret.as_mut_ptr())
+    })?;
+    Ok(unsafe { ret.assume_init() })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
+  /// use hyperscan::{expression::*, flags::*};
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+  /// let stream_size = db.stream_size()?;
+  ///
+  /// // Size may vary across architectures:
+  /// assert_eq!(stream_size, 18);
+  /// assert!(stream_size > 10);
+  /// assert!(stream_size < 20);
+  /// # Ok(())
+  /// # }
+  ///```
+  #[inline]
+  pub fn stream_size(&self) -> Result<usize, HyperscanError> {
+    let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_stream_size(self.as_ref_native(), ret.as_mut_ptr())
+    })?;
+    Ok(unsafe { ret.assume_init() })
+  }
+
+  #[inline]
   fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe { hs::hs_free_database(self.get_mut().as_mut_native()) })
   }

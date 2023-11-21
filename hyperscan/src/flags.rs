@@ -103,7 +103,7 @@ static_assertions::const_assert_eq!(hs::HS_MODE_BLOCK, hs::HS_MODE_NOSTREAM);
 impl Mode {
   /// Block scan (non-streaming) database.
   pub const BLOCK: Self = Self(hs::HS_MODE_BLOCK as u32);
-  /// Alias for [`BLOCK`].
+  /// Alias for [`BLOCK`](Self::BLOCK).
   pub const NOSTREAM: Self = Self(hs::HS_MODE_NOSTREAM as u32);
   /// Use full precision to track start of match offsets in stream state.
   ///
@@ -117,9 +117,10 @@ impl Mode {
   /// Use medium precision to track start of match offsets in
   /// stream state.
   ///
-  /// This mode will use less stream state than [`SOM_HORIZON_LARGE`]
-  /// and will limit start of match accuracy to offsets within 2^32 bytes of
-  /// the end of match offset reported.
+  /// This mode will use less stream state than
+  /// [`SOM_HORIZON_LARGE`](Self::SOM_HORIZON_LARGE) and will limit start of
+  /// match accuracy to offsets within 2^32 bytes of the end of match offset
+  /// reported.
   ///
   /// One of the `SOM_HORIZON_*` modes must be selected to use the
   /// [`Flags::SOM_LEFTMOST`] expression flag.
@@ -127,9 +128,10 @@ impl Mode {
   /// Use limited precision to track start of match offsets in
   /// stream state.
   ///
-  /// This mode will use less stream state than [`SOM_HORIZON_LARGE`] and
-  /// will limit start of match accuracy to offsets within 2^16 bytes of the
-  /// end of match offset reported.
+  /// This mode will use less stream state than
+  /// [`SOM_HORIZON_LARGE`](Self::SOM_HORIZON_LARGE) and will limit start of
+  /// match accuracy to offsets within 2^16 bytes of the end of match offset
+  /// reported.
   ///
   /// One of the `SOM_HORIZON_*` modes must be selected to use the
   /// [`Flags::SOM_LEFTMOST`] expression flag.
