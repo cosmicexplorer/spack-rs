@@ -164,7 +164,10 @@ impl Mode {
 
   #[inline]
   pub fn validate_against_flags(&self, flags: &Flags) -> Result<(), HyperscanFlagsError> {
-    if flags.contains(&Flags::SOM_LEFTMOST) && !self.any_som_horizon_mode_was_selected() {
+    if flags.contains(&Flags::SOM_LEFTMOST)
+      && !self.any_som_horizon_mode_was_selected()
+      && self.contains(&Self::STREAM)
+    {
       Err(HyperscanFlagsError::SomHorizonModeRequired)
     } else {
       Ok(())

@@ -15,17 +15,20 @@ use libc;
 
 use std::{
   ffi::CStr,
-  mem::MaybeUninit,
+  mem::{self, MaybeUninit},
   ops,
   os::raw::{c_char, c_uint, c_void},
   pin::Pin,
-  ptr,
+  ptr, slice,
 };
 
 #[derive(Debug)]
 pub struct Database(*mut hs::hs_database);
 
 impl Database {
+  #[inline]
+  pub const fn from_native(p: *mut hs::hs_database) -> Self { Self(p) }
+
   #[inline]
   pub(crate) const fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
 
@@ -86,7 +89,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self(db))
+    Ok(Self::from_native(db))
   }
 
   ///```
@@ -135,7 +138,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self(db))
+    Ok(Self::from_native(db))
   }
 
   ///```
@@ -217,7 +220,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self(db))
+    Ok(Self::from_native(db))
   }
 
   ///```
@@ -284,7 +287,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self(db))
+    Ok(Self::from_native(db))
   }
 
   ///```
@@ -335,7 +338,33 @@ impl Database {
     Ok(unsafe { ret.assume_init() })
   }
 
+  #[inline]
   pub fn info(&self) -> Result<DbInfo, HyperscanError> { DbInfo::extract_db_info(self) }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, state::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::pin::Pin;
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?.deserialize_db()?;
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
+  /// let scratch = Pin::new(&mut scratch);
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan("aadvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["a", "aa", "a"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  #[inline]
+  pub fn serialize(&self) -> Result<SerializedDb, HyperscanError> {
+    SerializedDb::serialize_db(self)
+  }
 
   #[inline]
   fn try_drop(self: Pin<&mut Self>) -> Result<(), HyperscanError> {
@@ -373,11 +402,132 @@ impl DbInfo {
     let info = unsafe { info.assume_init() };
     let ret = unsafe { CStr::from_ptr(info) }
       .to_string_lossy()
+      /* FIXME: avoid copying! */
       .to_string();
     /* FIXME: make this work with whatever allocator was used! */
     unsafe {
       libc::free(info as *mut c_void);
     }
     Ok(Self(ret))
+  }
+}
+
+pub struct SerializedDb(Box<[u8]>);
+
+impl SerializedDb {
+  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanError> {
+    let mut serialized: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    let mut length: MaybeUninit<usize> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_serialize_database(
+        db.as_ref_native(),
+        serialized.as_mut_ptr(),
+        length.as_mut_ptr(),
+      )
+    })?;
+    let serialized = unsafe { serialized.assume_init() };
+    let length = unsafe { length.assume_init() };
+
+    let data: &mut [u8] = unsafe { slice::from_raw_parts_mut(mem::transmute(serialized), length) };
+    /* FIXME: avoid copying! */
+    let ret: Box<[u8]> = data.to_vec().into_boxed_slice();
+    /* FIXME: make this work with whatever allocator was used! */
+    unsafe {
+      libc::free(serialized as *mut c_void);
+    }
+    Ok(Self(ret))
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
+  /// use hyperscan::{expression::*, flags::*};
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
+  /// let info = serialized_db.extract_db_info()?;
+  /// assert_eq!(&info.0, "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanError> {
+    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_serialized_database_info(self.as_ptr(), self.len(), info.as_mut_ptr())
+    })?;
+    let info = unsafe { info.assume_init() };
+    let ret = unsafe { CStr::from_ptr(info) }
+      .to_string_lossy()
+      /* FIXME: avoid copying! */
+      .to_string();
+    /* FIXME: make this work with whatever allocator was used! */
+    unsafe {
+      libc::free(info as *mut c_void);
+    }
+    Ok(DbInfo(ret))
+  }
+
+  #[inline]
+  const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
+
+  #[inline]
+  pub const fn len(&self) -> usize { self.0.len() }
+
+  pub fn deserialize_db(&self) -> Result<Database, HyperscanError> {
+    let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_deserialize_database(self.as_ptr(), self.len(), deserialized.as_mut_ptr())
+    })?;
+    let deserialized = unsafe { deserialized.assume_init() };
+    Ok(Database::from_native(deserialized))
+  }
+
+  pub fn deserialized_size(&self) -> Result<usize, HyperscanError> {
+    let mut deserialized_size: MaybeUninit<usize> = MaybeUninit::uninit();
+    HyperscanError::from_native(unsafe {
+      hs::hs_serialized_database_size(self.as_ptr(), self.len(), deserialized_size.as_mut_ptr())
+    })?;
+    let deserialized_size = unsafe { deserialized_size.assume_init() };
+    Ok(deserialized_size)
+  }
+
+  /// `db` must point to an allocation at least [`Self::deserialized_size()`] in
+  /// size!
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{hs, expression::*, flags::*, matchers::{*, contiguous_slice::*}, state::*, database::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::{mem, pin::Pin};
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
+  ///
+  /// // Allocate a vector with sufficient capacity for the deserialized db:
+  /// let mut db_data: Vec<u8> = Vec::with_capacity(serialized_db.deserialized_size()?);
+  /// let db = unsafe {
+  ///   let db_ptr: *mut hs::hs_database = mem::transmute(db_data.as_mut_ptr());
+  ///   serialized_db.deserialize_db_at(db_ptr)?;
+  ///   // Wrap in ManuallyDrop to avoid freeing memory owned by the `db_data` vector.
+  ///   mem::ManuallyDrop::new(Database::from_native(db_ptr))
+  /// };
+  ///
+  /// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
+  /// let scratch = Pin::new(&mut scratch);
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan("aadvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .try_collect()
+  ///   .await?;
+  /// assert_eq!(&matches, &["a", "aa", "a"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub unsafe fn deserialize_db_at(&self, db: *mut hs::hs_database_t) -> Result<(), HyperscanError> {
+    HyperscanError::from_native(hs::hs_deserialize_database_at(
+      self.as_ptr(),
+      self.len(),
+      db,
+    ))
   }
 }

@@ -37,7 +37,7 @@ pub mod matchers;
 
 pub mod alloc;
 
-pub(crate) use bindings::root as hs;
+pub use bindings::root as hs;
 
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
