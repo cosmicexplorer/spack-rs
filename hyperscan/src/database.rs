@@ -4,14 +4,13 @@
 //! ???
 
 use crate::{
+  alloc,
   error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
   flags::{Flags, Mode},
   hs,
   state::Platform,
 };
-
-use libc;
 
 use std::{
   ffi::CStr,
@@ -404,9 +403,8 @@ impl DbInfo {
       .to_string_lossy()
       /* FIXME: avoid copying! */
       .to_string();
-    /* FIXME: make this work with whatever allocator was used! */
     unsafe {
-      libc::free(info as *mut c_void);
+      alloc::misc_free_func(info as *mut c_void);
     }
     Ok(Self(ret))
   }
@@ -431,9 +429,8 @@ impl SerializedDb {
     let data: &mut [u8] = unsafe { slice::from_raw_parts_mut(mem::transmute(serialized), length) };
     /* FIXME: avoid copying! */
     let ret: Box<[u8]> = data.to_vec().into_boxed_slice();
-    /* FIXME: make this work with whatever allocator was used! */
     unsafe {
-      libc::free(serialized as *mut c_void);
+      alloc::misc_free_func(serialized as *mut c_void);
     }
     Ok(Self(ret))
   }
@@ -459,9 +456,8 @@ impl SerializedDb {
       .to_string_lossy()
       /* FIXME: avoid copying! */
       .to_string();
-    /* FIXME: make this work with whatever allocator was used! */
     unsafe {
-      libc::free(info as *mut c_void);
+      alloc::misc_free_func(info as *mut c_void);
     }
     Ok(DbInfo(ret))
   }
