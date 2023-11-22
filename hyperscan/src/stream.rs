@@ -9,7 +9,7 @@ use crate::{
   flags::ScanFlags,
   hs,
   matchers::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult},
-  state::{HandleOps, Ops, ResourceOps, Scratch},
+  state::Scratch,
 };
 
 use displaydoc::Display;
@@ -24,6 +24,22 @@ use std::{
   ptr,
   sync::Arc,
 };
+
+pub trait Ops {
+  type Err;
+}
+
+pub trait HandleOps: Ops {
+  type OClone;
+  async fn try_clone(&self) -> Result<Self::OClone, Self::Err>;
+}
+
+pub trait ResourceOps: Ops {
+  type OOpen;
+  type Params;
+  async fn try_open(p: Self::Params) -> Result<Self::OOpen, Self::Err>;
+  async fn try_drop(&mut self) -> Result<(), Self::Err>;
+}
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -150,19 +166,19 @@ impl<S: StreamOps<OClone=S>> StreamOps for StreamMatcher<S> {
   }
 }
 
-pub struct CompressedStream<'db, S> {
+pub struct CompressedStream<S> {
   pub buf: Vec<c_char>,
   pub flags: ScanFlags,
-  pub scratch: Arc<Scratch<'db>>,
+  pub scratch: Arc<Scratch>,
   pub matcher: Arc<StreamMatcher<S>>,
 }
 
-impl<'db, S: Send+Sync> CompressedStream<'db, S> {
-  pub(crate) async fn compress(
+impl<S: Send+Sync> CompressedStream<S> {
+  pub(crate) async fn compress<'db>(
     into: CompressReserveBehavior,
     live: &LiveStream<'db>,
     flags: ScanFlags,
-    scratch: &Arc<Scratch<'db>>,
+    scratch: &Arc<Scratch>,
     matcher: &Arc<StreamMatcher<S>>,
   ) -> Result<Self, CompressionError> {
     let live: *const LiveStream<'db> = live;
@@ -429,7 +445,7 @@ impl<'db> StreamOps for LiveStream<'db> {
 pub struct StreamSink<'db, S> {
   live: LiveStream<'db>,
   flags: ScanFlags,
-  scratch: Arc<Scratch<'db>>,
+  scratch: Arc<Scratch>,
   matcher: Arc<StreamMatcher<S>>,
 }
 

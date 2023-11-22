@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use std::{
   alloc::{Allocator, Layout},
   collections::HashMap,
-  mem,
+  mem, ops,
   os::raw::c_void,
   ptr::{self, NonNull},
   sync::Arc,
@@ -25,6 +25,14 @@ struct LayoutTracker {
 
 /* NB: NonNull<u8> being non-Send disqualifies this as a default impl! */
 unsafe impl Send for LayoutTracker {}
+
+impl ops::Drop for LayoutTracker {
+  fn drop(&mut self) {
+    if !self.layouts.is_empty() {
+      unreachable!("can't drop LayoutTracker with pending allocations!");
+    }
+  }
+}
 
 impl LayoutTracker {
   pub fn new(allocator: Arc<impl Allocator+'static>) -> Self {
@@ -185,7 +193,7 @@ pub fn set_stream_allocator(allocator: Arc<impl Allocator+'static>) -> Result<()
 ///```
 /// # #![feature(allocator_api)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, matchers::*, state::*};
+/// use hyperscan::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
 /// use std::{alloc::Global, pin::Pin, sync::Arc};
 ///
@@ -194,10 +202,10 @@ pub fn set_stream_allocator(allocator: Arc<impl Allocator+'static>) -> Result<()
 /// let expr: Expression = "(he)ll".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
 ///
-/// let mut scratch = Scratch::try_open(Pin::new(&db)).await?;
+/// let mut scratch = db.allocate_scratch()?;
 ///
 /// let matches: Vec<&str> = Pin::new(&mut scratch)
-///   .scan("hello".into(), ScanFlags::default(), |_| MatchResult::Continue)
+///   .scan(Pin::new(&db), "hello".into(), ScanFlags::default(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(m.source.as_str()) })
 ///   .try_collect()
 ///   .await?;

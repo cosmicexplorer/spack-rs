@@ -28,7 +28,7 @@ pub mod flags;
 
 pub mod state;
 
-pub mod stream;
+/* pub mod stream; */
 
 pub mod expression;
 
@@ -38,7 +38,7 @@ pub mod matchers;
 
 pub mod alloc;
 
-pub use bindings::root as hs;
+pub(crate) use bindings::root as hs;
 
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
