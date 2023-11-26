@@ -21,14 +21,14 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct Database(*mut hs::hs_database);
+#[repr(transparent)]
+pub struct Database(*mut NativeDb);
 
-#[allow(non_camel_case_types)]
 pub type NativeDb = hs::hs_database;
 
 impl Database {
   #[inline]
-  pub const fn from_native(p: *mut NativeDb) -> Self { Self(p) }
+  pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
 
   #[inline]
   pub(crate) const fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
@@ -97,7 +97,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self::from_native(db))
+    Ok(unsafe { Self::from_native(db) })
   }
 
   ///```
@@ -147,7 +147,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self::from_native(db))
+    Ok(unsafe { Self::from_native(db) })
   }
 
   ///```
@@ -230,7 +230,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self::from_native(db))
+    Ok(unsafe { Self::from_native(db) })
   }
 
   ///```
@@ -298,7 +298,7 @@ impl Database {
       },
       compile_err,
     )?;
-    Ok(Self::from_native(db))
+    Ok(unsafe { Self::from_native(db) })
   }
 
   ///```
@@ -487,9 +487,11 @@ impl SerializedDb {
       hs::hs_deserialize_database(self.as_ptr(), self.len(), deserialized.as_mut_ptr())
     })?;
     let deserialized = unsafe { deserialized.assume_init() };
-    Ok(Database::from_native(deserialized))
+    Ok(unsafe { Database::from_native(deserialized) })
   }
 
+  /// Return the size of the allocation necessary for a subsequent call to
+  /// [`Self::deserialize_db_at()`].
   pub fn deserialized_size(&self) -> Result<usize, HyperscanError> {
     let mut deserialized_size: MaybeUninit<usize> = MaybeUninit::uninit();
     HyperscanError::from_native(unsafe {
@@ -499,8 +501,12 @@ impl SerializedDb {
     Ok(deserialized_size)
   }
 
-  /// `db` must point to an allocation at least [`Self::deserialized_size()`] in
-  /// size!
+  /// Like [`Self::deserialize_db()`], but points into an existing allocation
+  /// instead of making a new allocation through the allocator from
+  /// [`crate::alloc::set_db_allocator()`]!
+  ///
+  /// **Safety: `db` must point to an allocation at least
+  /// [`Self::deserialized_size()`] in size!**
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
@@ -533,7 +539,7 @@ impl SerializedDb {
   /// # Ok(())
   /// # })}
   /// ```
-  pub unsafe fn deserialize_db_at(&self, db: *mut hs::hs_database_t) -> Result<(), HyperscanError> {
+  pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), HyperscanError> {
     HyperscanError::from_native(hs::hs_deserialize_database_at(
       self.as_ptr(),
       self.len(),
