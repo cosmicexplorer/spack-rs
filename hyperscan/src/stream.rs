@@ -19,7 +19,7 @@ use tokio::{
 
 use std::{
   future::Future,
-  ops,
+  mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr,
@@ -140,7 +140,7 @@ unsafe extern "C" fn match_slice_stream(
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct LiveStream(*mut hs::hs_stream);
+pub(crate) struct LiveStream(*mut hs::hs_stream);
 
 unsafe impl Send for LiveStream {}
 unsafe impl Sync for LiveStream {}
@@ -231,7 +231,8 @@ impl AsyncWrite for StreamSink {
       .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
   }
 
-  /* TODO: add vectored write support if vectored streaming databases ever exist! */
+  /* TODO: add vectored write support if vectored streaming databases ever
+   * exist! */
 }
 
 impl StreamSink {
@@ -290,6 +291,52 @@ impl StreamSink {
     .await
     .unwrap()
   }
+
+  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
+    let Self {
+      live,
+      scratch,
+      matcher,
+    } = self;
+    let live = live.try_clone()?;
+    let scratch = scratch.try_clone()?;
+    let matcher = matcher.clone();
+    Ok(Self {
+      live,
+      scratch,
+      matcher,
+    })
+  }
+
+  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanError> {
+    let Self {
+      live,
+      scratch,
+      matcher,
+    } = self;
+    live.try_clone_from(&source.live)?;
+    /* Scratch has no .try_clone_from() method: */
+    *scratch = source.scratch.try_clone()?;
+    matcher.clone_from(&source.matcher);
+    Ok(())
+  }
+
+  pub async fn reset(mut self, channel_size: usize) -> Result<Streamer, HyperscanError> {
+    self.flush_eod().await?;
+    self.live.try_reset()?;
+    self.matcher.handler.reset();
+
+    let (tx, rx) = mpsc::channel(channel_size);
+    self.matcher.matches_tx = tx;
+
+    Ok(Streamer { sink: self, rx })
+  }
+}
+
+impl Clone for StreamSink {
+  fn clone(&self) -> Self { self.try_clone().unwrap() }
+
+  fn clone_from(&mut self, source: &Self) { self.try_clone_from(source).unwrap(); }
 }
 
 /* impl<'db, S: Send+Sync> StreamSink<'db, S> { */
@@ -371,7 +418,9 @@ pub struct Streamer {
 }
 
 impl Streamer {
-  pub fn new<S: StreamScanner+'static>(
+  pub const DEFAULT_CHANNEL_SIZE: usize = 32;
+
+  pub fn open<S: StreamScanner+'static>(
     db: &Database,
     scratch: Scratch,
     channel_size: usize,
@@ -391,16 +440,38 @@ impl Streamer {
     })
   }
 
-  pub async fn reset(&mut self, channel_size: usize) -> Result<(), HyperscanError> {
-    self.sink.flush_eod().await?;
-    self.sink.live.try_reset()?;
-    self.sink.matcher.handler.reset();
+  pub fn try_clone(&self, channel_size: usize) -> Result<Self, HyperscanError> {
+    let mut sink = self.sink.try_clone()?;
+
+    let (tx, rx) = mpsc::channel(channel_size);
+    sink.matcher.matches_tx = tx;
+
+    Ok(Self { sink, rx })
+  }
+
+  pub fn try_clone_from(
+    &mut self,
+    source: &Self,
+    channel_size: usize,
+  ) -> Result<(), HyperscanError> {
+    self.sink.try_clone_from(&source.sink)?;
 
     let (tx, rx) = mpsc::channel(channel_size);
     self.sink.matcher.matches_tx = tx;
+
     self.rx = rx;
 
     Ok(())
+  }
+}
+
+impl Clone for Streamer {
+  fn clone(&self) -> Self { self.try_clone(Self::DEFAULT_CHANNEL_SIZE).unwrap() }
+
+  fn clone_from(&mut self, source: &Self) {
+    self
+      .try_clone_from(source, Self::DEFAULT_CHANNEL_SIZE)
+      .unwrap();
   }
 }
 
