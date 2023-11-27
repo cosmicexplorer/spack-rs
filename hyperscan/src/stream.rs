@@ -247,7 +247,7 @@ impl AsyncWrite for StreamSink {
             slice::from_raw_parts(buf_ptr, buf_len)
           }))
           .and_then(move |()| async move { Ok(buf_len) })
-          .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+          .map_err(io::Error::other),
       );
 
       if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
@@ -279,11 +279,8 @@ impl AsyncWrite for StreamSink {
       Poll::Ready(ret)
     } else {
       let s: *mut Self = self.as_mut().get_mut();
-      let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
-        unsafe { &mut *s }
-          .flush_eod()
-          .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
-      );
+      let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> =
+        Box::pin(unsafe { &mut *s }.flush_eod().map_err(io::Error::other));
 
       if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
         return Poll::Ready(ret);
@@ -459,8 +456,9 @@ impl Clone for StreamSink {
 /* } */
 
 ///```
+/// # #![feature(io_error_downcast)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
+/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
 /// use futures_util::StreamExt;
 /// use tokio::io::AsyncWriteExt;
 ///
@@ -468,25 +466,32 @@ impl Clone for StreamSink {
 /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 /// let scratch = db.allocate_scratch()?;
 ///
-/// struct S;
+/// struct S(usize);
 /// impl StreamScanner for S {
-///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-///   fn new() -> Self where Self: Sized { Self }
-///   fn reset(&mut self) {}
-///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult {
+///     if self.0 < 2 { self.0 += 1; MatchResult::Continue } else { MatchResult::CeaseMatching }
+///   }
+///   fn new() -> Self where Self: Sized { Self(0) }
+///   fn reset(&mut self) { self.0 = 0; }
+///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self(self.0)) }
 /// }
 ///
 /// let Streamer { mut sink, rx } = Streamer::open::<S>(&db, scratch, 32)?;
 /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
 ///
 /// let msg = "aardvark";
-/// sink.write_all(msg.as_bytes()).await.unwrap();
+/// if let Err(e) = sink.write_all(msg.as_bytes()).await {
+///   let e = e.downcast::<HyperscanError>().unwrap();
+///   assert_eq!(*e, HyperscanError::ScanTerminated);
+/// } else { unreachable!(); }
 /// sink.shutdown().await.unwrap();
+/// // Necessary in order for `rx` to avoid blocking by dropping the sender handle:
 /// std::mem::drop(sink);
+/// // (Alternatively, we could call `rx.close()` before converting into a ReceiverStream.)
 ///
 /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
-/// assert_eq!(results, vec!["a", "aa", "aardva"]);
-///
+/// // NB: results have no third "aardva" result because of the early CeaseMatching!
+/// assert_eq!(results, vec!["a", "aa"]);
 /// # Ok(())
 /// # })}
 /// ```
