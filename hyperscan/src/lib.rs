@@ -21,24 +21,16 @@
 
 #[allow(unused, non_camel_case_types, clippy::all)]
 mod bindings;
-
-pub mod error;
-
-pub mod flags;
-
-pub mod state;
-
-/* pub mod stream; */
-
-pub mod expression;
-
-pub mod database;
-
-pub mod matchers;
+pub(crate) use bindings::root as hs;
 
 pub mod alloc;
-
-pub(crate) use bindings::root as hs;
+pub mod database;
+pub mod error;
+pub mod expression;
+pub mod flags;
+pub mod matchers;
+pub mod state;
+pub mod stream;
 
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {

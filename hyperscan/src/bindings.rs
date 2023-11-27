@@ -567,6 +567,26 @@ pub mod root {
     ) -> root::hs_error_t;
   }
   extern "C" {
+    pub fn hs_direct_flush_stream(
+      id: *mut root::hs_stream_t,
+      scratch: *mut root::hs_scratch_t,
+      onEvent: root::match_event_handler,
+      ctxt: *mut ::std::os::raw::c_void,
+    ) -> root::hs_error_t;
+  }
+  extern "C" {
+    pub fn hs_direct_free_stream(id: *mut root::hs_stream_t) -> root::hs_error_t;
+  }
+  extern "C" {
+    pub fn hs_direct_reset_stream(id: *mut root::hs_stream_t) -> root::hs_error_t;
+  }
+  extern "C" {
+    pub fn hs_direct_reset_and_copy_stream(
+      to_id: *mut root::hs_stream_t,
+      from_id: *const root::hs_stream_t,
+    ) -> root::hs_error_t;
+  }
+  extern "C" {
     pub fn hs_reset_stream(
       id: *mut root::hs_stream_t,
       flags: ::std::os::raw::c_uint,

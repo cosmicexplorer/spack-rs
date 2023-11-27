@@ -301,17 +301,18 @@ pub mod contiguous_slice {
 
   pub(crate) struct SliceMatcher<'data, 'code> {
     parent_slice: ByteSlice<'data>,
-    matches_tx: mpsc::Sender<Match<'data>>,
+    matches_tx: mpsc::UnboundedSender<Match<'data>>,
     handler: &'code mut dyn Scanner<'data>,
   }
 
   impl<'data, 'code> SliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<const N: usize, F: Scanner<'data>>(
+    pub fn new<F: Scanner<'data>>(
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
-    ) -> (Self, mpsc::Receiver<Match<'data>>) {
-      let (matches_tx, matches_rx) = mpsc::channel(N);
+    ) -> (Self, mpsc::UnboundedReceiver<Match<'data>>) {
+      /* FIXME: make these unbounded!!! */
+      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
       let s = Self {
         parent_slice,
         matches_tx,
@@ -329,7 +330,7 @@ pub mod contiguous_slice {
     }
 
     #[inline(always)]
-    pub fn push_new_match(&self, m: Match<'data>) { self.matches_tx.blocking_send(m).unwrap(); }
+    pub fn push_new_match(&self, m: Match<'data>) { self.matches_tx.send(m).unwrap(); }
 
     #[inline(always)]
     pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
@@ -380,17 +381,18 @@ pub mod vectored_slice {
 
   pub(crate) struct VectoredSliceMatcher<'data, 'code> {
     parent_slices: VectoredByteSlices<'data>,
-    matches_tx: mpsc::Sender<VectoredMatch<'data>>,
+    matches_tx: mpsc::UnboundedSender<VectoredMatch<'data>>,
     handler: &'code mut dyn VectorScanner<'data>,
   }
 
   impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<const N: usize, F: VectorScanner<'data>>(
+    pub fn new<F: VectorScanner<'data>>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
-    ) -> (Self, mpsc::Receiver<VectoredMatch<'data>>) {
-      let (matches_tx, matches_rx) = mpsc::channel(N);
+    ) -> (Self, mpsc::UnboundedReceiver<VectoredMatch<'data>>) {
+      /* FIXME: make these unbounded!!! */
+      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
       let s = Self {
         parent_slices,
         matches_tx,
@@ -406,9 +408,7 @@ pub mod vectored_slice {
     }
 
     #[inline(always)]
-    pub fn push_new_match(&mut self, m: VectoredMatch<'data>) {
-      self.matches_tx.blocking_send(m).unwrap();
-    }
+    pub fn push_new_match(&mut self, m: VectoredMatch<'data>) { self.matches_tx.send(m).unwrap(); }
 
     #[inline(always)]
     pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }

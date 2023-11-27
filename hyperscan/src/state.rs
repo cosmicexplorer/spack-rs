@@ -64,13 +64,12 @@ impl Platform {
 }
 
 #[derive(Debug)]
-pub struct Scratch {
-  inner: Option<NonNull<hs::hs_scratch>>,
-}
+#[repr(transparent)]
+pub struct Scratch(Option<NonNull<hs::hs_scratch>>);
 
 impl Scratch {
   #[inline]
-  pub const fn new() -> Self { Self { inner: None } }
+  pub const fn new() -> Self { Self(None) }
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
@@ -110,22 +109,22 @@ impl Scratch {
   /// # })}
   /// ```
   pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanError> {
-    let mut scratch_ptr = self.inner.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
+    let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
     HyperscanError::from_native(unsafe {
       hs::hs_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
     })?;
-    self.inner = NonNull::new(scratch_ptr);
+    self.0 = NonNull::new(scratch_ptr);
     Ok(())
   }
 
   #[inline]
   pub(crate) fn as_ref_native(&self) -> Option<&hs::hs_scratch> {
-    self.inner.map(|p| unsafe { p.as_ref() })
+    self.0.map(|p| unsafe { p.as_ref() })
   }
 
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> Option<&mut hs::hs_scratch> {
-    self.inner.map(|mut p| unsafe { p.as_mut() })
+    self.0.map(|mut p| unsafe { p.as_mut() })
   }
 
   pub fn get_size(&self) -> Result<usize, HyperscanError> {
@@ -225,7 +224,7 @@ impl Scratch {
     flags: ScanFlags,
     mut f: F,
   ) -> impl Stream<Item=Result<Match<'data>, HyperscanError>>+'data {
-    let (matcher, mut matches_rx) = SliceMatcher::new::<32, _>(data, &mut f);
+    let (matcher, mut matches_rx) = SliceMatcher::new(data, &mut f);
 
     let ctx = Self::into_slice_ctx(matcher);
     let scratch = Self::into_scratch(self);
@@ -319,7 +318,7 @@ impl Scratch {
     static_assertions::assert_eq_size!(&[u8; 4], *const u8);
     static_assertions::const_assert!(mem::size_of::<&[u8]>() > mem::size_of::<*const u8>());
 
-    let (matcher, mut matches_rx) = VectoredSliceMatcher::new::<32, _>(data, &mut f);
+    let (matcher, mut matches_rx) = VectoredSliceMatcher::new(data, &mut f);
 
     let ctx = Self::into_vectored_ctx(matcher);
     let scratch = Self::into_scratch(self);
@@ -359,14 +358,12 @@ impl Scratch {
       Some(p) => {
         let mut scratch_ptr = ptr::null_mut();
         HyperscanError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
-        Ok(Self {
-          inner: NonNull::new(scratch_ptr),
-        })
+        Ok(Self(NonNull::new(scratch_ptr)))
       },
     }
   }
 
-  pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanError> {
     if let Some(p) = self.as_mut_native() {
       HyperscanError::from_native(unsafe { hs::hs_free_scratch(p) })?;
     }
@@ -374,14 +371,16 @@ impl Scratch {
   }
 }
 
-impl ops::Drop for Scratch {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
-}
-
-/* This impl is necessary to employ Arc::make_mut() in our stream processing
- * code! */
 impl Clone for Scratch {
   fn clone(&self) -> Self { self.try_clone().unwrap() }
+}
+
+impl ops::Drop for Scratch {
+  fn drop(&mut self) {
+    unsafe {
+      self.try_drop().unwrap();
+    }
+  }
 }
 
 unsafe impl Send for Scratch {}

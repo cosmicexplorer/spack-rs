@@ -378,14 +378,17 @@ impl Database {
     SerializedDb::serialize_db(self)
   }
 
-  #[inline]
-  pub fn try_drop(&mut self) -> Result<(), HyperscanError> {
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanError> {
     HyperscanError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
   }
 }
 
 impl ops::Drop for Database {
-  fn drop(&mut self) { self.try_drop().unwrap(); }
+  fn drop(&mut self) {
+    unsafe {
+      self.try_drop().unwrap();
+    }
+  }
 }
 
 unsafe impl Send for Database {}

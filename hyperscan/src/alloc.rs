@@ -1,8 +1,6 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! **TODO: this isn't really used anywhere yet!**
-
 use crate::{error::HyperscanError, hs};
 
 use libc;
