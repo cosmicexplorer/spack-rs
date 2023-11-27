@@ -74,10 +74,10 @@ pub mod versions {
     use super::hex;
 
     pub const RE2_PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/hyperscan-patch.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/hs-native-fix.tar.gz";
     pub const RE2_PATCHES_SHA256SUM: [u8; 32] =
-      hex!("4b12e5bb806f0da42004c7d039f4bf96d3f082ea2747bd612d4205c9cfdec856");
-    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-hyperscan-patch";
+      hex!("e23ba7a64c931da32ee4787cb266a818a3acfdf95e4de8384cf32d9b7756c56d");
+    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-hs-native-fix";
   }
 
   /// The most recently released version of spack.

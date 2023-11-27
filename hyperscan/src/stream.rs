@@ -10,7 +10,7 @@ use crate::{
   state::Scratch,
 };
 
-use futures_util::pin_mut;
+use futures_util::TryFutureExt;
 use tokio::{
   io::{self, AsyncWrite},
   sync::mpsc,
@@ -19,16 +19,16 @@ use tokio::{
 
 use std::{
   future::Future,
-  mem, ops,
+  ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
-  ptr,
-  task::{Context, Poll},
+  ptr, slice,
+  task::{ready, Context, Poll},
 };
 
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, state::*, stream::*};
+/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
 /// use futures_util::StreamExt;
 ///
 /// let expr: Expression = r"\b\w+\b".parse()?;
@@ -36,20 +36,28 @@ use std::{
 ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
 ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
 /// )?;
+/// let scratch = db.allocate_scratch()?;
 ///
-/// let flags = ScanFlags::default();
-/// let Streamer { mut sink, rx } = Streamer::try_open((flags, &db, 32)).await?;
+/// struct S;
+/// impl StreamScanner for S {
+///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+///   fn new() -> Self where Self: Sized { Self }
+///   fn reset(&mut self) {}
+///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+/// }
+///
+/// let Streamer { mut sink, rx } = Streamer::open::<S>(&db, scratch, 32)?;
 /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
 ///
 /// let msg1 = "aardvark ";
-/// sink.scan(msg1.as_bytes().into(), flags).await?;
+/// sink.scan(msg1.as_bytes().into()).await?;
 ///
 /// let msg2 = "asdf was a friend ";
-/// sink.scan(msg2.as_bytes().into(), flags).await?;
+/// sink.scan(msg2.as_bytes().into()).await?;
 ///
 /// let msg3 = "after all";
-/// sink.scan(msg3.as_bytes().into(), flags).await?;
-/// sink.try_drop().await?;
+/// sink.scan(msg3.as_bytes().into()).await?;
+/// sink.flush_eod().await?;
 /// std::mem::drop(sink);
 ///
 /// let msgs: String = [msg1, msg2, msg3].concat();
@@ -207,28 +215,83 @@ pub struct StreamSink {
   live: LiveStream,
   scratch: Scratch,
   matcher: StreamMatcher,
+  write_future: Option<(*const u8, Pin<Box<dyn Future<Output=io::Result<usize>>>>)>,
+  shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>,
 }
 
 impl AsyncWrite for StreamSink {
-  fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-    let fut = self.get_mut().scan(ByteSlice::from_slice(buf));
-    pin_mut!(fut);
-    fut
-      .poll(cx)
-      .map_ok(|()| buf.len())
-      .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+  fn poll_write(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+    buf: &[u8],
+  ) -> Poll<io::Result<usize>> {
+    if self.write_future.is_some() {
+      let mut s = self.as_mut();
+
+      let (p, fut) = s.write_future.as_mut().unwrap();
+      /* Sequential .poll_write() calls MUST be for the same buffer! */
+      assert_eq!(*p, buf.as_ptr());
+
+      let ret = ready!(fut.as_mut().poll(cx));
+
+      s.write_future = None;
+
+      Poll::Ready(ret)
+    } else {
+      let s: *mut Self = self.as_mut().get_mut();
+      let buf_ptr = buf.as_ptr();
+      let buf_len = buf.len();
+      let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
+        unsafe { &mut *s }
+          .scan(ByteSlice::from_slice(unsafe {
+            slice::from_raw_parts(buf_ptr, buf_len)
+          }))
+          .and_then(move |()| async move { Ok(buf_len) })
+          .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+      );
+
+      if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+        return Poll::Ready(ret);
+      }
+
+      let _ = self.write_future.insert((buf_ptr, fut));
+
+      Poll::Pending
+    }
   }
 
   fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
     Poll::Ready(Ok(()))
   }
 
-  fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-    let fut = self.get_mut().flush_eod();
-    pin_mut!(fut);
-    fut
-      .poll(cx)
-      .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+  fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    if self.shutdown_future.is_some() {
+      let ret = ready!(self
+        .as_mut()
+        .shutdown_future
+        .as_mut()
+        .unwrap()
+        .as_mut()
+        .poll(cx));
+
+      self.shutdown_future = None;
+
+      Poll::Ready(ret)
+    } else {
+      let s: *mut Self = self.as_mut().get_mut();
+      let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
+        unsafe { &mut *s }
+          .flush_eod()
+          .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+      );
+
+      if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+        return Poll::Ready(ret);
+      }
+
+      let _ = self.shutdown_future.insert(fut);
+      Poll::Pending
+    }
   }
 
   /* TODO: add vectored write support if vectored streaming databases ever
@@ -247,6 +310,7 @@ impl StreamSink {
         live,
         scratch,
         matcher,
+        ..
       } = unsafe { &mut *(s as *mut Self) };
       let p_matcher: *mut StreamMatcher = matcher;
       let p_matcher = p_matcher as usize;
@@ -276,6 +340,7 @@ impl StreamSink {
         live,
         scratch,
         matcher,
+        ..
       } = unsafe { &mut *(s as *mut Self) };
       let p_matcher: *mut StreamMatcher = matcher;
       let p_matcher = p_matcher as usize;
@@ -297,6 +362,7 @@ impl StreamSink {
       live,
       scratch,
       matcher,
+      ..
     } = self;
     let live = live.try_clone()?;
     let scratch = scratch.try_clone()?;
@@ -305,6 +371,8 @@ impl StreamSink {
       live,
       scratch,
       matcher,
+      write_future: None,
+      shutdown_future: None,
     })
   }
 
@@ -313,6 +381,7 @@ impl StreamSink {
       live,
       scratch,
       matcher,
+      ..
     } = self;
     live.try_clone_from(&source.live)?;
     /* Scratch has no .try_clone_from() method: */
@@ -391,19 +460,28 @@ impl Clone for StreamSink {
 
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, state::*, stream::*};
+/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
 /// use futures_util::StreamExt;
+/// use tokio::io::AsyncWriteExt;
 ///
 /// let expr: Expression = "a+".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+/// let scratch = db.allocate_scratch()?;
 ///
-/// let flags = ScanFlags::default();
-/// let Streamer { mut sink, rx } = Streamer::try_open((flags, &db, 32)).await?;
+/// struct S;
+/// impl StreamScanner for S {
+///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+///   fn new() -> Self where Self: Sized { Self }
+///   fn reset(&mut self) {}
+///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+/// }
+///
+/// let Streamer { mut sink, rx } = Streamer::open::<S>(&db, scratch, 32)?;
 /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx);
 ///
 /// let msg = "aardvark";
-/// sink.scan(msg.as_bytes().into(), flags).await?;
-/// sink.try_drop().await?;
+/// sink.write_all(msg.as_bytes()).await.unwrap();
+/// sink.shutdown().await.unwrap();
 /// std::mem::drop(sink);
 ///
 /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
@@ -435,6 +513,8 @@ impl Streamer {
         live,
         scratch,
         matcher,
+        write_future: None,
+        shutdown_future: None,
       },
       rx,
     })
