@@ -316,6 +316,58 @@ impl StreamSink {
   /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
+  ///
+  /// let expr: Expression = "asdf$".parse()?;
+  /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+  /// let scratch = db.allocate_scratch()?;
+  ///
+  /// struct S;
+  /// impl StreamScanner for S {
+  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+  ///   fn new() -> Self where Self: Sized { Self }
+  ///   fn reset(&mut self) {}
+  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+  /// }
+  ///
+  /// let Streamer { mut sink, rx } = Streamer::open::<S>(&db, scratch)?;
+  /// let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+  ///
+  /// sink.write_all(b"asdf").await.unwrap();
+  /// let Streamer { sink: mut sink2, rx: rx2 } = sink.reset_flush().await?;
+  /// let rx2 = tokio_stream::wrappers::UnboundedReceiverStream::new(rx2);
+  /// sink2.write_all(b"asdf").await.unwrap();
+  /// let Streamer { sink: mut sink3, rx: rx3 } = sink2.reset_no_flush()?;
+  /// let rx3 = tokio_stream::wrappers::UnboundedReceiverStream::new(rx3);
+  /// sink3.write_all(b"asdf").await.unwrap();
+  /// sink3.shutdown().await.unwrap();
+  /// std::mem::drop(sink3);
+  ///
+  /// let m1: Vec<_> = rx.collect().await;
+  /// let m2: Vec<_> = rx2.collect().await;
+  /// let m3: Vec<_> = rx3.collect().await;
+  /// assert!(!m1.is_empty());
+  /// // This will be empty, because .reset_no_flush() was called on sink2
+  /// // and the pattern "asdf$" requires matching against the end of data:
+  /// assert!(m2.is_empty());
+  /// assert!(!m3.is_empty());
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn reset_no_flush(mut self) -> Result<Streamer, HyperscanError> {
+    self.live.try_reset()?;
+    self.matcher.handler.reset();
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    self.matcher.matches_tx = tx;
+
+    Ok(Streamer { sink: self, rx })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
+  /// use futures_util::StreamExt;
+  /// use tokio::io::AsyncWriteExt;
   /// use std::ops;
   ///
   /// let expr: Literal = "asdf".parse()?;
@@ -337,7 +389,7 @@ impl StreamSink {
   /// let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
   ///
   /// sink.write_all(b"asdf..").await.unwrap();
-  /// let Streamer { sink: mut sink2, rx: rx2 } = sink.reset().await?;
+  /// let Streamer { sink: mut sink2, rx: rx2 } = sink.reset_flush().await?;
   /// sink2.write_all(b"..asdf").await.unwrap();
   /// sink2.shutdown().await.unwrap();
   /// std::mem::drop(sink2);
@@ -352,15 +404,9 @@ impl StreamSink {
   /// # Ok(())
   /// # })}
   /// ```
-  pub async fn reset(mut self) -> Result<Streamer, HyperscanError> {
+  pub async fn reset_flush(mut self) -> Result<Streamer, HyperscanError> {
     self.flush_eod().await?;
-    self.live.try_reset()?;
-    self.matcher.handler.reset();
-
-    let (tx, rx) = mpsc::unbounded_channel();
-    self.matcher.matches_tx = tx;
-
-    Ok(Streamer { sink: self, rx })
+    self.reset_no_flush()
   }
 }
 
