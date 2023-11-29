@@ -3,7 +3,7 @@
 
 use crate::{
   database::Database,
-  error::HyperscanError,
+  error::{CompressionError, HyperscanError},
   flags::ScanFlags,
   hs,
   matchers::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult},
@@ -693,6 +693,11 @@ impl Streamer {
   pub async fn reset_flush(&mut self) -> Result<(), HyperscanError> {
     self.sink.reset_flush().await
   }
+
+  #[inline]
+  fn sink_pin(self: Pin<&mut Self>) -> Pin<&mut StreamSink> {
+    unsafe { self.map_unchecked_mut(|s| &mut s.sink) }
+  }
 }
 
 impl Clone for Streamer {
@@ -703,21 +708,53 @@ impl Clone for Streamer {
 
 impl AsyncWrite for Streamer {
   fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-    unsafe { self.map_unchecked_mut(|s| &mut s.sink) }.poll_write(cx, buf)
+    self.sink_pin().poll_write(cx, buf)
   }
 
   fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-    unsafe { self.map_unchecked_mut(|s| &mut s.sink) }.poll_flush(cx)
+    self.sink_pin().poll_flush(cx)
   }
 
   fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-    unsafe { self.map_unchecked_mut(|s| &mut s.sink) }.poll_shutdown(cx)
+    self.sink_pin().poll_shutdown(cx)
+  }
+}
+
+pub enum CompressReserveBehavior {
+  NewBuf,
+  ExpandBuf(Vec<u8>),
+  FixedSizeBuf(Vec<u8>),
+}
+
+pub(crate) enum ReserveResponse {
+  MadeSpace(Vec<u8>),
+  NoSpace(Vec<u8>),
+}
+
+impl CompressReserveBehavior {
+  pub(crate) fn reserve(self, n: usize) -> ReserveResponse {
+    match self {
+      Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)),
+      Self::ExpandBuf(mut buf) => {
+        if n > buf.capacity() {
+          let additional = n - buf.capacity();
+          buf.reserve(additional);
+        }
+        ReserveResponse::MadeSpace(buf)
+      },
+      Self::FixedSizeBuf(buf) => {
+        if buf.capacity() <= n {
+          ReserveResponse::NoSpace(buf)
+        } else {
+          ReserveResponse::MadeSpace(buf)
+        }
+      },
+    }
   }
 }
 
 /* pub struct CompressedStream<S> { */
-/* pub buf: Vec<c_char>, */
-/* pub flags: ScanFlags, */
+/* pub buf: Vec<u8>, */
 /* pub scratch: Arc<Scratch>, */
 /* pub matcher: Arc<StreamMatcher<S>>, */
 /* } */
@@ -726,7 +763,6 @@ impl AsyncWrite for Streamer {
 /* pub(crate) async fn compress<'db>( */
 /* into: CompressReserveBehavior, */
 /* live: &LiveStream<'db>, */
-/* flags: ScanFlags, */
 /* scratch: &Arc<Scratch>, */
 /* matcher: &Arc<StreamMatcher<S>>, */
 /* ) -> Result<Self, CompressionError> { */
@@ -832,8 +868,8 @@ impl AsyncWrite for Streamer {
  * matcher); */
 /* let p_matcher_n = p_matcher as usize; */
 
-/* let (inner, flags) = task::spawn_blocking(move || { */
-/* let Self { buf, flags, .. } = unsafe { &*(s as *const Self) }; */
+/* let inner = task::spawn_blocking(move || { */
+/* let Self { buf, .. } = unsafe { &*(s as *const Self) }; */
 
 /* let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit(); */
 /* HyperscanError::from_native(unsafe { */
@@ -846,7 +882,7 @@ impl AsyncWrite for Streamer {
 /* p_matcher_n as *mut c_void, */
 /* ) */
 /* })?; */
-/* Ok::<_, HyperscanError>((stream.as_mut_ptr() as usize, *flags)) */
+/* Ok::<_, HyperscanError>(stream.as_mut_ptr() as usize) */
 /* }) */
 /* .await */
 /* .unwrap()?; */
@@ -859,50 +895,8 @@ impl AsyncWrite for Streamer {
 /* unsafe { &mut *p_matcher }.try_reset().await?; */
 /* Ok(StreamSink { */
 /* live, */
-/* flags, */
 /* scratch, */
 /* matcher, */
 /* }) */
 /* } */
-/* } */
-
-/* pub enum CompressReserveBehavior { */
-/* NewBuf, */
-/* ExpandBuf(Vec<c_char>), */
-/* FixedSizeBuf(Vec<c_char>), */
-/* } */
-
-/* pub(crate) enum ReserveResponse { */
-/* MadeSpace(Vec<c_char>), */
-/* NoSpace(Vec<c_char>), */
-/* } */
-
-/* impl CompressReserveBehavior { */
-/* pub(crate) fn reserve(self, n: usize) -> ReserveResponse { */
-/* match self { */
-/* Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)), */
-/* Self::ExpandBuf(mut buf) => { */
-/* if n > buf.capacity() { */
-/* let additional = n - buf.capacity(); */
-/* buf.reserve(additional); */
-/* } */
-/* ReserveResponse::MadeSpace(buf) */
-/* }, */
-/* Self::FixedSizeBuf(buf) => { */
-/* if buf.capacity() <= n { */
-/* ReserveResponse::NoSpace(buf) */
-/* } else { */
-/* ReserveResponse::MadeSpace(buf) */
-/* } */
-/* }, */
-/* } */
-/* } */
-/* } */
-
-/* #[derive(Debug, Display, Error)] */
-/* pub enum CompressionError { */
-/* /// other error: {0} */
-/* Other(#[from] HyperscanError), */
-/* /// not enough space for {0} in buf */
-/* NoSpace(usize), */
 /* } */

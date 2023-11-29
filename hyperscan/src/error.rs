@@ -179,3 +179,11 @@ pub enum HyperscanCompileError {
   /// null byte in expression: {0}
   NullByte(#[from] NulError),
 }
+
+#[derive(Debug, Display, Error)]
+pub enum CompressionError {
+  /// other error: {0}
+  Other(#[from] HyperscanError),
+  /// not enough space for {0} in buf
+  NoSpace(usize),
+}
