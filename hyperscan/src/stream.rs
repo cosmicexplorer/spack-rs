@@ -25,6 +25,7 @@ use std::{
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr, slice,
+  sync::Arc,
   task::{ready, Context, Poll},
 };
 
@@ -48,7 +49,7 @@ use std::{
 ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
 /// }
 ///
-/// let mut s = Streamer::open::<S>(&db, scratch)?;
+/// let mut s = Streamer::open::<S>(&db, scratch.into())?;
 ///
 /// let msg1 = "aardvark ";
 /// s.scan(msg1.as_bytes().into()).await?;
@@ -214,7 +215,7 @@ impl ops::Drop for LiveStream {
 
 pub(crate) struct StreamSink {
   live: LiveStream,
-  scratch: Scratch,
+  scratch: Arc<Scratch>,
   matcher: StreamMatcher,
   write_future: Option<(*const u8, Pin<Box<dyn Future<Output=io::Result<usize>>>>)>,
   shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>,
@@ -243,7 +244,7 @@ impl StreamSink {
           data_len,
           /* NB: ignore flags for now! */
           ScanFlags::default().into_native(),
-          scratch.as_mut_native().unwrap(),
+          Arc::make_mut(scratch).as_mut_native().unwrap(),
           Some(match_slice_stream),
           p_matcher as *mut c_void,
         )
@@ -269,7 +270,7 @@ impl StreamSink {
       HyperscanError::from_native(unsafe {
         hs::hs_direct_flush_stream(
           live.as_mut_native(),
-          scratch.as_mut_native().unwrap(),
+          Arc::make_mut(scratch).as_mut_native().unwrap(),
           Some(match_slice_stream),
           p_matcher as *mut c_void,
         )
@@ -287,7 +288,7 @@ impl StreamSink {
       ..
     } = self;
     let live = live.try_clone()?;
-    let scratch = scratch.try_clone()?;
+    let scratch = Arc::clone(scratch);
     let matcher = matcher.clone();
     Ok(Self {
       live,
@@ -306,8 +307,8 @@ impl StreamSink {
       ..
     } = self;
     live.try_clone_from(&source.live)?;
-    /* Scratch has no .try_clone_from() method: */
-    *scratch = source.scratch.try_clone()?;
+    /* Using Arc::clone_from(): */
+    scratch.clone_from(&source.scratch);
     matcher.clone_from(&source.matcher);
     Ok(())
   }
@@ -323,6 +324,19 @@ impl StreamSink {
   pub async fn reset_flush(&mut self) -> Result<(), HyperscanError> {
     self.flush_eod().await?;
     self.reset_no_flush()
+  }
+
+  pub fn compress(
+    &self,
+    into: CompressReserveBehavior,
+  ) -> Result<CompressedStream, CompressionError> {
+    let Self {
+      live,
+      scratch,
+      matcher,
+      ..
+    } = self;
+    CompressedStream::compress(into, live, Arc::clone(scratch), matcher.clone())
   }
 }
 
@@ -408,56 +422,6 @@ impl AsyncWrite for StreamSink {
    * exist! */
 }
 
-/* impl<'db, S: Send+Sync> StreamSink<'db, S> { */
-/* ///``` */
-/* /// # fn main() -> Result<(), eyre::Report> { tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, flags::*, state::*, stream::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// */
-/* /// let expr: Expression = "a+".parse()?; */
-/* /// let db = expr.compile( */
-/* ///   Flags::UTF8 | Flags::SOM_LEFTMOST, */
-/* ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE, */
-/* /// )?; */
-/* /// */
-/* /// let flags = ScanFlags::default(); */
-/* /// let Streamer { mut sink, mut rx } = Streamer::try_open((flags, &db,
- * 32)).await?; */
-/* /// */
-/* /// let buf = sink.compress(CompressReserveBehavior::NewBuf).await?; */
-/* /// sink.try_drop().await?; */
-/* /// std::mem::drop(sink); */
-/* /// */
-/* /// let msg = "aardvark"; */
-/* /// let mut sink = buf.expand().await?; */
-/* /// sink.scan(msg.as_bytes().into(), flags).await?; */
-/* /// sink.try_drop().await?; */
-/* /// std::mem::drop(sink); */
-/* /// */
-/* /// // Although there are further senders in Arc shared pointers, */
-/* /// // we cut them off here in order to ensure our stream terminates. */
-/* /// rx.close(); */
-/* /// let rx = tokio_stream::wrappers::ReceiverStream::new(rx); */
-/* /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }|
- * &msg[range]).collect().await; */
-/* /// assert_eq!(results, vec!["a", "aa", "a"]); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* /// ``` */
-/* pub async fn compress( */
-/* &self, */
-/* into: CompressReserveBehavior, */
-/* ) -> Result<CompressedStream<'db, S>, CompressionError> { */
-/* let Self { */
-/* live, */
-/* flags, */
-/* scratch, */
-/* matcher, */
-/* } = self; */
-/* CompressedStream::compress(into, live, *flags, scratch, matcher).await */
-/* } */
-/* } */
-
 ///```
 /// # #![feature(io_error_downcast)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
@@ -479,7 +443,7 @@ impl AsyncWrite for StreamSink {
 ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self(self.0)) }
 /// }
 ///
-/// let mut s = Streamer::open::<S>(&db, scratch)?;
+/// let mut s = Streamer::open::<S>(&db, scratch.into())?;
 ///
 /// let msg = "aardvark";
 /// if let Err(e) = s.write_all(msg.as_bytes()).await {
@@ -503,7 +467,7 @@ pub struct Streamer {
 impl Streamer {
   pub fn open<S: StreamScanner+'static>(
     db: &Database,
-    scratch: Scratch,
+    scratch: Arc<Scratch>,
   ) -> Result<Self, HyperscanError> {
     let live = LiveStream::try_open(db)?;
 
@@ -559,6 +523,50 @@ impl Streamer {
   }
 
   ///```
+  /// # #[allow(warnings)]
+  /// # fn main() -> Result<(), eyre::Report> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, stream::*, matchers::*};
+  /// use futures_util::StreamExt;
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(
+  ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
+  ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+  /// )?;
+  /// let scratch = db.allocate_scratch()?;
+  ///
+  /// struct S;
+  /// impl StreamScanner for S {
+  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+  ///   fn new() -> Self where Self: Sized { Self }
+  ///   fn reset(&mut self) {}
+  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+  /// }
+  /// let s1 = Streamer::open::<S>(&db, scratch.into())?;
+  ///
+  /// let compressed = s1.compress(CompressReserveBehavior::NewBuf)?;
+  /// std::mem::drop(s1);
+  ///
+  /// let msg = "aardvark";
+  /// let mut s2 = compressed.expand(&db)?;
+  /// s2.scan(msg.as_bytes().into()).await?;
+  /// todo!("ok");
+  /// s2.flush_eod().await?;
+  /// let rx = s2.stream_results();
+  ///
+  /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
+  /// assert_eq!(results, vec!["a", "aa", "a"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn compress(
+    &self,
+    into: CompressReserveBehavior,
+  ) -> Result<CompressedStream, CompressionError> {
+    self.sink.compress(into)
+  }
+
+  ///```
   /// # #![feature(io_error_downcast)]
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
@@ -579,7 +587,7 @@ impl Streamer {
   ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self(self.0)) }
   /// }
   ///
-  /// let mut s1 = Streamer::open::<S>(&db, scratch)?;
+  /// let mut s1 = Streamer::open::<S>(&db, scratch.into())?;
   ///
   /// s1.write_all(b"asdf").await.unwrap();
   /// let mut s2 = s1.try_clone()?;
@@ -625,7 +633,7 @@ impl Streamer {
   ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
   /// }
   ///
-  /// let mut s = Streamer::open::<S>(&db, scratch)?;
+  /// let mut s = Streamer::open::<S>(&db, scratch.into())?;
   ///
   /// s.write_all(b"asdf").await.unwrap();
   /// s.reset_flush().await?;
@@ -672,7 +680,7 @@ impl Streamer {
   ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
   /// }
   ///
-  /// let mut s = Streamer::open::<S>(&db, scratch)?;
+  /// let mut s = Streamer::open::<S>(&db, scratch.into())?;
   ///
   /// s.write_all(b"asdf..").await.unwrap();
   /// let rx = s.reset_channel();
@@ -753,104 +761,81 @@ impl CompressReserveBehavior {
   }
 }
 
-/* pub struct CompressedStream<S> { */
-/* pub buf: Vec<u8>, */
-/* pub scratch: Arc<Scratch>, */
-/* pub matcher: Arc<StreamMatcher<S>>, */
-/* } */
+pub struct CompressedStream {
+  pub buf: Vec<u8>,
+  scratch: Arc<Scratch>,
+  matcher: StreamMatcher,
+}
 
-/* impl<S: Send+Sync> CompressedStream<S> { */
-/* pub(crate) async fn compress<'db>( */
-/* into: CompressReserveBehavior, */
-/* live: &LiveStream<'db>, */
-/* scratch: &Arc<Scratch>, */
-/* matcher: &Arc<StreamMatcher<S>>, */
-/* ) -> Result<Self, CompressionError> { */
-/* let live: *const LiveStream<'db> = live; */
-/* let live = live as usize; */
+impl CompressedStream {
+  pub(crate) fn compress(
+    into: CompressReserveBehavior,
+    live: &LiveStream,
+    scratch: Arc<Scratch>,
+    matcher: StreamMatcher,
+  ) -> Result<Self, CompressionError> {
+    let mut required_space = mem::MaybeUninit::<usize>::zeroed();
+    assert_eq!(
+      Err(HyperscanError::InsufficientSpace),
+      HyperscanError::from_native(unsafe {
+        hs::hs_compress_stream(
+          (*live).as_ref_native(),
+          ptr::null_mut(),
+          0,
+          required_space.as_mut_ptr(),
+        )
+      })
+    );
+    let mut required_space = unsafe { required_space.assume_init() };
 
-/* let buf = task::spawn_blocking(move || { */
-/* let live: *const LiveStream<'db> = unsafe { &*(live as *const
- * LiveStream<'db>) }; */
+    let buf = match into.reserve(required_space) {
+      ReserveResponse::NoSpace(_) => return Err(CompressionError::NoSpace(required_space)),
+      ReserveResponse::MadeSpace(mut buf) => {
+        HyperscanError::from_native(unsafe {
+          hs::hs_compress_stream(
+            live.as_ref_native(),
+            mem::transmute(buf.as_mut_ptr()),
+            required_space,
+            &mut required_space,
+          )
+        })?;
+        buf
+      },
+    };
 
-/* let mut required_space = mem::MaybeUninit::<usize>::zeroed(); */
-/* assert_eq!( */
-/* Err(HyperscanError::InsufficientSpace), */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_compress_stream( */
-/* (*live).as_ref_native(), */
-/* ptr::null_mut(), */
-/* 0, */
-/* required_space.as_mut_ptr(), */
-/* ) */
-/* }) */
-/* ); */
-/* let mut required_space = unsafe { required_space.assume_init() }; */
+    Ok(Self {
+      buf,
+      scratch,
+      matcher,
+    })
+  }
 
-/* match into.reserve(required_space) { */
-/* ReserveResponse::NoSpace(_) =>
- * Err(CompressionError::NoSpace(required_space)), */
-/* ReserveResponse::MadeSpace(mut buf) => { */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_compress_stream( */
-/* (*live).as_ref_native(), */
-/* buf.as_mut_ptr(), */
-/* required_space, */
-/* &mut required_space, */
-/* ) */
-/* })?; */
-/* Ok(buf) */
-/* }, */
-/* } */
-/* }) */
-/* .await */
-/* .unwrap()?; */
+  pub fn expand(&self, db: &Database) -> Result<Streamer, HyperscanError> {
+    let mut inner = ptr::null_mut();
+    HyperscanError::from_native(unsafe {
+      hs::hs_expand_stream(
+        db.as_ref_native(),
+        &mut inner,
+        mem::transmute(self.buf.as_ptr()),
+        self.buf.capacity(),
+      )
+    })?;
+    let live = unsafe { LiveStream::from_native(inner as *mut hs::hs_stream) };
 
-/* Ok(Self { */
-/* buf, */
-/* flags, */
-/* scratch: scratch.clone(), */
-/* matcher: matcher.clone(), */
-/* }) */
-/* } */
+    let mut matcher = self.matcher.clone();
+    let (tx, rx) = mpsc::unbounded_channel();
+    matcher.matches_tx = tx;
 
-/* pub async fn expand(&self) -> Result<StreamSink<'db, S>, HyperscanError> { */
-/* let s: *const Self = self; */
-/* let s = s as usize; */
-
-/* let (inner, flags) = task::spawn_blocking(move || { */
-/* let Self { */
-/* scratch, */
-/* buf, */
-/* flags, */
-/* .. */
-/* } = unsafe { &*(s as *const Self) }; */
-/* let mut inner = ptr::null_mut(); */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_expand_stream( */
-/* scratch.db_ref_native().get_ref(), */
-/* &mut inner, */
-/* buf.as_ptr(), */
-/* buf.capacity(), */
-/* ) */
-/* })?; */
-/* Ok::<_, HyperscanError>((inner as usize, *flags)) */
-/* }) */
-/* .await */
-/* .unwrap()?; */
-
-/* let live = LiveStream { */
-/* inner: inner as *mut hs::hs_stream, */
-/* _ph: PhantomData, */
-/* }; */
-/* Ok(StreamSink { */
-/* live, */
-/* flags, */
-/* scratch: self.scratch.clone(), */
-/* matcher: self.matcher.clone(), */
-/* }) */
-/* } */
-/* } */
+    let sink = StreamSink {
+      live,
+      scratch: self.scratch.clone(),
+      matcher: self.matcher.clone(),
+      write_future: None,
+      shutdown_future: None,
+    };
+    Ok(Streamer { sink, rx })
+  }
+}
 
 /* impl<'db> CompressedStream<'db, AcceptMatches> { */
 /* pub async fn expand_and_reset(&self) -> Result<StreamSink<'db,
