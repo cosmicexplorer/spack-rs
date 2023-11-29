@@ -559,6 +559,55 @@ impl Streamer {
   }
 
   ///```
+  /// # #![feature(io_error_downcast)]
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
+  /// use futures_util::StreamExt;
+  /// use tokio::io::AsyncWriteExt;
+  ///
+  /// let expr: Literal = "asdf".parse()?;
+  /// let db = expr.compile(Flags::default(), Mode::STREAM)?;
+  /// let scratch = db.allocate_scratch()?;
+  ///
+  /// struct S(usize);
+  /// impl StreamScanner for S {
+  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult {
+  ///     if self.0 < 2 { self.0 += 1; MatchResult::Continue } else { MatchResult::CeaseMatching }
+  ///   }
+  ///   fn new() -> Self where Self: Sized { Self(0) }
+  ///   fn reset(&mut self) { self.0 = 0; }
+  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self(self.0)) }
+  /// }
+  ///
+  /// let mut s1 = Streamer::open::<S>(&db, scratch)?;
+  ///
+  /// s1.write_all(b"asdf").await.unwrap();
+  /// let mut s2 = s1.try_clone()?;
+  /// s1.shutdown().await.unwrap();
+  /// let rx1 = s1.stream_results();
+  /// s2.write_all(b"asdf").await.unwrap();
+  /// s2.reset_no_flush()?;
+  /// let rx2 = s2.reset_channel();
+  /// if let Err(e) = s2.write_all(b"asdfasdfasdf").await {
+  ///   let e = e.downcast::<HyperscanError>().unwrap();
+  ///   assert_eq!(*e, HyperscanError::ScanTerminated);
+  /// } else { unreachable!(); }
+  /// s2.shutdown().await.unwrap();
+  /// let rx3 = s2.stream_results();
+  ///
+  /// let m1: Vec<_> = rx1.collect().await;
+  /// let m2: Vec<_> = rx2.collect().await;
+  /// let m3: Vec<_> = rx3.collect().await;
+  /// assert_eq!(1, m1.len());
+  /// assert_eq!(1, m2.len());
+  /// assert_eq!(2, m3.len());
+  /// # Ok(())
+  /// # })}
+  /// ```
+  ///
+  /// **TODO: docs**
+  ///
+  ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
