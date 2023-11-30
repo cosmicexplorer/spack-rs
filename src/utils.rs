@@ -455,13 +455,14 @@ pub mod metadata {
       .packages()
       .filter_map(|p| {
         let name = spec::CrateName(p.name().to_string());
-        let spack_metadata: spec::LabelledPackageMetadata =
-          serde_json::from_value(p.metadata_table().as_object()?.get("spack")?.clone())
-            .expect("failed to deserialize spack metadata from cargo");
-
+        let spack_metadata = p.metadata_table().as_object()?.get("spack")?.clone();
         Some((name, spack_metadata))
       })
-      .collect();
+      .map(|(name, spack_metadata)| {
+        let metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)?;
+        Ok::<_, MetadataError>((name, metadata))
+      })
+      .collect::<Result<Vec<_>, MetadataError>>()?;
 
     let mut resolves: IndexMap<spec::EnvLabel, Vec<spec::Spec>> = IndexMap::new();
     let mut recipes: IndexMap<spec::CrateName, spec::Recipe> = IndexMap::new();
