@@ -458,8 +458,8 @@ pub mod metadata {
         Some((name, spack_metadata))
       })
       .map(|(name, spack_metadata)| {
-        let metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)?;
-        Ok((name, metadata))
+        let spec_metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)?;
+        Ok((name, spec_metadata))
       })
       .collect::<Result<Vec<_>, MetadataError>>()?;
 
