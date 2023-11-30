@@ -9,26 +9,16 @@ pub mod spec {
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
-  use std::path::PathBuf;
-
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct EnvLabel(pub String);
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct Spec(pub String);
 
-  #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-  pub struct BindgenConfig {
-    pub process_comments: bool,
-    pub header_path: PathBuf,
-    pub output_path: PathBuf,
-  }
-
   #[derive(Debug, Clone, Deserialize)]
   pub struct Dep {
     pub r#type: String,
     pub lib_names: Vec<String>,
-    pub allowlist: Vec<String>,
   }
 
   /// This is deserialized from the output of `cargo metadata --format-version
@@ -40,14 +30,11 @@ pub mod spec {
   /// [package.metadata.spack]
   /// env_label               = "re2-runtime-deps"
   /// spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
-  /// cxx                     = "c++17"
   /// ```
   #[derive(Debug, Clone, Deserialize)]
   pub struct LabelledPackageMetadata {
     pub env_label: String,
     pub spec: String,
-    pub cxx: Option<String>,
-    pub bindgen: BindgenConfig,
     pub deps: IndexMap<String, Dep>,
   }
 
@@ -84,50 +71,17 @@ pub mod spec {
     }
   }
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub enum CxxSupport {
-    None,
-    Std14,
-    Std17,
-    Std20,
-  }
-
-  impl CxxSupport {
-    pub fn parse(s: Option<&str>) -> Result<Self, SpecError> {
-      match s {
-        None => Ok(Self::None),
-        Some(s) => {
-          if s == "c++17" {
-            Ok(Self::Std17)
-          } else if s == "c++14" {
-            Ok(Self::Std14)
-          } else if s == "c++20" {
-            Ok(Self::Std20)
-          } else {
-            Err(SpecError::Parsing(format!(
-              "cxx only supports \"c++20\" or \"c++17\" or \"c++14\"; was {:?}",
-              s
-            )))
-          }
-        },
-      }
-    }
-  }
-
   #[derive(Debug, Clone)]
   pub struct SubDep {
     pub pkg_name: PackageName,
     pub r#type: LibraryType,
     pub lib_names: Vec<String>,
-    pub allowlist: Vec<String>,
   }
 
   #[derive(Debug, Clone)]
   pub struct Recipe {
     pub env_label: EnvLabel,
-    pub cxx: CxxSupport,
     pub sub_deps: Vec<SubDep>,
-    pub bindgen_config: BindgenConfig,
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

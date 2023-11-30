@@ -471,38 +471,28 @@ pub mod metadata {
       let spec::LabelledPackageMetadata {
         env_label,
         spec,
-        cxx,
-        bindgen,
         deps,
       } = metadata;
       let env_label = spec::EnvLabel(env_label);
       let spec = spec::Spec(spec);
-      let cxx = spec::CxxSupport::parse(cxx.as_deref())?;
 
       let sub_deps: Vec<spec::SubDep> = deps
         .into_iter()
         .map(|(pkg_name, dep)| {
           let pkg_name = spec::PackageName(pkg_name);
-          let spec::Dep {
-            r#type,
-            lib_names,
-            allowlist,
-          } = dep;
+          let spec::Dep { r#type, lib_names } = dep;
           let r#type = spec::LibraryType::parse(&r#type)?;
           Ok(spec::SubDep {
             pkg_name,
             r#type,
             lib_names,
-            allowlist,
           })
         })
         .collect::<Result<Vec<_>, spec::SpecError>>()?;
 
       let recipe = spec::Recipe {
         env_label: env_label.clone(),
-        cxx,
         sub_deps,
-        bindgen_config: bindgen,
       };
 
       assert!(recipes.insert(crate_name.clone(), recipe).is_none());
@@ -559,9 +549,6 @@ pub mod declarative {
     .idempotent_env_create(env_instructions)
     .await?;
 
-    let mut bindings =
-      cxx::enable_hacky_bindgen_cpp_support(bindgen::Builder::default(), cur_recipe.cxx).await?;
-
     let mut dep_prefixes: Vec<prefix::Prefix> = Vec::new();
 
     /* Process each resolved dependency to hook it up into cargo. */
@@ -581,30 +568,8 @@ pub mod declarative {
         sub_dep.lib_names.iter().map(|s| s.as_str()),
       )
       .await?;
-      bindings = bindings::include_dependency_headers(
-        prefix.clone(),
-        sub_dep.allowlist.iter().map(|s| s.as_str()),
-        bindings,
-      );
       dep_prefixes.push(prefix);
     }
-
-    cxx::enable_stdcxx_runtime_link(cur_recipe.cxx);
-
-    bindings = bindings
-      .generate_comments(cur_recipe.bindgen_config.process_comments)
-      .fit_macro_constants(true);
-
-    /* FIXME: put within spawn_blocking??? bindings apparently contain non-Send
-     * Rc refs (????) */
-    bindings
-      .header(format!(
-        "{}",
-        cur_recipe.bindgen_config.header_path.display()
-      ))
-      .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-      .generate()?
-      .write_to_file(&cur_recipe.bindgen_config.output_path)?;
 
     Ok(dep_prefixes)
   }
@@ -615,20 +580,6 @@ pub mod declarative {
     use std::path::PathBuf;
 
     pub fn get_include_subdir(prefix: prefix::Prefix) -> PathBuf { prefix.path.join("include") }
-
-    pub fn include_dependency_headers<'a>(
-      prefix: prefix::Prefix,
-      allowlist: impl Iterator<Item=&'a str>,
-      bindings: bindgen::Builder,
-    ) -> bindgen::Builder {
-      /* FIXME: is there really not a more specific method than "clang_arg()"
-       * to add an include search dir??? */
-      let mut bindings = bindings.clang_arg(format!("-I{}", get_include_subdir(prefix).display()));
-      for item in allowlist {
-        bindings = bindings.allowlist_item(item);
-      }
-      bindings
-    }
   }
 
   pub mod linker {
@@ -661,37 +612,6 @@ pub mod declarative {
       libs.link_libraries(rpath_behavior);
 
       Ok(())
-    }
-  }
-
-  pub mod cxx {
-    use crate::metadata_spec::spec;
-
-    pub async fn enable_hacky_bindgen_cpp_support(
-      bindings: bindgen::Builder,
-      cxx: spec::CxxSupport,
-    ) -> eyre::Result<bindgen::Builder> {
-      let std_arg: &'static str = match cxx {
-        // If no C++ support needed, exit early.
-        spec::CxxSupport::None => return Ok(bindings),
-        spec::CxxSupport::Std17 => "-std=c++17",
-        spec::CxxSupport::Std14 => "-std=c++14",
-        spec::CxxSupport::Std20 => "-std=c++20",
-      };
-      let bindings = bindings
-        .clang_args(&["-x", "c++"])
-        .clang_arg(std_arg)
-        .enable_cxx_namespaces()
-        .opaque_type("std::.*");
-
-      Ok(bindings)
-    }
-
-    pub fn enable_stdcxx_runtime_link(cxx: spec::CxxSupport) {
-      match cxx {
-        spec::CxxSupport::None => (),
-        _ => println!("cargo:rustc-link-lib=stdc++"),
-      }
     }
   }
 }
