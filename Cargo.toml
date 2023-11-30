@@ -66,6 +66,7 @@ futures.workspace       = true
 futures-core.workspace  = true
 futures-lite.workspace  = true
 futures-util.workspace  = true
+guppy                   = "0.17.4"
 hex                     = "0.4.3"
 hex-literal             = "0.3.4"
 indexmap.workspace      = true

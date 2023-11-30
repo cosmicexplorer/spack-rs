@@ -417,10 +417,10 @@ pub mod metadata {
   use super_process::{exe, sync::SyncInvocable};
 
   use displaydoc::Display;
+  use guppy::CargoMetadata;
   use indexmap::IndexMap;
   use serde_json;
   use thiserror::Error;
-  use tokio::task;
 
   use std::{env, io};
 
@@ -434,6 +434,8 @@ pub mod metadata {
     Io(#[from] io::Error),
     /// json error {0}
     Json(#[from] serde_json::Error),
+    /// guppy error {0}
+    Guppy(#[from] guppy::Error),
   }
 
   pub async fn get_metadata() -> Result<spec::DisjointResolves, MetadataError> {
@@ -446,29 +448,18 @@ pub mod metadata {
     };
     let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd).await?;
 
-    let top_level: serde_json::Map<String, serde_json::Value> =
-      task::spawn_blocking(move || serde_json::from_str(&decoded_output.stdout))
-        .await
-        .unwrap()?;
+    let metadata = CargoMetadata::parse_json(&decoded_output.stdout)?;
+    let package_graph = metadata.build_graph()?;
 
-    let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = top_level
-      .get("packages")
-      .and_then(|p| p.as_array())
-      .unwrap()
-      .iter()
-      .filter_map(|p| p.as_object())
+    let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = package_graph
+      .packages()
       .filter_map(|p| {
-        let spack_metadata: serde_json::Value = p
-          .get("metadata")
-          .filter(|m| !m.is_null())?
-          .as_object()?
-          .get("spack")?
-          .clone();
-        let spack_metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)
-          .expect("failed to deserialize spack metadata from cargo");
-        let name: String = p.get("name")?.as_str()?.to_string();
+        let name = spec::CrateName(p.name().to_string());
+        let spack_metadata: spec::LabelledPackageMetadata =
+          serde_json::from_value(p.metadata_table().as_object()?.get("spack")?.clone())
+            .expect("failed to deserialize spack metadata from cargo");
 
-        Some((spec::CrateName(name), spack_metadata))
+        Some((name, spack_metadata))
       })
       .collect();
 
