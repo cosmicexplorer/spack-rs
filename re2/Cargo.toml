@@ -40,7 +40,7 @@ allowlist               = []
 cc                      = "1.0.83"
 eyre.workspace          = true
 spack.workspace         = true
-tokio                   = { workspace = true, features = ["macros"] }
+tokio                   = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [dependencies]
 displaydoc.workspace    = true
