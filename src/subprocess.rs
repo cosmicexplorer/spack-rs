@@ -10,6 +10,7 @@ pub mod python {
     sync::SyncInvocable,
   };
 
+  use async_trait::async_trait;
   use displaydoc::Display;
   use once_cell::sync::Lazy;
   use regex::Regex;
@@ -36,6 +37,7 @@ pub mod python {
     inner: exe::Command,
   }
 
+  #[async_trait]
   impl CommandBase for PythonInvocation {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self { exe, mut inner } = self;
@@ -127,6 +129,7 @@ pub mod spack {
     sync::SyncInvocable,
   };
 
+  use async_trait::async_trait;
   use displaydoc::Display;
   use thiserror::Error;
 
@@ -345,6 +348,7 @@ pub mod spack {
     pub inner: exe::Command,
   }
 
+  #[async_trait]
   impl base::CommandBase for ReadiedSpackInvocation {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self {

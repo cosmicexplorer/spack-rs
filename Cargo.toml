@@ -25,6 +25,7 @@ spack                   = { path = ".", version = "0.0.1", package = "spack-rs" 
 super-process           = { path = "super-process", version = "0.0.0" }
 
 async-stream            = "0.3.3"
+async-trait             = "0.1.41"
 bindgen                 = "0.69.1"
 displaydoc              = "0.2.4"
 eyre                    = "0.6.8"
@@ -57,6 +58,7 @@ name                    = "spack"
 
 [dependencies]
 async-stream.workspace  = true
+async-trait.workspace   = true
 base64ct                = { version = "1.6.0", features = ["alloc"] }
 bindgen.workspace       = true
 displaydoc.workspace    = true
