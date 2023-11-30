@@ -11,6 +11,8 @@ use bindgen;
 use cc;
 use tokio::task;
 
+use std::{env, path::PathBuf};
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
   let prefixes = resolve_dependencies().await?;
@@ -28,7 +30,8 @@ async fn main() -> eyre::Result<()> {
   for p in prefixes.iter().cloned() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
   }
-  bindings.generate()?.write_to_file("src/bindings.rs")?;
+  let outfile = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
+  bindings.generate()?.write_to_file(outfile)?;
 
   println!("cargo:rerun-if-changed=src/c-bindings.cpp");
   task::spawn_blocking(|| {

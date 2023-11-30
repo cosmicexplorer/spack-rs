@@ -16,7 +16,9 @@
 #![feature(slice_ptr_get)]
 
 #[allow(unused, non_camel_case_types, clippy::all)]
-mod bindings;
+mod bindings {
+  include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 pub(crate) use bindings::root as hs;
 
 pub mod alloc;

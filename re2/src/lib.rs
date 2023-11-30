@@ -31,7 +31,9 @@ use string::{StringView, StringWrapper};
 pub mod set;
 
 #[allow(unused, improper_ctypes, clippy::all)]
-mod bindings;
+mod bindings {
+  include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
 use std::{
