@@ -9,6 +9,8 @@ pub mod spec {
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
+  use std::str;
+
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct EnvLabel(pub String);
 
@@ -30,6 +32,7 @@ pub mod spec {
   /// [package.metadata.spack]
   /// env_label               = "re2-runtime-deps"
   /// spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
+  /// deps                    = { re2 = { type = "dynamic", lib_names = ["re2"] } }
   /// ```
   #[derive(Debug, Clone, Deserialize)]
   pub struct LabelledPackageMetadata {
@@ -54,12 +57,16 @@ pub mod spec {
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub enum LibraryType {
+    /// link against this library statically
     Static,
+    /// link against this library dynamically, and set -Wl,-rpath
     DynamicWithRpath,
   }
 
-  impl LibraryType {
-    pub fn parse(s: &str) -> Result<Self, SpecError> {
+  impl str::FromStr for LibraryType {
+    type Err = SpecError;
+
+    fn from_str(s: &str) -> Result<Self, SpecError> {
       match s {
         "static" => Ok(Self::Static),
         "dynamic" => Ok(Self::DynamicWithRpath),

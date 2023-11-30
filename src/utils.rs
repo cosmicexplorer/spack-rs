@@ -478,13 +478,10 @@ pub mod metadata {
 
       let sub_deps: Vec<spec::SubDep> = deps
         .into_iter()
-        .map(|(pkg_name, dep)| {
-          let pkg_name = spec::PackageName(pkg_name);
-          let spec::Dep { r#type, lib_names } = dep;
-          let r#type = spec::LibraryType::parse(&r#type)?;
+        .map(|(pkg_name, spec::Dep { r#type, lib_names })| {
           Ok(spec::SubDep {
-            pkg_name,
-            r#type,
+            pkg_name: spec::PackageName(pkg_name),
+            r#type: r#type.parse()?,
             lib_names,
           })
         })
@@ -510,8 +507,7 @@ pub mod metadata {
   }
 
   pub fn get_cur_pkg_name() -> spec::CrateName {
-    let cur_pkg: String = env::var("CARGO_PKG_NAME").unwrap();
-    spec::CrateName(cur_pkg)
+    spec::CrateName(env::var("CARGO_PKG_NAME").unwrap())
   }
 }
 
