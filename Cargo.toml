@@ -21,8 +21,8 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 [workspace.dependencies]
 hyperscan               = { path = "hyperscan" }
 re2                     = { path = "re2" }
-spack                   = { path = "." }
-super-process           = { path = "super-process" }
+spack                   = { path = ".", version = "0.0.0" }
+super-process           = { path = "super-process", version = "0.0.0" }
 
 async-stream            = "0.3.3"
 bindgen                 = "0.69.1"
