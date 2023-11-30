@@ -1218,8 +1218,7 @@ pub mod python {
     #[tokio::test]
     async fn test_python() -> Result<(), crate::Error> {
       use crate::{commands::python, SpackInvocation};
-      use futures_lite::io::AsyncReadExt;
-      use super_process::{base::CommandBase, stream::Streamable, sync::SyncInvocable};
+      use super_process::{base::CommandBase, sync::SyncInvocable};
 
       // Locate all the executables.
       let spack = SpackInvocation::summon().await.unwrap();
@@ -1242,24 +1241,6 @@ pub mod python {
       // ...and verify the version matches `spack.version`.
       let version = decoded.stdout.strip_suffix("\n").unwrap();
       assert!(version == &spack.version);
-
-      // Spawn the child process and wait for it to end.
-      let mut streaming = command
-        .invoke_streaming()
-        .expect("streaming command subprocess failed");
-
-      // Slurp stdout all at once into a string.
-      let mut version: String = "".to_string();
-      streaming.stdout.read_to_string(&mut version).await.unwrap();
-      // Parse the spack version from stdout, and verify it matches `spack.version`.
-      let version = version.strip_suffix("\n").unwrap();
-      assert!(version == &spack.version);
-
-      // Now verify the process exited successfully.
-      streaming
-        .wait()
-        .await
-        .expect("streaming command should have succeeded");
       Ok(())
     }
   }

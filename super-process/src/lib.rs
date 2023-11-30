@@ -292,10 +292,11 @@ pub mod exe {
           Err(Self::NonZeroExit(code))
         }
       } else if let Some(signal) = status.signal() {
+        let name = SIGNAL_NAMES.get(&signal).unwrap();
         Err(if TERM_SIGNALS.contains(&signal) {
-          Self::ProcessTerminated(signal, SIGNAL_NAMES.get(&signal).unwrap())
+          Self::ProcessTerminated(signal, name)
         } else {
-          Self::ProcessKilled(signal, SIGNAL_NAMES.get(&signal).unwrap())
+          Self::ProcessKilled(signal, name)
         })
       } else {
         unreachable!("status {:?} had no exit code or signal", status)
@@ -511,222 +512,35 @@ pub mod sync {
 /// a [`BufReader`](futures_lite::io::BufReader) to produce
 /// [`StdioLine`](stream::StdioLine)s will be more efficient and cleaner than
 /// manually implementing a `BufReader` with `async-channel` or something.
-///
-///```
-/// # tokio_test::block_on(async {
-/// use std::path::PathBuf;
-/// use futures_lite::io::AsyncReadExt;
-/// use super_process::{fs, exe, stream::Streamable};
-///
-/// let command = exe::Command {
-///   exe: exe::Exe(fs::File(PathBuf::from("echo"))),
-///   argv: ["hey"].as_ref().into(),
-///   ..Default::default()
-/// };
-///
-/// // Spawn the child process and stream its output, ignoring stderr for now.
-/// let mut streaming = command.invoke_streaming().expect("streaming subprocess failed");
-/// // Slurp stdout all at once into a string.
-/// let mut out: String = "".to_string();
-/// streaming.stdout.read_to_string(&mut out).await.expect("reading stdout failed");
-///
-/// // Now verify the process exited successfully.
-/// streaming.wait().await.expect("streaming command should have succeeded");
-///
-/// // Validate we get the same output streaming.
-/// let hey = out.strip_suffix("\n").unwrap();
-/// assert!(hey == "hey");
-/// # }) // async
-/// ```
 pub mod stream {
   use super::exe;
 
-  use async_process::{self, Child, ChildStderr, ChildStdout, Stdio};
-  use futures_lite::{io::BufReader, prelude::*};
-
-  use std::{future::Future, str};
+  use async_process::{self, Child, Stdio};
 
   /// A handle to the result an asynchronous invocation.
   pub struct Streaming {
     /// The handle to the live child process (live until [`Child::output`] is
     /// called).
     pub child: Child,
-    /// The stdout stream, separated from the process handle.
-    pub stdout: ChildStdout,
-    /// The stderr stream, separated from the process handler.
-    pub stderr: ChildStderr,
     /// The command being executed.
     pub command: exe::Command,
   }
 
   impl Streaming {
-    /// Stream the output of this process through `act`, then analyze the exit
-    /// status.
-    pub async fn exhaust_byte_streams_and_wait<F, A>(
-      self,
-      act: A,
-    ) -> Result<(), exe::CommandErrorWrapper>
-    where
-      F: Future<Output=Result<(), exe::CommandError>>,
-      A: Fn(StdioChunk) -> F,
-    {
-      let Self {
-        mut stdout,
-        mut stderr,
-        mut child,
-        command,
-      } = self;
-
-      let status = async move {
-        let mut out_buf = [0u8; 300];
-        let mut err_buf = [0u8; 300];
-        /* TODO: find a nicer way to handle this loop! */
-        let mut out_done: bool = false;
-        let mut err_done: bool = false;
-        loop {
-          if out_done {
-            if err_done {
-              break;
-            } else {
-              let num_read = stderr.read(&mut err_buf).await?;
-              if num_read == 0 {
-                err_done = true;
-              } else {
-                let chunk = StdioChunk::Err(err_buf[..num_read].to_vec());
-                act(chunk).await?;
-              }
-            }
-          } else {
-            if err_done {
-              let num_read = stdout.read(&mut out_buf).await?;
-              if num_read == 0 {
-                out_done = true;
-              } else {
-                let chunk = StdioChunk::Out(out_buf[..num_read].to_vec());
-                act(chunk).await?;
-              }
-            } else {
-              tokio::select! {
-                Ok(num_read) = stdout.read(&mut out_buf) => {
-                  if num_read == 0 {
-                    out_done = true;
-                  } else {
-                    let chunk = StdioChunk::Out(out_buf[..num_read].to_vec());
-                    act(chunk).await?;
-                  }
-                }
-                Ok(num_read) = stderr.read(&mut err_buf) => {
-                  if num_read == 0 {
-                    err_done = true;
-                  } else {
-                    let chunk = StdioChunk::Err(err_buf[..num_read].to_vec());
-                    act(chunk).await?;
-                  }
-                }
-                else => { break; }
-              }
-            }
-          }
-        }
-        let output = child.status().await?;
-        Ok(output)
-      }
-      .await
-      .map_err(|e: exe::CommandError| {
-        e.command_with_context(command.clone(), "merging async streams".to_string())
-      })?;
-
-      exe::CommandError::analyze_exit_status(status)
-        .map_err(|e| e.command_with_context(command, "checking async exit status".to_string()))?;
-      Ok(())
-    }
-
-    /// Stream the output of this process through `act`, then analyze the exit
-    /// status.
-    pub async fn exhaust_string_streams_and_wait<F, A>(
-      self,
-      act: A,
-    ) -> Result<(), exe::CommandErrorWrapper>
-    where
-      F: Future<Output=Result<(), exe::CommandError>>,
-      A: Fn(StdioLine) -> F,
-    {
-      let Self {
-        stdout,
-        stderr,
-        mut child,
-        command,
-      } = self;
-      /* stdout wrapping. */
-      let mut out_lines = BufReader::new(stdout).lines();
-      /* stderr wrapping. */
-      let mut err_lines = BufReader::new(stderr).lines();
-
-      /* Crossing the streams!!! */
-      let status = async move {
-        loop {
-          let line = tokio::select! {
-            Some(err) = err_lines.next() => StdioLine::Err(err?),
-            Some(out) = out_lines.next() => StdioLine::Out(out?),
-            else => break,
-          };
-          act(line).await?;
-        }
-        let output = child.status().await?;
-        Ok(output)
-      }
-      .await
-      .map_err(|e: exe::CommandError| {
-        e.command_with_context(command.clone(), "merging async streams".to_string())
-      })?;
-
-      exe::CommandError::analyze_exit_status(status)
-        .map_err(|e| e.command_with_context(command, "checking async exit status".to_string()))?;
-      Ok(())
-    }
-
-    /// Copy over all stderr lines to our stderr, and stdout lines to our
-    /// stdout.
-    async fn stdio_streams_callback(line: StdioLine) -> Result<(), exe::CommandError> {
-      match line {
-        StdioLine::Err(err) => {
-          let err = str::from_utf8(err.as_bytes()).expect("UTF8 DECODING STDERR FAILED");
-          eprintln!("{}", err);
-        },
-        StdioLine::Out(out) => {
-          let out = str::from_utf8(out.as_bytes()).expect("UTF8 DECODING STDOUT FAILED");
-          println!("{}", out);
-        },
-      }
-      Ok(())
-    }
-
     /// Wait for the process to exit, printing lines of stdout and stderr to the
     /// terminal.
     pub async fn wait(self) -> Result<(), exe::CommandErrorWrapper> {
-      self
-        .exhaust_string_streams_and_wait(Self::stdio_streams_callback)
-        .await?;
+      let Self { mut child, command } = self;
+
+      let status = child.status().await.map_err(|e| {
+        let e: exe::CommandError = e.into();
+        e.command_with_context(command.clone(), "merging async streams".to_string())
+      })?;
+      exe::CommandError::analyze_exit_status(status)
+        .map_err(|e| e.command_with_context(command, "checking async exit status".to_string()))?;
+
       Ok(())
     }
-  }
-
-  /// A chunk of either stdout or stderr from a subprocess.
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub enum StdioChunk {
-    /// A chunk of stdout.
-    Out(Vec<u8>),
-    /// A chunk of stderr.
-    Err(Vec<u8>),
-  }
-
-  /// A line of either stdout or stderr from a subprocess.
-  #[derive(Debug, Clone, PartialEq, Eq)]
-  pub enum StdioLine {
-    /// A line of stdout.
-    Out(String),
-    /// A line of stderr.
-    Err(String),
   }
 
   /// Trait that defines "asynchronously" invokable processes.
@@ -738,20 +552,16 @@ pub mod stream {
   impl Streamable for exe::Command {
     fn invoke_streaming(self) -> Result<Streaming, exe::CommandErrorWrapper> {
       let mut command = self.clone().command();
-      let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+      let child = command
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| e.into())
         .map_err(|e: exe::CommandError| {
           e.command_with_context(self.clone(), "spawning async process".to_string())
         })?;
-      let stdout = child.stdout.take().unwrap();
-      let stderr = child.stderr.take().unwrap();
       Ok(Streaming {
         child,
-        stdout,
-        stderr,
         command: self,
       })
     }
