@@ -368,10 +368,10 @@ impl Default for ExprExt {
 
 impl ExprExt {
   #[inline]
-  pub const fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
+  pub fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
 
   #[inline]
-  pub const fn from_min_offset(x: usize) -> Self {
+  pub fn from_min_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_OFFSET;
     let mut s = Self::zeroed();
     s.0.flags = ext_flags.into_native();
@@ -380,7 +380,7 @@ impl ExprExt {
   }
 
   #[inline]
-  pub const fn from_max_offset(x: usize) -> Self {
+  pub fn from_max_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MAX_OFFSET;
     let mut s = Self::zeroed();
     s.0.flags = ext_flags.into_native();
@@ -389,7 +389,7 @@ impl ExprExt {
   }
 
   #[inline]
-  pub const fn from_min_length(x: usize) -> Self {
+  pub fn from_min_length(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_LENGTH;
     let mut s = Self::zeroed();
     s.0.flags = ext_flags.into_native();
@@ -398,7 +398,7 @@ impl ExprExt {
   }
 
   #[inline]
-  pub const fn from_edit_distance(x: usize) -> Self {
+  pub fn from_edit_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::EDIT_DISTANCE;
     let mut s = Self::zeroed();
     s.0.flags = ext_flags.into_native();
@@ -408,7 +408,7 @@ impl ExprExt {
   }
 
   #[inline]
-  pub const fn from_hamming_distance(x: usize) -> Self {
+  pub fn from_hamming_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::HAMMING_DISTANCE;
     let mut s = Self::zeroed();
     s.0.flags = ext_flags.into_native();
