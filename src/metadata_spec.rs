@@ -154,9 +154,9 @@ pub mod spec {
   impl EnvInstructions {
     pub fn compute_digest(&self) -> EnvHash {
       let mut hasher = Sha3_256::new();
-      let strs: Vec<&str> = self.specs.iter().map(|Spec(s)| s.as_str()).collect();
-      let combined_output: String = strs[..].join("\n");
-      hasher.update(combined_output.as_bytes());
+      for Spec(s) in self.specs.iter() {
+        hasher.update(&s);
+      }
       EnvHash(hasher.finalize().into())
     }
   }
