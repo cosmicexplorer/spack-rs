@@ -486,7 +486,7 @@ impl ExprExt {
   }
 
   #[inline]
-  pub(crate) const fn as_ref_native(&self) -> &hs::hs_expr_ext { &self.0 }
+  pub(crate) fn as_ref_native(&self) -> &hs::hs_expr_ext { &self.0 }
 }
 
 impl ops::BitOr for ExprExt {

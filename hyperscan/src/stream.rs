@@ -160,10 +160,10 @@ impl LiveStream {
   pub(crate) const unsafe fn from_native(p: *mut hs::hs_stream) -> Self { Self(p) }
 
   #[inline]
-  pub(crate) const fn as_ref_native(&self) -> &hs::hs_stream { unsafe { &*self.0 } }
+  pub(crate) fn as_ref_native(&self) -> &hs::hs_stream { unsafe { &*self.0 } }
 
   #[inline]
-  pub(crate) const fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.0 } }
+  pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.0 } }
 
   pub fn try_open(db: &Database) -> Result<Self, HyperscanError> {
     let mut ret = ptr::null_mut();

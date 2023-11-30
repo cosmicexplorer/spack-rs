@@ -9,11 +9,9 @@ use crate::{
   flags::{CpuFeatures, ScanFlags, TuneFamily},
   hs,
   matchers::{
-    contiguous_slice::{match_slice_ref, Match, Scanner, SliceMatcher},
-    vectored_slice::{
-      match_slice_vectored_ref, VectorScanner, VectoredMatch, VectoredSliceMatcher,
-    },
-    ByteSlice, VectoredByteSlices,
+    contiguous_slice::{match_slice_ref, Match, SliceMatcher},
+    vectored_slice::{match_slice_vectored_ref, VectoredMatch, VectoredSliceMatcher},
+    ByteSlice, MatchResult, VectoredByteSlices,
   },
 };
 
@@ -217,7 +215,7 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan<'data, F: Scanner<'data>>(
+  pub fn scan<'data, F: FnMut(&Match<'data>) -> MatchResult+'data>(
     self: Pin<&mut Self>,
     db: Pin<&Database>,
     data: ByteSlice<'data>,
@@ -303,7 +301,7 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan_vectored<'data, F: VectorScanner<'data>>(
+  pub fn scan_vectored<'data, F: FnMut(&VectoredMatch<'data>) -> MatchResult+'data>(
     self: Pin<&mut Self>,
     db: Pin<&Database>,
     data: VectoredByteSlices<'data>,

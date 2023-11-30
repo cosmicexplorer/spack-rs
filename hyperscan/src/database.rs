@@ -31,10 +31,10 @@ impl Database {
   pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
 
   #[inline]
-  pub(crate) const fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
+  pub(crate) fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
 
   #[inline]
-  pub(crate) const fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
+  pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
 
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanError> {
     let mut scratch = Scratch::new();

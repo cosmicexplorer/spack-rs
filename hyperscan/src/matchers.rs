@@ -257,7 +257,7 @@ pub(crate) struct MatchEvent {
 
 impl MatchEvent {
   #[inline(always)]
-  pub const fn coerce_args(
+  pub fn coerce_args(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -274,7 +274,7 @@ impl MatchEvent {
   }
 
   #[inline(always)]
-  pub const unsafe fn extract_context<'a, T>(
+  pub unsafe fn extract_context<'a, T>(
     context: Option<ptr::NonNull<c_void>>,
   ) -> Option<Pin<&'a mut T>> {
     match context {
@@ -297,17 +297,18 @@ pub mod contiguous_slice {
     pub flags: ScanFlags,
   }
 
-  pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult+'data;
+  /* TODO: only available on nightly! */
+  /* pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult+'data; */
 
   pub(crate) struct SliceMatcher<'data, 'code> {
     parent_slice: ByteSlice<'data>,
     matches_tx: mpsc::UnboundedSender<Match<'data>>,
-    handler: &'code mut dyn Scanner<'data>,
+    handler: &'code mut (dyn FnMut(&Match<'data>) -> MatchResult+'data),
   }
 
   impl<'data, 'code> SliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<F: Scanner<'data>>(
+    pub fn new<F: FnMut(&Match<'data>) -> MatchResult+'data>(
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
     ) -> (Self, mpsc::UnboundedReceiver<Match<'data>>) {
@@ -377,17 +378,19 @@ pub mod vectored_slice {
     pub flags: ScanFlags,
   }
 
-  pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) -> MatchResult+'data;
+  /* TODO: only available on nightly! */
+  /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
+   * MatchResult+'data; */
 
   pub(crate) struct VectoredSliceMatcher<'data, 'code> {
     parent_slices: VectoredByteSlices<'data>,
     matches_tx: mpsc::UnboundedSender<VectoredMatch<'data>>,
-    handler: &'code mut dyn VectorScanner<'data>,
+    handler: &'code mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+'data),
   }
 
   impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
     #[inline]
-    pub fn new<F: VectorScanner<'data>>(
+    pub fn new<F: FnMut(&VectoredMatch<'data>) -> MatchResult+'data>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
     ) -> (Self, mpsc::UnboundedReceiver<VectoredMatch<'data>>) {

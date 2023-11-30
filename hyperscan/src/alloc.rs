@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use std::{
-  alloc::{Allocator, Layout},
+  alloc::{GlobalAlloc, Layout},
   collections::HashMap,
   mem, ops,
   os::raw::c_void,
@@ -17,7 +17,7 @@ use std::{
 };
 
 struct LayoutTracker {
-  allocator: Arc<dyn Allocator>,
+  allocator: Arc<dyn GlobalAlloc>,
   layouts: HashMap<NonNull<u8>, Layout>,
 }
 
@@ -33,7 +33,7 @@ impl ops::Drop for LayoutTracker {
 }
 
 impl LayoutTracker {
-  pub fn new(allocator: Arc<impl Allocator+'static>) -> Self {
+  pub fn new(allocator: Arc<impl GlobalAlloc+'static>) -> Self {
     Self {
       allocator,
       layouts: HashMap::new(),
@@ -42,17 +42,17 @@ impl LayoutTracker {
 
   pub fn allocate(&mut self, size: usize) -> Option<NonNull<u8>> {
     let layout = Layout::from_size_align(size, 8).unwrap();
-    self.allocator.allocate(layout).ok().map(|ret_slice| {
-      let ret: NonNull<u8> = NonNull::new(ret_slice.as_mut_ptr()).unwrap();
+    let ret = NonNull::new(unsafe { self.allocator.alloc(layout) });
+    if let Some(ret) = ret {
       assert!(self.layouts.insert(ret, layout).is_none());
-      ret
-    })
+    }
+    ret
   }
 
   pub fn deallocate(&mut self, ptr: NonNull<u8>) {
     let layout = self.layouts.remove(&ptr).unwrap();
     unsafe {
-      self.allocator.deallocate(ptr, layout);
+      self.allocator.dealloc(ptr.as_ptr(), layout);
     }
   }
 }
@@ -81,7 +81,7 @@ unsafe extern "C" fn db_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_db_allocator(allocator: Arc<impl Allocator+'static>) -> Result<(), HyperscanError> {
+pub fn set_db_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = DB_ALLOCATOR.lock().insert(tracker);
   HyperscanError::from_native(unsafe {
@@ -114,7 +114,7 @@ pub(crate) unsafe extern "C" fn misc_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_misc_allocator(allocator: Arc<impl Allocator+'static>) -> Result<(), HyperscanError> {
+pub fn set_misc_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = MISC_ALLOCATOR.lock().insert(tracker);
   HyperscanError::from_native(unsafe {
@@ -146,7 +146,9 @@ unsafe extern "C" fn scratch_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_scratch_allocator(allocator: Arc<impl Allocator+'static>) -> Result<(), HyperscanError> {
+pub fn set_scratch_allocator(
+  allocator: Arc<impl GlobalAlloc+'static>,
+) -> Result<(), HyperscanError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = SCRATCH_ALLOCATOR.lock().insert(tracker);
   HyperscanError::from_native(unsafe {
@@ -178,7 +180,9 @@ unsafe extern "C" fn stream_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_stream_allocator(allocator: Arc<impl Allocator+'static>) -> Result<(), HyperscanError> {
+pub fn set_stream_allocator(
+  allocator: Arc<impl GlobalAlloc+'static>,
+) -> Result<(), HyperscanError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = STREAM_ALLOCATOR.lock().insert(tracker);
   HyperscanError::from_native(unsafe {
@@ -191,9 +195,9 @@ pub fn set_stream_allocator(allocator: Arc<impl Allocator+'static>) -> Result<()
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
-/// use std::{alloc::Global, pin::Pin, sync::Arc};
+/// use std::{alloc::System, pin::Pin, sync::Arc};
 ///
-/// hyperscan::alloc::set_allocator(Arc::new(Global))?;
+/// hyperscan::alloc::set_allocator(Arc::new(System))?;
 ///
 /// let expr: Expression = "(he)ll".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -209,7 +213,7 @@ pub fn set_stream_allocator(allocator: Arc<impl Allocator+'static>) -> Result<()
 /// # Ok(())
 /// # })}
 /// ```
-pub fn set_allocator(allocator: Arc<impl Allocator+'static>) -> Result<(), HyperscanError> {
+pub fn set_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
   set_db_allocator(allocator.clone())?;
   set_misc_allocator(allocator.clone())?;
   set_scratch_allocator(allocator.clone())?;

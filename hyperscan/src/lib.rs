@@ -8,12 +8,6 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
-#![feature(const_nonnull_new)]
-#![feature(const_mut_refs)]
-#![feature(const_pin)]
-#![feature(trait_alias)]
-#![feature(allocator_api)]
-#![feature(slice_ptr_get)]
 
 #[allow(unused, non_camel_case_types, clippy::all)]
 mod bindings {
