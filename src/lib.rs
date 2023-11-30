@@ -42,7 +42,7 @@
 #![allow(clippy::mutex_atomic)]
 
 pub mod commands;
-pub mod lock;
+mod lock;
 pub mod metadata_spec;
 pub mod subprocess;
 pub mod summoning;
@@ -65,7 +65,7 @@ use thiserror::Error;
 ///
 /// Figuring out a nicer way to select a compatible spack version (which also
 /// works across the entire cargo build graph, which may invoke this crate
-/// multiple times) is on the horizon, but until now hardcoding this information
+/// multiple times) is on the horizon, but until then hardcoding this information
 /// is slightly easier to work with.
 pub mod versions {
   use hex_literal::hex;
