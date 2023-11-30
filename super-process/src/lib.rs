@@ -428,7 +428,7 @@ pub mod sync {
 
       let output = Self { stdout, stderr };
       if let Err(e) = exe::CommandError::analyze_exit_status(status) {
-        let output_msg: String = match output.clone().decode(command.clone()) {
+        let output_msg: String = match output.decode(command.clone()) {
           Ok(decoded) => format!("(utf-8 decoded) {:?}", decoded),
           Err(_) => format!("(could not decode) {:?}", &output),
         };
@@ -443,24 +443,27 @@ pub mod sync {
 
     /// Decode the output streams of this process, with the invoking `command`
     /// provided for error context.
-    pub fn decode(self, command: exe::Command) -> Result<DecodedOutput, exe::CommandErrorWrapper> {
-      let Self { stdout, stderr } = &self;
+    pub fn decode(
+      &self,
+      command: exe::Command,
+    ) -> Result<DecodedOutput<'_>, exe::CommandErrorWrapper> {
+      let Self { stdout, stderr } = self;
 
-      let stdout = str::from_utf8(stdout)
-        .map_err(|e| e.into())
-        .map_err(|e: exe::CommandError| {
-          e.command_with_context(
-            command.clone(),
-            format!("when decoding stdout from {:?}", &self),
-          )
-        })?
-        .to_string();
-      let stderr = str::from_utf8(stderr)
-        .map_err(|e| e.into())
-        .map_err(|e: exe::CommandError| {
-          e.command_with_context(command, format!("when decoding stderr from {:?}", &self))
-        })?
-        .to_string();
+      let stdout =
+        str::from_utf8(stdout)
+          .map_err(|e| e.into())
+          .map_err(|e: exe::CommandError| {
+            e.command_with_context(
+              command.clone(),
+              format!("when decoding stdout from {:?}", &self),
+            )
+          })?;
+      let stderr =
+        str::from_utf8(stderr)
+          .map_err(|e| e.into())
+          .map_err(|e: exe::CommandError| {
+            e.command_with_context(command, format!("when decoding stderr from {:?}", &self))
+          })?;
 
       Ok(DecodedOutput { stdout, stderr })
     }
@@ -470,9 +473,9 @@ pub mod sync {
   /// decoding.
   #[derive(Debug, Clone)]
   #[allow(missing_docs)]
-  pub struct DecodedOutput {
-    pub stdout: String,
-    pub stderr: String,
+  pub struct DecodedOutput<'a> {
+    pub stdout: &'a str,
+    pub stderr: &'a str,
   }
 
   /// Trait that defines "synchronously" invokable processes.

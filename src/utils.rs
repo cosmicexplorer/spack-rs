@@ -445,9 +445,9 @@ pub mod metadata {
       argv: cargo_argv,
       ..Default::default()
     };
-    let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd)?;
 
-    let metadata = CargoMetadata::parse_json(decoded_output.stdout)?;
+    let metadata =
+      CargoMetadata::parse_json(cargo_cmd.clone().invoke().await?.decode(cargo_cmd)?.stdout)?;
     let package_graph = metadata.build_graph()?;
 
     let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = package_graph
