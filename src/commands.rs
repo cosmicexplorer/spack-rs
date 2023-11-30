@@ -77,7 +77,7 @@ pub mod config {
     sync::SyncInvocable,
   };
 
-  use lazy_static::lazy_static;
+  use once_cell::sync::Lazy;
   use serde::{Deserialize, Serialize};
   use serde_yaml;
 
@@ -235,12 +235,12 @@ pub mod config {
       let output = command.invoke().await?;
 
       let top_level: serde_yaml::Value = serde_yaml::from_slice(&output.stdout)?;
-      lazy_static! {
-        static ref TOP_LEVEL_KEY: serde_yaml::Value =
-          serde_yaml::Value::String("compilers".to_string());
-        static ref SECOND_KEY: serde_yaml::Value =
-          serde_yaml::Value::String("compiler".to_string());
-      }
+
+      static TOP_LEVEL_KEY: Lazy<serde_yaml::Value> =
+        Lazy::new(|| serde_yaml::Value::String("compilers".to_string()));
+      static SECOND_KEY: Lazy<serde_yaml::Value> =
+        Lazy::new(|| serde_yaml::Value::String("compiler".to_string()));
+
       let compiler_objects: Vec<&serde_yaml::Value> = top_level
         .as_mapping()
         .and_then(|m| m.get(&TOP_LEVEL_KEY))
@@ -328,7 +328,7 @@ pub mod find {
     sync::SyncInvocable,
   };
 
-  use lazy_static::lazy_static;
+  use once_cell::sync::Lazy;
   use regex::Regex;
   use serde::{Deserialize, Serialize};
   use serde_json;
@@ -473,10 +473,8 @@ pub mod find {
 
       match command.clone().invoke().await {
         Ok(output) => {
-          lazy_static! {
-            static ref FIND_PREFIX_REGEX: Regex =
-              Regex::new(r"^([^@]+)@([^ ]+) +([^ ].*)$").unwrap();
-          }
+          static FIND_PREFIX_REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^([^@]+)@([^ ]+) +([^ ].*)$").unwrap());
           let stdout = str::from_utf8(&output.stdout).map_err(|e| {
             FindError::Parse(format!("failed to parse utf8 ({}): got {:?}", e, &output))
           })?;
@@ -1240,10 +1238,7 @@ pub mod python {
       // Spawn the child process and wait for it to complete.
       let output = command.clone().invoke().await.expect("sync command failed");
       // Parse output into UTF-8...
-      let decoded = output
-        .decode(command.clone())
-        .await
-        .expect("decoding failed");
+      let decoded = output.decode(command.clone()).expect("decoding failed");
       // ...and verify the version matches `spack.version`.
       let version = decoded.stdout.strip_suffix("\n").unwrap();
       assert!(version == &spack.version);
@@ -1783,7 +1778,7 @@ pub mod env {
         .await
         .map_err(|e| e.with_context("in env_list()!".to_string()))?;
       let output = command.clone().invoke().await?;
-      let output = output.decode(command).await?;
+      let output = output.decode(command)?;
       Ok(
         output
           .stdout

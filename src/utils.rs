@@ -170,7 +170,7 @@ pub mod prefix {
   use futures_core::stream::Stream;
   use futures_util::{pin_mut, stream::TryStreamExt};
   use indexmap::{IndexMap, IndexSet};
-  use lazy_static::lazy_static;
+  use once_cell::sync::Lazy;
   use regex::Regex;
   use thiserror::Error;
   use walkdir;
@@ -237,9 +237,8 @@ pub mod prefix {
     pub fn minus_l_arg(&self) -> String { format!("{}={}", self.kind.cargo_lib_type(), self.name) }
 
     pub fn parse_file_path(file_path: &Path) -> Option<Self> {
-      lazy_static! {
-        static ref LIBNAME_PATTERN: Regex = Regex::new(r"^lib([^/]+)\.(a|so)$").unwrap();
-      }
+      static LIBNAME_PATTERN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^lib([^/]+)\.(a|so)$").unwrap());
       let filename = match file_path.file_name() {
         Some(component) => component.to_string_lossy(),
         /* All files have a name, and we only care about files, so ignore directories like '..'
@@ -446,7 +445,7 @@ pub mod metadata {
       argv: cargo_argv,
       ..Default::default()
     };
-    let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd).await?;
+    let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd)?;
 
     let metadata = CargoMetadata::parse_json(decoded_output.stdout)?;
     let package_graph = metadata.build_graph()?;

@@ -11,7 +11,7 @@ pub mod python {
   };
 
   use displaydoc::Display;
-  use lazy_static::lazy_static;
+  use once_cell::sync::Lazy;
   use regex::Regex;
   use thiserror::Error;
 
@@ -53,11 +53,9 @@ pub mod python {
     pub version: String,
   }
 
-  lazy_static! {
-    /// Pattern we match against when executing [`Python::detect`].
-    static ref PYTHON_VERSION_REGEX: Regex =
-      Regex::new(r"^Python (3\.[0-9]+\.[0-9]+).*\n$").unwrap();
-  }
+  /// Pattern we match against when executing [`Python::detect`].
+  pub static PYTHON_VERSION_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^Python (3\.[0-9]+\.[0-9]+).*\n$").unwrap());
 
   impl FoundPython {
     fn determine_python_exename() -> exe::Exe {

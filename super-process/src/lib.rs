@@ -75,7 +75,7 @@ pub mod exe {
 
   use displaydoc::Display;
   use indexmap::IndexMap;
-  use lazy_static::lazy_static;
+  use once_cell::sync::Lazy;
   use signal_hook::consts::{signal::*, TERM_SIGNALS};
   use thiserror::Error;
 
@@ -268,19 +268,19 @@ pub mod exe {
   }
 
   macro_rules! signal_pairs {
-  ($($name:ident),+) => {
-    [$(($name, stringify!($name))),+]
-  }
+    ($($name:ident),+) => {
+      [$(($name, stringify!($name))),+]
+    }
   }
 
-  lazy_static! {
-    static ref SIGNAL_NAMES: IndexMap<i32, &'static str> = signal_pairs![
+  static SIGNAL_NAMES: Lazy<IndexMap<i32, &'static str>> = Lazy::new(|| {
+    signal_pairs![
       SIGABRT, SIGALRM, SIGBUS, SIGCHLD, SIGCONT, SIGFPE, SIGHUP, SIGILL, SIGINT, SIGIO, SIGKILL,
       SIGPIPE, SIGPROF, SIGQUIT, SIGSEGV, SIGSTOP, SIGSYS, SIGTERM, SIGTRAP, SIGTSTP, SIGTTIN,
       SIGTTOU, SIGURG, SIGUSR1, SIGUSR2, SIGVTALRM, SIGWINCH, SIGXCPU, SIGXFSZ
     ]
-    .into();
-  }
+    .into()
+  });
 
   impl CommandError {
     /// Raise an error if the process exited with any type of failure.
@@ -416,7 +416,7 @@ pub mod sync {
   impl RawOutput {
     /// Parse the process's exit status with
     /// [`exe::CommandError::analyze_exit_status`].
-    pub async fn extract(
+    pub fn extract(
       command: exe::Command,
       output: process::Output,
     ) -> Result<Self, exe::CommandErrorWrapper> {
@@ -428,7 +428,7 @@ pub mod sync {
 
       let output = Self { stdout, stderr };
       if let Err(e) = exe::CommandError::analyze_exit_status(status) {
-        let output_msg: String = match output.clone().decode(command.clone()).await {
+        let output_msg: String = match output.clone().decode(command.clone()) {
           Ok(decoded) => format!("(utf-8 decoded) {:?}", decoded),
           Err(_) => format!("(could not decode) {:?}", &output),
         };
@@ -443,31 +443,26 @@ pub mod sync {
 
     /// Decode the output streams of this process, with the invoking `command`
     /// provided for error context.
-    pub async fn decode(
-      self,
-      command: exe::Command,
-    ) -> Result<DecodedOutput, exe::CommandErrorWrapper> {
-      tokio::task::spawn_blocking(move || {
-        let Self { stdout, stderr } = &self;
-        let stdout = str::from_utf8(stdout)
-          .map_err(|e| e.into())
-          .map_err(|e: exe::CommandError| {
-            e.command_with_context(
-              command.clone(),
-              format!("when decoding stdout from {:?}", &self),
-            )
-          })?
-          .to_string();
-        let stderr = str::from_utf8(stderr)
-          .map_err(|e| e.into())
-          .map_err(|e: exe::CommandError| {
-            e.command_with_context(command, format!("when decoding stderr from {:?}", &self))
-          })?
-          .to_string();
-        Ok::<_, exe::CommandErrorWrapper>(DecodedOutput { stdout, stderr })
-      })
-      .await
-      .unwrap()
+    pub fn decode(self, command: exe::Command) -> Result<DecodedOutput, exe::CommandErrorWrapper> {
+      let Self { stdout, stderr } = &self;
+
+      let stdout = str::from_utf8(stdout)
+        .map_err(|e| e.into())
+        .map_err(|e: exe::CommandError| {
+          e.command_with_context(
+            command.clone(),
+            format!("when decoding stdout from {:?}", &self),
+          )
+        })?
+        .to_string();
+      let stderr = str::from_utf8(stderr)
+        .map_err(|e| e.into())
+        .map_err(|e: exe::CommandError| {
+          e.command_with_context(command, format!("when decoding stderr from {:?}", &self))
+        })?
+        .to_string();
+
+      Ok(DecodedOutput { stdout, stderr })
     }
   }
 
@@ -499,7 +494,7 @@ pub mod sync {
           .map_err(|e: exe::CommandError| {
             e.command_with_context(self.clone(), "waiting for output".to_string())
           })?;
-      let output = RawOutput::extract(self, output).await?;
+      let output = RawOutput::extract(self, output)?;
       Ok(output)
     }
   }

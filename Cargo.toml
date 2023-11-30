@@ -68,7 +68,6 @@ guppy                   = "0.17.4"
 hex                     = "0.4.3"
 hex-literal             = "0.3.4"
 indexmap                = { workspace = true, features = ["serde"] }
-lazy_static             = "1.4.0"
 once_cell.workspace     = true
 parking_lot.workspace   = true
 regex                   = "1"
