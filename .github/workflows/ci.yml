@@ -43,6 +43,7 @@ jobs:
       with:
         path: ~/.spack/summonings
         # No need to split cache by os, as spack already ensures this separation!
+        # FIXME: i think the above is wrong -- we need to split the cache key by os so that github allows each job per os to write to its own cache (otherwise only the first to complete will be saved)
         key: spack-summonings-${{ env.cache-name }}-v7
 
     - name: test rust
