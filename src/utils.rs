@@ -448,7 +448,7 @@ pub mod metadata {
     };
     let decoded_output = cargo_cmd.clone().invoke().await?.decode(cargo_cmd).await?;
 
-    let metadata = CargoMetadata::parse_json(&decoded_output.stdout)?;
+    let metadata = CargoMetadata::parse_json(decoded_output.stdout)?;
     let package_graph = metadata.build_graph()?;
 
     let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = package_graph
@@ -514,10 +514,7 @@ pub mod metadata {
 
       assert!(recipes.insert(crate_name.clone(), recipe).is_none());
 
-      resolves
-        .entry(env_label)
-        .or_insert_with(Vec::new)
-        .push(spec);
+      resolves.entry(env_label).or_default().push(spec);
     }
 
     Ok(spec::DisjointResolves {

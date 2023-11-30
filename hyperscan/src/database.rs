@@ -484,6 +484,9 @@ impl SerializedDb {
   #[inline]
   pub const fn len(&self) -> usize { self.0.len() }
 
+  #[inline]
+  pub const fn is_empty(&self) -> bool { self.0.is_empty() }
+
   pub fn deserialize_db(&self) -> Result<Database, HyperscanError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
     HyperscanError::from_native(unsafe {

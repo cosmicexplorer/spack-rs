@@ -42,13 +42,11 @@ impl LayoutTracker {
 
   pub fn allocate(&mut self, size: usize) -> Option<NonNull<u8>> {
     let layout = Layout::from_size_align(size, 8).unwrap();
-    if let Some(ret_slice) = self.allocator.allocate(layout).ok() {
+    self.allocator.allocate(layout).ok().map(|ret_slice| {
       let ret: NonNull<u8> = NonNull::new(ret_slice.as_mut_ptr()).unwrap();
       assert!(self.layouts.insert(ret, layout).is_none());
-      Some(ret)
-    } else {
-      None
-    }
+      ret
+    })
   }
 
   pub fn deallocate(&mut self, ptr: NonNull<u8>) {

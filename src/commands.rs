@@ -132,9 +132,9 @@ pub mod config {
       let argv = exe::Argv(
         ["config"]
           .into_iter()
-          .chain(scope_args.into_iter())
+          .chain(scope_args)
           .map(|s| OsStr::new(s).to_os_string())
-          .chain(passthrough.0.into_iter())
+          .chain(passthrough.0)
           .collect(),
       );
       Ok(
@@ -233,7 +233,7 @@ pub mod config {
       let command = config_request
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in GetCompilers::get_compilers()")))?;
+        .map_err(|e| e.with_context("in GetCompilers::get_compilers()".to_string()))?;
       let output = command.invoke().await?;
 
       let top_level: serde_yaml::Value = serde_yaml::from_slice(&output.stdout)?;
@@ -413,7 +413,7 @@ pub mod find {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in Find::find()")))?;
+        .map_err(|e| e.with_context("in Find::find()".to_string()))?;
       let output = command.invoke().await?;
 
       match serde_json::from_slice::<'_, serde_json::Value>(&output.stdout)? {
@@ -474,7 +474,7 @@ pub mod find {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in FindPrefix::find_prefix()")))?;
+        .map_err(|e| e.with_context("in FindPrefix::find_prefix()".to_string()))?;
 
       match command.clone().invoke().await {
         Ok(output) => {
@@ -673,7 +673,7 @@ pub mod load {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in Load::load()")))?;
+        .map_err(|e| e.with_context("in Load::load()".to_string()))?;
       let load_output = command.invoke().await?;
       /* dbg!(std::str::from_utf8(&load_output.stdout).unwrap()); */
 
@@ -808,8 +808,8 @@ pub mod install {
         args
           .into_iter()
           .map(|s| s.to_string())
-          .chain(verbosity.verbosity_args().into_iter())
-          .chain([spec.0.clone()].into_iter())
+          .chain(verbosity.verbosity_args())
+          .chain([spec.0.clone()])
           .map(|s| OsStr::new(&s).to_os_string())
           .collect(),
       );
@@ -837,7 +837,7 @@ pub mod install {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in Install::install()")))?;
+        .map_err(|e| e.with_context("in Install::install()".to_string()))?;
 
       /* Kick off the child process, reading its streams asynchronously. */
       let streaming = command.invoke_streaming()?;
@@ -885,7 +885,7 @@ pub mod install {
       let mut command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in Install::install_with_env()")))?;
+        .map_err(|e| e.with_context("in Install::install_with_env()".to_string()))?;
       command.env = load_env;
 
       let streaming = command.invoke_streaming()?;
@@ -1019,10 +1019,10 @@ pub mod build_env {
       let mut argv = exe::Argv(
         ["build-env".to_string()]
           .into_iter()
-          .chain(dump_args.into_iter())
-          .chain([spec.0].into_iter())
+          .chain(dump_args)
+          .chain([spec.0])
           .map(|s| OsStr::new(&s).to_os_string())
-          .chain(argv.trailing_args().0.into_iter())
+          .chain(argv.trailing_args().0)
           .collect(),
       );
 
@@ -1048,7 +1048,7 @@ pub mod build_env {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in BuildEnv::build_env()")))?;
+        .map_err(|e| e.with_context("in BuildEnv::build_env()".to_string()))?;
       let output = command.invoke().await?;
       Ok(output)
     }
@@ -1214,7 +1214,7 @@ pub mod python {
         [OsStr::new("python"), OsStr::new(&script_path)]
           .into_iter()
           .map(|s| s.to_os_string())
-          .chain(passthrough.0.into_iter())
+          .chain(passthrough.0)
           .collect(),
       );
       let command = spack
@@ -1343,8 +1343,7 @@ pub mod compiler_find {
           .chain(
             scope
               .map(|s| vec!["--scope".to_string(), s])
-              .unwrap_or_else(Vec::new)
-              .into_iter(),
+              .unwrap_or_else(Vec::new),
           )
           .chain(paths.into_iter().map(|p| format!("{}", p.display())))
           .map(|s| OsStr::new(&s).to_os_string())
@@ -1371,7 +1370,7 @@ pub mod compiler_find {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in compiler_find()!")))?;
+        .map_err(|e| e.with_context("in compiler_find()!".to_string()))?;
       let _ = command.invoke().await?;
       Ok(())
     }
@@ -1418,7 +1417,7 @@ pub mod compiler_find {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in find_compiler_specs()!")))?;
+        .map_err(|e| e.with_context("in find_compiler_specs()!".to_string()))?;
       let output = command.invoke().await?;
 
       match serde_json::from_slice::<'_, serde_json::Value>(&output.stdout)? {
@@ -1580,7 +1579,7 @@ pub mod checksum {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in VersionsRequest::safe_versions()")))?;
+        .map_err(|e| e.with_context("in VersionsRequest::safe_versions()".to_string()))?;
       let output = command.invoke().await?;
 
       let versions: Vec<String> = str::from_utf8(&output.stdout)?
@@ -1658,7 +1657,7 @@ pub mod checksum {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in add_to_package()!")))?;
+        .map_err(|e| e.with_context("in add_to_package()!".to_string()))?;
 
       /* Execute the command. */
       let _ = command.invoke().await?;
@@ -1806,7 +1805,7 @@ pub mod env {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in env_list()!")))?;
+        .map_err(|e| e.with_context("in env_list()!".to_string()))?;
       let output = command.clone().invoke().await?;
       let output = output.decode(command).await?;
       Ok(
@@ -1910,7 +1909,7 @@ pub mod env {
       let command = self
         .setup_command()
         .await
-        .map_err(|e| e.with_context(format!("in idempotent_env_create()!")))?;
+        .map_err(|e| e.with_context("in idempotent_env_create()!".to_string()))?;
       let _ = command.invoke().await?;
       assert!(Self::env_exists(req, &env).await?);
 

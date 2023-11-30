@@ -783,13 +783,7 @@ impl cmp::PartialEq for RE2 {
 impl cmp::Eq for RE2 {}
 
 impl cmp::PartialOrd for RE2 {
-  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    let intermediate = self.pattern().partial_cmp(&other.pattern());
-    if intermediate != Some(cmp::Ordering::Equal) {
-      return intermediate;
-    }
-    self.options().partial_cmp(&other.options())
-  }
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl cmp::Ord for RE2 {

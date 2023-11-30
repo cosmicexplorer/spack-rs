@@ -217,6 +217,7 @@ pub(crate) struct StreamSink {
   live: LiveStream,
   scratch: Arc<Scratch>,
   matcher: StreamMatcher,
+  #[allow(clippy::type_complexity)]
   write_future: Option<(*const u8, Pin<Box<dyn Future<Output=io::Result<usize>>>>)>,
   shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>,
 }
@@ -413,7 +414,7 @@ impl AsyncWrite for StreamSink {
         return Poll::Ready(ret);
       }
 
-      let _ = self.shutdown_future.insert(fut);
+      self.shutdown_future = Some(fut);
       Poll::Pending
     }
   }
@@ -783,7 +784,7 @@ impl CompressedStream {
         self.buf.capacity(),
       )
     })?;
-    let live = unsafe { LiveStream::from_native(inner as *mut hs::hs_stream) };
+    let live = unsafe { LiveStream::from_native(inner) };
 
     let mut matcher = self.matcher.clone();
     let (tx, rx) = mpsc::unbounded_channel();

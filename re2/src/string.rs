@@ -108,9 +108,7 @@ impl<'a> cmp::PartialEq for StringView<'a> {
 impl<'a> cmp::Eq for StringView<'a> {}
 
 impl<'a> cmp::PartialOrd for StringView<'a> {
-  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self.as_slice().partial_cmp(other.as_slice())
-  }
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl<'a> cmp::Ord for StringView<'a> {
@@ -229,9 +227,7 @@ impl<'a> cmp::PartialEq for StringMut<'a> {
 impl<'a> cmp::Eq for StringMut<'a> {}
 
 impl<'a> cmp::PartialOrd for StringMut<'a> {
-  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self.as_mut_slice().partial_cmp(&other.as_mut_slice())
-  }
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl<'a> cmp::Ord for StringMut<'a> {
