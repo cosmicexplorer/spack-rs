@@ -45,4 +45,5 @@ tokio-stream            = "0.1.14"
 
 [dev-dependencies]
 eyre.workspace          = true
+tokio                   = { workspace = true, features = ["macros"] }
 tokio-test.workspace    = true

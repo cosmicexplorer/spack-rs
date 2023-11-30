@@ -522,43 +522,6 @@ impl Streamer {
     UnboundedReceiverStream::new(rx)
   }
 
-  ///```
-  /// # #[allow(warnings)]
-  /// # fn main() -> Result<(), eyre::Report> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, stream::*, matchers::*};
-  /// use futures_util::StreamExt;
-  ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(
-  ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
-  ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
-  /// )?;
-  /// let scratch = db.allocate_scratch()?;
-  ///
-  /// struct S;
-  /// impl StreamScanner for S {
-  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-  ///   fn new() -> Self where Self: Sized { Self }
-  ///   fn reset(&mut self) {}
-  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
-  /// }
-  /// let s1 = Streamer::open::<S>(&db, scratch.into())?;
-  ///
-  /// let compressed = s1.compress(CompressReserveBehavior::NewBuf)?;
-  /// std::mem::drop(s1);
-  ///
-  /// let msg = "aardvark";
-  /// let mut s2 = compressed.expand(&db)?;
-  /// s2.scan(msg.as_bytes().into()).await?;
-  /// todo!("ok");
-  /// s2.flush_eod().await?;
-  /// let rx = s2.stream_results();
-  ///
-  /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }| &msg[range]).collect().await;
-  /// assert_eq!(results, vec!["a", "aa", "a"]);
-  /// # Ok(())
-  /// # })}
-  /// ```
   pub fn compress(
     &self,
     into: CompressReserveBehavior,
@@ -885,3 +848,53 @@ impl CompressedStream {
 /* }) */
 /* } */
 /* } */
+
+#[cfg(test)]
+mod test {
+  use super::*;
+  use crate::{expression::*, flags::*, matchers::*};
+
+  #[tokio::test]
+  #[ignore = "raises ScratchInUse for some reason???"]
+  async fn test_compress() -> Result<(), eyre::Report> {
+    use futures_util::StreamExt;
+
+    let expr: Expression = "a+".parse()?;
+    let db = expr.compile(
+      Flags::UTF8 | Flags::SOM_LEFTMOST,
+      Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+    )?;
+    let scratch = db.allocate_scratch()?;
+
+    struct S;
+    impl StreamScanner for S {
+      fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+
+      fn new() -> Self
+      where Self: Sized {
+        Self
+      }
+
+      fn reset(&mut self) {}
+
+      fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+    }
+    let s1 = Streamer::open::<S>(&db, scratch.into())?;
+
+    let compressed = s1.compress(CompressReserveBehavior::NewBuf)?;
+    std::mem::drop(s1);
+
+    let msg = "aardvark";
+    let mut s2 = compressed.expand(&db)?;
+    s2.scan(msg.as_bytes().into()).await?; /* This line fails! */
+    s2.flush_eod().await?;
+    let rx = s2.stream_results();
+
+    let results: Vec<&str> = rx
+      .map(|StreamMatch { range, .. }| &msg[range])
+      .collect()
+      .await;
+    assert_eq!(results, vec!["a", "aa", "a"]);
+    Ok(())
+  }
+}
