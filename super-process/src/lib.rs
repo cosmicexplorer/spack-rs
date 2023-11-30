@@ -381,7 +381,7 @@ pub mod base {
 ///
 ///```
 /// # tokio_test::block_on(async {
-/// use std::{str, path::PathBuf};
+/// use std::path::PathBuf;
 /// use super_process::{fs, exe, sync::SyncInvocable};
 ///
 /// let command = exe::Command {
@@ -393,7 +393,7 @@ pub mod base {
 /// // Spawn the child process and wait for it to end.
 /// let output = command.clone().invoke().await.expect("sync subprocess failed");
 /// // Parse stdout into utf8...
-/// let hey = str::from_utf8(&output.stdout).expect("utf8 decoding failed")
+/// let hey = output.decode(command).expect("utf8 decoding failed").stdout
 ///   // ...and strip the trailing newline.
 ///   .strip_suffix("\n")
 ///   .expect("trailing newline not found");
