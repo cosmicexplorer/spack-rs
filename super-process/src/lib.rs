@@ -332,7 +332,6 @@ pub mod exe {
 pub mod base {
   use super::*;
 
-  use async_trait::async_trait;
   use displaydoc::Display;
   use thiserror::Error;
 
@@ -370,9 +369,9 @@ pub mod base {
 
   /// Declare higher-level operations which desugar to command lines by
   /// implementing this trait.
-  #[async_trait]
   pub trait CommandBase {
     /// Generate a command line from the given object.
+    #[allow(async_fn_in_trait)]
     async fn setup_command(self) -> Result<exe::Command, SetupError>;
   }
 }
@@ -403,8 +402,6 @@ pub mod base {
 /// ```
 pub mod sync {
   use super::exe;
-
-  use async_trait::async_trait;
 
   use std::{process, str};
 
@@ -484,14 +481,13 @@ pub mod sync {
   }
 
   /// Trait that defines "synchronously" invokable processes.
-  #[async_trait]
   pub trait SyncInvocable {
     /// Invoke a child process and wait on it to complete while slurping its
     /// output.
+    #[allow(async_fn_in_trait)]
     async fn invoke(self) -> Result<RawOutput, exe::CommandErrorWrapper>;
   }
 
-  #[async_trait]
   impl SyncInvocable for exe::Command {
     async fn invoke(self) -> Result<RawOutput, exe::CommandErrorWrapper> {
       let mut command = self.clone().command();
@@ -772,7 +768,6 @@ pub mod sh {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use displaydoc::Display;
   use indexmap::IndexMap;
   use tempfile::{NamedTempFile, TempPath};
@@ -1005,7 +1000,6 @@ pub mod sh {
     pub base: exe::Command,
   }
 
-  #[async_trait]
   impl CommandBase for ShellScriptInvocation {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self {

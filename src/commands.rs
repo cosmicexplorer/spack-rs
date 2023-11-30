@@ -77,7 +77,6 @@ pub mod config {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use lazy_static::lazy_static;
   use serde::{Deserialize, Serialize};
   use serde_yaml;
@@ -116,7 +115,6 @@ pub mod config {
     fn into_base_config(self) -> Config;
   }
 
-  #[async_trait]
   impl CommandBase for Config {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self {
@@ -330,7 +328,6 @@ pub mod find {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use lazy_static::lazy_static;
   use regex::Regex;
   use serde::{Deserialize, Serialize};
@@ -385,7 +382,6 @@ pub mod find {
     pub spec: CLISpec,
   }
 
-  #[async_trait]
   impl CommandBase for Find {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self { spack, spec } = self;
@@ -440,7 +436,6 @@ pub mod find {
     pub env: Option<EnvName>,
   }
 
-  #[async_trait]
   impl CommandBase for FindPrefix {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self { spack, spec, env } = self;
@@ -617,8 +612,6 @@ pub mod load {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
-
   use std::{ffi::OsStr, str};
 
   /// Errors loading.
@@ -643,7 +636,6 @@ pub mod load {
     pub specs: Vec<CLISpec>,
   }
 
-  #[async_trait]
   impl CommandBase for Load {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self { spack, specs } = self;
@@ -741,8 +733,6 @@ pub mod install {
     stream::Streamable,
   };
 
-  use async_trait::async_trait;
-
   use std::ffi::OsStr;
 
   /// Errors installing.
@@ -786,7 +776,6 @@ pub mod install {
     pub env: Option<EnvName>,
   }
 
-  #[async_trait]
   impl CommandBase for Install {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self {
@@ -963,8 +952,6 @@ pub mod build_env {
     sync::{self, SyncInvocable},
   };
 
-  use async_trait::async_trait;
-
   use std::{ffi::OsStr, path::PathBuf};
 
   /// Errors setting up the build environment.
@@ -997,7 +984,6 @@ pub mod build_env {
     pub argv: exe::Argv,
   }
 
-  #[async_trait]
   impl CommandBase for BuildEnv {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("BuildEnv");
@@ -1165,7 +1151,6 @@ pub mod python {
     exe,
   };
 
-  use async_trait::async_trait;
   use tempfile::{NamedTempFile, TempPath};
 
   use std::ffi::OsStr;
@@ -1191,7 +1176,6 @@ pub mod python {
     }
   }
 
-  #[async_trait]
   impl CommandBase for SpackPython {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("SpackPython");
@@ -1296,7 +1280,6 @@ pub mod compiler_find {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use serde::{Deserialize, Serialize};
   use serde_json;
 
@@ -1328,7 +1311,6 @@ pub mod compiler_find {
     pub scope: Option<String>,
   }
 
-  #[async_trait]
   impl CommandBase for CompilerFind {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self {
@@ -1436,7 +1418,6 @@ pub mod compiler_find {
     }
   }
 
-  #[async_trait]
   impl CommandBase for FindCompilerSpecs {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       let Self { spack, paths } = self.clone();
@@ -1519,7 +1500,6 @@ pub mod checksum {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use indexmap::IndexSet;
   use tokio::task;
 
@@ -1545,7 +1525,6 @@ pub mod checksum {
     pub package_name: String,
   }
 
-  #[async_trait]
   impl CommandBase for VersionsRequest {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("VersionsRequest");
@@ -1601,7 +1580,6 @@ pub mod checksum {
     pub new_version: String,
   }
 
-  #[async_trait]
   impl CommandBase for AddToPackage {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("AddToPackage");
@@ -1750,7 +1728,6 @@ pub mod env {
     sync::SyncInvocable,
   };
 
-  use async_trait::async_trait;
   use indexmap::IndexSet;
   use tokio::task;
 
@@ -1774,7 +1751,6 @@ pub mod env {
     pub spack: SpackInvocation,
   }
 
-  #[async_trait]
   impl CommandBase for EnvList {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("EnvList");
@@ -1825,7 +1801,6 @@ pub mod env {
     pub env: EnvName,
   }
 
-  #[async_trait]
   impl CommandBase for EnvCreate {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
       eprintln!("EnvCreate");
