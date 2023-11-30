@@ -3,7 +3,7 @@ spack-rs
 
 A rust interface to [spack](https://github.com/spack/spack)! Useful for [build scripts](https://doc.rust-lang.org/cargo/reference/build-scripts.html).
 
-*See example usage in [`re2`](./re2).*
+*See example usage in [`re2`](./re2) and [`hyperscan`](./hyperscan).*
 
 # License
 
