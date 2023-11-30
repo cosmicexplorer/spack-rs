@@ -9,7 +9,7 @@ pub mod spec {
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
-  use std::{collections::HashMap, path::PathBuf};
+  use std::path::PathBuf;
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct EnvLabel(pub String);
@@ -48,7 +48,7 @@ pub mod spec {
     pub spec: String,
     pub cxx: Option<String>,
     pub bindgen: BindgenConfig,
-    pub deps: HashMap<String, Dep>,
+    pub deps: IndexMap<String, Dep>,
   }
 
   /// Name of a package from the [`Spec`] resolver.

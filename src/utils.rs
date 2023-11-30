@@ -460,7 +460,7 @@ pub mod metadata {
       })
       .map(|(name, spack_metadata)| {
         let metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)?;
-        Ok::<_, MetadataError>((name, metadata))
+        Ok((name, metadata))
       })
       .collect::<Result<Vec<_>, MetadataError>>()?;
 
@@ -480,31 +480,24 @@ pub mod metadata {
       let spec = spec::Spec(spec);
       let cxx = spec::CxxSupport::parse(cxx.as_deref())?;
 
-      let sub_deps: Vec<spec::SubDep> = {
-        let mut deps: Vec<(String, spec::Dep)> = deps.into_iter().collect();
-        /* NB: Sort dependencies by name to avoid nondeterministic iteration of
-         * HashMap, which is necessary to deserialize the format from json with
-         * serde. */
-        deps.sort_by_cached_key(|(pkg_name, _)| pkg_name.clone());
-        deps
-          .into_iter()
-          .map(|(pkg_name, dep)| {
-            let pkg_name = spec::PackageName(pkg_name);
-            let spec::Dep {
-              r#type,
-              lib_names,
-              allowlist,
-            } = dep;
-            let r#type = spec::LibraryType::parse(&r#type)?;
-            Ok(spec::SubDep {
-              pkg_name,
-              r#type,
-              lib_names,
-              allowlist,
-            })
+      let sub_deps: Vec<spec::SubDep> = deps
+        .into_iter()
+        .map(|(pkg_name, dep)| {
+          let pkg_name = spec::PackageName(pkg_name);
+          let spec::Dep {
+            r#type,
+            lib_names,
+            allowlist,
+          } = dep;
+          let r#type = spec::LibraryType::parse(&r#type)?;
+          Ok(spec::SubDep {
+            pkg_name,
+            r#type,
+            lib_names,
+            allowlist,
           })
-          .collect::<Result<Vec<_>, spec::SpecError>>()?
-      };
+        })
+        .collect::<Result<Vec<_>, spec::SpecError>>()?;
 
       let recipe = spec::Recipe {
         env_label: env_label.clone(),
