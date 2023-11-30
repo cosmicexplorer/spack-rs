@@ -147,7 +147,7 @@ pub struct StringMut<'a> {
 
 impl<'a> StringMut<'a> {
   #[inline]
-  pub const fn empty() -> Self {
+  pub fn empty() -> Self {
     let inner = re2_c::StringMut {
       data_: ptr::null_mut(),
       len_: 0,
@@ -155,8 +155,9 @@ impl<'a> StringMut<'a> {
     unsafe { Self::from_native(inner) }
   }
 
+  /* NB: This can't be const because it references &mut data! */
   #[inline]
-  pub(crate) const unsafe fn from_native(inner: re2_c::StringMut) -> Self {
+  pub(crate) unsafe fn from_native(inner: re2_c::StringMut) -> Self {
     Self {
       inner,
       _ph: PhantomData,
@@ -164,7 +165,7 @@ impl<'a> StringMut<'a> {
   }
 
   #[inline]
-  pub const fn from_mut_slice(b: &'a mut [u8]) -> Self {
+  pub fn from_mut_slice(b: &'a mut [u8]) -> Self {
     let inner = re2_c::StringMut {
       data_: b.as_mut_ptr() as *mut c_char,
       len_: b.len(),
@@ -186,12 +187,12 @@ impl<'a> StringMut<'a> {
   pub const fn len(&self) -> usize { self.inner.len_ }
 
   #[inline]
-  pub const fn as_mut_slice(&self) -> &'a mut [u8] {
+  pub fn as_mut_slice(&self) -> &'a mut [u8] {
     unsafe { slice::from_raw_parts_mut(self.mut_data_pointer(), self.len()) }
   }
 
   #[inline]
-  pub const fn as_mut_str(&self) -> &'a mut str {
+  pub fn as_mut_str(&self) -> &'a mut str {
     unsafe { str::from_utf8_unchecked_mut(self.as_mut_slice()) }
   }
 }

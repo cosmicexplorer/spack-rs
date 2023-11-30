@@ -8,16 +8,6 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
-#![feature(maybe_uninit_uninit_array)]
-#![feature(maybe_uninit_array_assume_init)]
-#![feature(const_maybe_uninit_uninit_array)]
-#![feature(const_maybe_uninit_array_assume_init)]
-#![feature(generic_const_exprs)]
-#![feature(const_mut_refs)]
-#![feature(const_slice_from_raw_parts_mut)]
-#![feature(const_str_from_utf8_unchecked_mut)]
-#![feature(maybe_uninit_slice)]
-#![allow(incomplete_features)]
 
 pub mod error;
 use error::{CompileError, RE2ErrorCode, RewriteError};
@@ -40,8 +30,20 @@ use std::{
   cmp, fmt, hash,
   marker::PhantomData,
   mem::{self, MaybeUninit},
-  ops, str,
+  ops, ptr, str,
 };
+
+/* TODO: use MaybeUninit::uninit_array()! */
+fn uninit_array<T, const N: usize>() -> [MaybeUninit<T>; N] {
+  unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
+}
+
+/* TODO: use MaybeUninit::array_assume_init()! */
+unsafe fn array_assume_init<T: Sized, const N: usize>(x: [MaybeUninit<T>; N]) -> [T; N] {
+  let x: *const [MaybeUninit<T>; N] = &x;
+  let y: *const [T; N] = mem::transmute(x);
+  ptr::read(y)
+}
 
 #[repr(transparent)]
 pub struct NamedGroup<'a> {
@@ -264,17 +266,17 @@ impl RE2 {
   #[inline]
   fn empty_result<'a, const N: usize>() -> [&'a str; N] {
     assert_eq!(N, 0);
-    let ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
-    unsafe { MaybeUninit::array_assume_init(ret) }
+    let ret: [MaybeUninit<&'a str>; N] = uninit_array();
+    unsafe { array_assume_init(ret) }
   }
 
   #[inline]
   unsafe fn convert_string_views<'a, const N: usize>(argv: [re2_c::StringView; N]) -> [&'a str; N] {
-    let mut ret: [MaybeUninit<&'a str>; N] = MaybeUninit::uninit_array();
+    let mut ret: [MaybeUninit<&'a str>; N] = uninit_array();
     for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
       output.write(StringView::from_native(input).as_str());
     }
-    MaybeUninit::array_assume_init(ret)
+    array_assume_init(ret)
   }
 
   ///```
@@ -323,19 +325,20 @@ impl RE2 {
     }
 
     let text = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
     if !unsafe {
       self.0.full_match_n(
         text.into_native(),
-        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
         argv.len(),
       )
     } {
       return None;
     }
 
-    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -388,19 +391,20 @@ impl RE2 {
     }
 
     let text = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
     if !unsafe {
       self.0.partial_match_n(
         text.into_native(),
-        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
         argv.len(),
       )
     } {
       return None;
     }
 
-    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -451,12 +455,13 @@ impl RE2 {
     }
 
     let mut text_view = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
     if !unsafe {
       self.0.consume_n(
         text_view.as_mut_native(),
-        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
         argv.len(),
       )
     } {
@@ -465,7 +470,7 @@ impl RE2 {
 
     *text = text_view.as_str();
 
-    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -519,12 +524,13 @@ impl RE2 {
     }
 
     let mut text_view = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
     if !unsafe {
       self.0.find_and_consume_n(
         text_view.as_mut_native(),
-        MaybeUninit::slice_as_mut_ptr(&mut argv),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
         argv.len(),
       )
     } {
@@ -533,7 +539,7 @@ impl RE2 {
 
     *text = text_view.as_str();
 
-    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(argv)) })
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -622,6 +628,8 @@ impl RE2 {
     }
   }
 
+  /// **NB: The 0th element of the result is the entire match, so `::<0>` panics!**
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {
   /// use re2::{RE2, options::Anchor};
@@ -629,7 +637,7 @@ impl RE2 {
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
   /// let msg = "barbazbla";
   ///
-  /// let [s0, s1, s2, s3] = r.match_routine::<3>(msg, 0..msg.len(), Anchor::AnchorStart).unwrap();
+  /// let [s0, s1, s2, s3] = r.match_routine(msg, 0..msg.len(), Anchor::AnchorStart).unwrap();
   /// assert_eq!(s0, "barbaz");
   /// assert_eq!(s1, "");
   /// assert_eq!(s2, "bar");
@@ -642,10 +650,11 @@ impl RE2 {
     text: &'a str,
     range: ops::Range<usize>,
     anchor: Anchor,
-  ) -> Option<[&'a str; N + 1]> {
+  ) -> Option<[&'a str; N]> {
+    assert_ne!(N, 0);
     let text = StringView::from_str(text);
     let ops::Range { start, end } = range;
-    let mut submatches: [MaybeUninit<re2_c::StringView>; N + 1] = MaybeUninit::uninit_array();
+    let mut submatches: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
     if !unsafe {
       self.0.match_routine(
@@ -653,14 +662,15 @@ impl RE2 {
         start,
         end,
         anchor.into_native(),
-        MaybeUninit::slice_as_mut_ptr(&mut submatches),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(submatches.as_mut_ptr()),
         submatches.len(),
       )
     } {
       return None;
     }
 
-    Some(unsafe { Self::convert_string_views(MaybeUninit::array_assume_init(submatches)) })
+    Some(unsafe { Self::convert_string_views(array_assume_init(submatches)) })
   }
 
   ///```
@@ -711,11 +721,11 @@ impl RE2 {
   ) -> bool {
     let rewrite = StringView::from_str(rewrite);
 
-    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = MaybeUninit::uninit_array();
+    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
     for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
       sv.write(StringView::from_str(s).into_native());
     }
-    let input_views = unsafe { MaybeUninit::array_assume_init(input_views) };
+    let input_views = unsafe { array_assume_init(input_views) };
 
     unsafe {
       self.0.vector_rewrite(

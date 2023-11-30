@@ -30,7 +30,7 @@ impl MatchedSetInfo {
   }
 
   #[inline]
-  pub(crate) const fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
+  pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
 
   #[inline]
   pub fn as_slice(&self) -> &[ExpressionIndex] {
