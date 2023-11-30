@@ -191,7 +191,6 @@ pub fn set_stream_allocator(
 }
 
 ///```
-/// # #![feature(allocator_api)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;

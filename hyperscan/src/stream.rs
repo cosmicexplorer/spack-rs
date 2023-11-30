@@ -424,7 +424,6 @@ impl AsyncWrite for StreamSink {
 }
 
 ///```
-/// # #![feature(io_error_downcast)]
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
 /// use futures_util::StreamExt;
@@ -448,7 +447,7 @@ impl AsyncWrite for StreamSink {
 ///
 /// let msg = "aardvark";
 /// if let Err(e) = s.write_all(msg.as_bytes()).await {
-///   let e = e.downcast::<HyperscanError>().unwrap();
+///   let e = e.into_inner().unwrap().downcast::<HyperscanError>().unwrap();
 ///   assert_eq!(*e, HyperscanError::ScanTerminated);
 /// } else { unreachable!(); }
 /// s.shutdown().await.unwrap();
@@ -531,7 +530,6 @@ impl Streamer {
   }
 
   ///```
-  /// # #![feature(io_error_downcast)]
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
   /// use futures_util::StreamExt;
@@ -561,7 +559,7 @@ impl Streamer {
   /// s2.reset_no_flush()?;
   /// let rx2 = s2.reset_channel();
   /// if let Err(e) = s2.write_all(b"asdfasdfasdf").await {
-  ///   let e = e.downcast::<HyperscanError>().unwrap();
+  ///   let e = e.into_inner().unwrap().downcast::<HyperscanError>().unwrap();
   ///   assert_eq!(*e, HyperscanError::ScanTerminated);
   /// } else { unreachable!(); }
   /// s2.shutdown().await.unwrap();
