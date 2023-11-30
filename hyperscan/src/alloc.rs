@@ -194,7 +194,7 @@ pub fn set_stream_allocator(
 /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
-/// use std::{alloc::System, pin::Pin, sync::Arc};
+/// use std::{alloc::System, sync::Arc};
 ///
 /// hyperscan::alloc::set_allocator(Arc::new(System))?;
 ///
@@ -203,8 +203,8 @@ pub fn set_stream_allocator(
 ///
 /// let mut scratch = db.allocate_scratch()?;
 ///
-/// let matches: Vec<&str> = Pin::new(&mut scratch)
-///   .scan(Pin::new(&db), "hello".into(), ScanFlags::default(), |_| MatchResult::Continue)
+/// let matches: Vec<&str> = scratch
+///   .scan(&db, "hello".into(), ScanFlags::default(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(m.source.as_str()) })
 ///   .try_collect()
 ///   .await?;

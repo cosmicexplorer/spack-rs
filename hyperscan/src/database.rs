@@ -55,18 +55,15 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
-  /// use std::pin::Pin;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
   /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK)?;
-  /// let db = Pin::new(&db);
   ///
   /// let mut scratch = db.allocate_scratch()?;
-  /// let scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(db, "hello".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "hello".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -104,18 +101,15 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
-  /// use std::pin::Pin;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
   /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK)?;
-  /// let db = Pin::new(&db);
   ///
   /// let mut scratch = db.allocate_scratch()?;
-  /// let scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(db, "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -154,7 +148,6 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
-  /// use std::pin::Pin;
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
@@ -168,23 +161,20 @@ impl Database {
   ///   .with_exts(&[None, Some(&ext)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
-  /// let db = Pin::new(&db);
   ///
   /// let mut scratch = db.allocate_scratch()?;
-  /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .as_mut()
-  ///   .scan(db.as_ref(), "aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(db, "imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "imbibe".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -237,7 +227,6 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
-  /// use std::pin::Pin;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
   /// let free_lit: Literal = "fr\0e\0e".parse()?;
@@ -246,15 +235,12 @@ impl Database {
   ///   .with_ids(&[ExprId(2), ExprId(1)]);
   ///
   /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK)?;
-  /// let db = Pin::new(&db);
   ///
   /// let mut scratch = db.allocate_scratch()?;
-  /// let mut scratch = Pin::new(&mut scratch);
   ///
   /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<(u32, &str)> = scratch
-  ///   .as_mut()
-  ///   .scan(db.as_ref(), "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
   ///     Ok((id, source.as_str()))
   ///   })
@@ -263,7 +249,7 @@ impl Database {
   /// assert_eq!(&matches, &[(2, "he\0ll")]);
   ///
   /// let matches: Vec<(u32, &str)> = scratch
-  ///   .scan(db, "fr\0e\0edom".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "fr\0e\0edom".into(), scan_flags, |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
   ///     Ok((id, source.as_str()))
   ///   })
@@ -356,16 +342,13 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
-  /// use std::pin::Pin;
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?.deserialize_db()?;
-  /// let db = Pin::new(&db);
   /// let mut scratch = db.allocate_scratch()?;
-  /// let scratch = Pin::new(&mut scratch);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -518,7 +501,7 @@ impl SerializedDb {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
   /// use futures_util::TryStreamExt;
-  /// use std::{mem, pin::Pin};
+  /// use std::mem;
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
@@ -531,13 +514,11 @@ impl SerializedDb {
   ///   // Wrap in ManuallyDrop to avoid freeing memory owned by the `db_data` vector.
   ///   mem::ManuallyDrop::new(Database::from_native(db_ptr))
   /// };
-  /// let db = Pin::new(&*db);
   ///
   /// let mut scratch = db.allocate_scratch()?;
-  /// let scratch = Pin::new(&mut scratch);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
