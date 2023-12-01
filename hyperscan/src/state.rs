@@ -366,3 +366,71 @@ impl ops::Drop for Scratch {
 
 unsafe impl Send for Scratch {}
 unsafe impl Sync for Scratch {}
+
+#[cfg(test)]
+mod test {
+  use crate::{
+    expression::Expression,
+    flags::{Flags, Mode, ScanFlags},
+    matchers::MatchResult,
+  };
+
+  use futures_util::TryStreamExt;
+
+  use std::{mem::ManuallyDrop, sync::Arc};
+
+  #[tokio::test]
+  async fn test_try_clone_still_valid() -> Result<(), eyre::Report> {
+    let a_expr: Expression = "asdf$".parse()?;
+    let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
+
+    /* Allocate a new scratch. */
+    let mut scratch = ManuallyDrop::new(db.allocate_scratch()?);
+    /* Clone it. */
+    let mut s2 = ManuallyDrop::new(scratch.try_clone()?);
+    /* Drop the first scratch. */
+    unsafe {
+      scratch.try_drop()?;
+    }
+
+    /* Operate on the clone. */
+    let matches: Vec<&str> = s2
+      .scan(&db, "asdf".into(), ScanFlags::default(), |_| {
+        MatchResult::Continue
+      })
+      .and_then(|m| async move { Ok(m.source.as_str()) })
+      .try_collect()
+      .await?;
+
+    assert_eq!(&matches, &["asdf"]);
+
+    unsafe {
+      s2.try_drop()?;
+    }
+
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_make_mut() -> Result<(), eyre::Report> {
+    let a_expr: Expression = "asdf$".parse()?;
+    let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
+
+    /* Allocate a new scratch into an Arc. */
+    let scratch = Arc::new(db.allocate_scratch()?);
+    /* Clone the Arc. */
+    let mut s2 = Arc::clone(&scratch);
+
+    /* Operate on the result of Arc::make_mut(). */
+    let matches: Vec<&str> = Arc::make_mut(&mut s2)
+      .scan(&db, "asdf".into(), ScanFlags::default(), |_| {
+        MatchResult::Continue
+      })
+      .and_then(|m| async move { Ok(m.source.as_str()) })
+      .try_collect()
+      .await?;
+
+    assert_eq!(&matches, &["asdf"]);
+    Ok(())
+  }
+}
