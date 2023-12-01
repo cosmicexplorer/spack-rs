@@ -380,7 +380,7 @@ mod test {
   use std::{mem::ManuallyDrop, sync::Arc};
 
   #[tokio::test]
-  async fn test_try_clone_still_valid() -> Result<(), eyre::Report> {
+  async fn try_clone_still_valid() -> Result<(), eyre::Report> {
     let a_expr: Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 
@@ -412,7 +412,7 @@ mod test {
   }
 
   #[tokio::test]
-  async fn test_make_mut() -> Result<(), eyre::Report> {
+  async fn make_mut() -> Result<(), eyre::Report> {
     let a_expr: Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 

@@ -92,6 +92,20 @@ pub trait StreamScanner {
   fn boxed_clone(&self) -> Box<dyn StreamScanner>;
 }
 
+pub struct TrivialScanner;
+impl StreamScanner for TrivialScanner {
+  fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+
+  fn new() -> Self
+  where Self: Sized {
+    Self
+  }
+
+  fn reset(&mut self) {}
+
+  fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+}
+
 pub(crate) struct StreamMatcher {
   pub matches_tx: mpsc::UnboundedSender<StreamMatch>,
   pub handler: Box<dyn StreamScanner>,
@@ -522,6 +536,36 @@ impl Streamer {
     UnboundedReceiverStream::new(rx)
   }
 
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, stream::*};
+  /// use futures_util::StreamExt;
+  ///
+  /// let expr: Expression = "a+".parse()?;
+  /// let db = expr.compile(
+  ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
+  ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+  /// )?;
+  /// let scratch = db.allocate_scratch()?;
+  ///
+  /// let s1 = Streamer::open::<TrivialScanner>(&db, scratch.into())?;
+  ///
+  /// let compressed = s1.compress(CompressReserveBehavior::NewBuf).unwrap();
+  /// std::mem::drop(s1);
+  ///
+  /// let msg = "aardvark";
+  /// let mut s2 = compressed.expand(&db)?;
+  /// s2.scan(msg.as_bytes().into()).await?;
+  /// s2.flush_eod().await?;
+  /// let rx = s2.stream_results();
+  ///
+  /// let results: Vec<&str> = rx
+  ///   .map(|StreamMatch { range, .. }| &msg[range])
+  ///   .collect()
+  ///   .await;
+  /// assert_eq!(results, vec!["a", "aa", "a"]);
+  /// # Ok(())
+  /// # })}
   pub fn compress(
     &self,
     into: CompressReserveBehavior,
@@ -579,7 +623,7 @@ impl Streamer {
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
+  /// use hyperscan::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
   ///
@@ -587,15 +631,7 @@ impl Streamer {
   /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
   /// let scratch = db.allocate_scratch()?;
   ///
-  /// struct S;
-  /// impl StreamScanner for S {
-  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-  ///   fn new() -> Self where Self: Sized { Self }
-  ///   fn reset(&mut self) {}
-  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
-  /// }
-  ///
-  /// let mut s = Streamer::open::<S>(&db, scratch.into())?;
+  /// let mut s = Streamer::open::<TrivialScanner>(&db, scratch.into())?;
   ///
   /// s.write_all(b"asdf").await.unwrap();
   /// s.reset_flush().await?;
@@ -622,7 +658,7 @@ impl Streamer {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
+  /// use hyperscan::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
   /// use std::ops;
@@ -634,15 +670,7 @@ impl Streamer {
   /// )?;
   /// let scratch = db.allocate_scratch()?;
   ///
-  /// struct S;
-  /// impl StreamScanner for S {
-  ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-  ///   fn new() -> Self where Self: Sized { Self }
-  ///   fn reset(&mut self) {}
-  ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
-  /// }
-  ///
-  /// let mut s = Streamer::open::<S>(&db, scratch.into())?;
+  /// let mut s = Streamer::open::<TrivialScanner>(&db, scratch.into())?;
   ///
   /// s.write_all(b"asdf..").await.unwrap();
   /// let rx = s.reset_channel();
@@ -772,6 +800,10 @@ impl CompressedStream {
     })
   }
 
+  /* TODO: a .expand_into() method which re-uses the storage of an &mut
+   * Streamer argument (similar to .try_clone_from() elsewhere in this file).
+   * Would require patching the hyperscan API again to expose a method that
+   * separates the "reset" from the "expand into" operation. */
   pub fn expand(&self, db: &Database) -> Result<Streamer, HyperscanError> {
     let mut inner = ptr::null_mut();
     HyperscanError::from_native(unsafe {
@@ -791,7 +823,7 @@ impl CompressedStream {
     let sink = StreamSink {
       live,
       scratch: self.scratch.clone(),
-      matcher: self.matcher.clone(),
+      matcher,
       write_future: None,
       shutdown_future: None,
     };
@@ -799,65 +831,40 @@ impl CompressedStream {
   }
 }
 
-/* impl<'db> CompressedStream<'db, AcceptMatches> { */
-/* pub async fn expand_and_reset(&self) -> Result<StreamSink<'db,
- * AcceptMatches>, HyperscanError> { */
-/* let s: *const Self = self; */
-/* let s = s as usize; */
-
-/* let mut scratch = self.scratch.clone(); */
-/* let p_scratch: *mut hs::hs_scratch = Arc::make_mut(&mut
- * scratch).as_mut_native(); */
-/* let p_scratch = p_scratch as usize; */
-
-/* let mut matcher = self.matcher.clone(); */
-/* let p_matcher: *mut StreamMatcher<AcceptMatches> = Arc::make_mut(&mut
- * matcher); */
-/* let p_matcher_n = p_matcher as usize; */
-
-/* let inner = task::spawn_blocking(move || { */
-/* let Self { buf, .. } = unsafe { &*(s as *const Self) }; */
-
-/* let mut stream = mem::MaybeUninit::<hs::hs_stream>::uninit(); */
-/* HyperscanError::from_native(unsafe { */
-/* hs::hs_reset_and_expand_stream( */
-/* stream.as_mut_ptr(), */
-/* buf.as_ptr(), */
-/* buf.capacity(), */
-/* p_scratch as *mut hs::hs_scratch, */
-/* Some(match_slice_stream), */
-/* p_matcher_n as *mut c_void, */
-/* ) */
-/* })?; */
-/* Ok::<_, HyperscanError>(stream.as_mut_ptr() as usize) */
-/* }) */
-/* .await */
-/* .unwrap()?; */
-
-/* let live = LiveStream { */
-/* inner: inner as *mut hs::hs_stream, */
-/* _ph: PhantomData, */
-/* }; */
-
-/* unsafe { &mut *p_matcher }.try_reset().await?; */
-/* Ok(StreamSink { */
-/* live, */
-/* scratch, */
-/* matcher, */
-/* }) */
-/* } */
-/* } */
-
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::{expression::*, flags::*, matchers::*};
+  use crate::{
+    expression::Expression,
+    flags::{Flags, Mode},
+  };
+
+  use futures_util::StreamExt;
+
+  use std::{mem, sync::Arc};
 
   #[tokio::test]
-  #[ignore = "raises ScratchInUse for some reason???"]
-  async fn test_compress() -> Result<(), eyre::Report> {
-    use futures_util::StreamExt;
+  async fn clone_scratch() -> Result<(), eyre::Report> {
+    let expr: Expression = "asdf$".parse()?;
+    let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 
+    let scratch = Arc::new(db.allocate_scratch()?);
+    let s2 = Arc::clone(&scratch);
+
+    let msg = "asdf";
+    let mut s = Streamer::open::<TrivialScanner>(&db, s2)?;
+    mem::drop(scratch);
+    s.scan(msg.into()).await?;
+    s.flush_eod().await?;
+    let rx = s.stream_results();
+
+    let results: Vec<&str> = rx.map(|m| &msg[m.range]).collect().await;
+    assert_eq!(&results, &["asdf"]);
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn compress() -> Result<(), eyre::Report> {
     let expr: Expression = "a+".parse()?;
     let db = expr.compile(
       Flags::UTF8 | Flags::SOM_LEFTMOST,
@@ -865,27 +872,14 @@ mod test {
     )?;
     let scratch = db.allocate_scratch()?;
 
-    struct S;
-    impl StreamScanner for S {
-      fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-
-      fn new() -> Self
-      where Self: Sized {
-        Self
-      }
-
-      fn reset(&mut self) {}
-
-      fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
-    }
-    let s1 = Streamer::open::<S>(&db, scratch.into())?;
+    let s1 = Streamer::open::<TrivialScanner>(&db, scratch.into())?;
 
     let compressed = s1.compress(CompressReserveBehavior::NewBuf)?;
-    std::mem::drop(s1);
+    mem::drop(s1);
 
     let msg = "aardvark";
     let mut s2 = compressed.expand(&db)?;
-    s2.scan(msg.as_bytes().into()).await?; /* This line fails! */
+    s2.scan(msg.as_bytes().into()).await?;
     s2.flush_eod().await?;
     let rx = s2.stream_results();
 
