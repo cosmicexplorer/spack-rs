@@ -167,7 +167,7 @@ impl Scratch {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}, error::*};
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -176,9 +176,7 @@ impl Scratch {
   /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
   ///   .with_flags(&[flags, flags])
   ///   .with_ids(&[ExprId(1), ExprId(2)]);
-  ///
-  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
-  ///
+  /// let db = expr_set.compile(Mode::BLOCK)?;
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let scan_flags = ScanFlags::default();
@@ -246,7 +244,7 @@ impl Scratch {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, vectored_slice::*}};
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_plus: Expression = "a+".parse()?;
@@ -256,12 +254,10 @@ impl Scratch {
   /// let expr_set = ExpressionSet::from_exprs(&[&a_plus, &b_plus, &asdf])
   ///   .with_flags(&[flags, flags, flags])
   ///   .with_ids(&[ExprId(0), ExprId(3), ExprId(2)]);
-  ///
-  /// let db = Database::compile_multi(&expr_set, Mode::VECTORED)?;
-  ///
+  /// let db = expr_set.compile(Mode::VECTORED)?;
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let data: [ByteSlice<'_>; 4] = [
+  /// let data: [ByteSlice; 4] = [
   ///   "aardvark".into(),
   ///   "imbibbe".into(),
   ///   "leas".into(),
