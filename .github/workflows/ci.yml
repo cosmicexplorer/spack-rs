@@ -9,6 +9,48 @@ on:
   pull_request: {}
 
 jobs:
+  check:
+    name: check style
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: install rust ${{ matrix.rust-toolchain }}
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
+        override: true
+        components: rustfmt, clippy
+
+    - id: cache-rust-tests
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - id: cache-spack
+      name: cache spack
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-spack-dir
+      with:
+        path: ~/.spack/summonings
+        # No need to split cache by os, as spack already ensures this separation!
+        # FIXME: i think the above is wrong -- we need to split the cache key by os so that github allows each job per os to write to its own cache (otherwise only the first to complete will be saved)
+        key: spack-summonings-${{ env.cache-name }}-v7
+
+    - name: check fmt
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --check --verbose
+
+    - name: check clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+
   test-rust:
     name: test against ${{ matrix.rust-toolchain }} rust
     strategy:
