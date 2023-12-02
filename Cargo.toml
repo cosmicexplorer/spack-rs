@@ -94,3 +94,21 @@ walkdir                 = "2"
 tempdir                 = "0.3.7"
 tokio-test.workspace    = true
 tokio                   = { version = "1", features = ["full"] }
+
+[workspace.lints.clippy]
+len_without_is_empty    = "allow"
+redundant_field_names   = "allow"
+too_many_arguments      = "allow"
+single_component_path_imports = "allow"
+module_inception        = "allow"
+match_ref_pats          = "allow"
+expl_impl_clone_on_copy = "deny"
+if_not_else             = "deny"
+needless_continue       = "deny"
+unseparated_literal_suffix = "deny"
+used_underscore_binding = "deny"
+collapsible_else_if     = "allow"
+result_large_err        = "allow"
+
+[lints]
+workspace               = true

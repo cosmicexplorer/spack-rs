@@ -116,7 +116,7 @@ pub mod spec {
     pub fn compute_digest(&self) -> EnvHash {
       let mut hasher = Sha3_256::new();
       for Spec(s) in self.specs.iter() {
-        hasher.update(&s);
+        hasher.update(s);
       }
       EnvHash(hasher.finalize().into())
     }

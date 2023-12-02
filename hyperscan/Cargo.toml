@@ -39,3 +39,6 @@ tokio-stream            = "0.1.14"
 eyre.workspace          = true
 tokio                   = { workspace = true, features = ["macros"] }
 tokio-test.workspace    = true
+
+[lints]
+workspace               = true

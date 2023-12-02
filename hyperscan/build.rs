@@ -22,7 +22,8 @@ async fn main() -> eyre::Result<()> {
      * don't compile. */
     .generate_comments(false)
     .fit_macro_constants(true)
-    .header("src/hs.h");
+    .header("src/hs.h")
+    .raw_line("#[allow(unused, non_camel_case_types, improper_ctypes, clippy::all)]");
   bindings = bindings.allowlist_item("hs.*");
   bindings = bindings.allowlist_item("HS.*");
   for p in prefixes.iter().cloned() {

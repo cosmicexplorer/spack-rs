@@ -628,7 +628,8 @@ impl RE2 {
     }
   }
 
-  /// **NB: The 0th element of the result is the entire match, so `::<0>` panics!**
+  /// **NB: The 0th element of the result is the entire match, so `::<0>`
+  /// panics!**
   ///
   ///```
   /// # fn main() -> Result<(), re2::error::CompileError> {

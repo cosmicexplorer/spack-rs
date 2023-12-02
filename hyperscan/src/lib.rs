@@ -9,7 +9,6 @@
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 
-#[allow(unused, non_camel_case_types, clippy::all)]
 mod bindings {
   include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }

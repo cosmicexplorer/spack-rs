@@ -277,13 +277,7 @@ impl MatchEvent {
   pub unsafe fn extract_context<'a, T>(
     context: Option<ptr::NonNull<c_void>>,
   ) -> Option<Pin<&'a mut T>> {
-    match context {
-      None => None,
-      Some(c) => Some(Pin::new_unchecked(&mut *mem::transmute::<
-        *mut c_void,
-        *mut T,
-      >(c.as_ptr()))),
-    }
+    context.map(|c| Pin::new_unchecked(&mut *mem::transmute::<*mut c_void, *mut T>(c.as_ptr())))
   }
 }
 

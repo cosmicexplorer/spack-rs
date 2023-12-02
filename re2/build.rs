@@ -31,7 +31,7 @@ async fn main() -> eyre::Result<()> {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
   }
   let outfile = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
-  bindings.generate()?.write_to_file(outfile)?;
+  bindings.generate()?.write_to_file(&outfile)?;
 
   println!("cargo:rerun-if-changed=src/c-bindings.cpp");
   task::spawn_blocking(|| {
