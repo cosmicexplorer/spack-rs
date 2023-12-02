@@ -16,10 +16,10 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: install rust ${{ matrix.rust-toolchain }}
+    - name: install rust nightly
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: ${{ matrix.rust-toolchain }}
+        toolchain: nightly
         override: true
         components: rustfmt, clippy
 
