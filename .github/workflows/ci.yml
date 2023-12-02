@@ -23,7 +23,7 @@ jobs:
         override: true
         components: rustfmt, clippy
 
-    - id: cache-rust-tests
+    - id: cache-rust-style
       name: cache rust
       uses: Swatinem/rust-cache@v2
       with:
