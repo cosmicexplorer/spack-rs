@@ -9,11 +9,16 @@ authors.workspace       = true
 
 [package.metadata.spack]
 env_label               = "hyperscan-runtime-deps"
-spec                    = "hyperscan@v5.4.2"
+spec                    = "hyperscan@v5.4.2+chimera+static"
 
 [package.metadata.spack.deps.hyperscan]
 type                    = "static"
-lib_names               = ["hs"]
+# TODO: hs_runtime!!!
+lib_names               = ["hs", "chimera"]
+
+[package.metadata.spack.deps.pcre]
+type                    = "static"
+lib_names               = ["pcre"]
 
 [build-dependencies]
 bindgen.workspace       = true

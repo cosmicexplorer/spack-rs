@@ -187,3 +187,89 @@ pub enum CompressionError {
   /// not enough space for {0} in buf
   NoSpace(usize),
 }
+
+#[derive(
+  Debug,
+  Display,
+  Error,
+  Copy,
+  Clone,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Hash,
+  num_enum::IntoPrimitive,
+  num_enum::FromPrimitive,
+)]
+#[repr(i8)]
+#[ignore_extra_doc_attributes]
+pub enum ChimeraError {
+  /// A parameter passed to this function was invalid.
+  Invalid = hs::CH_INVALID,
+  /// A memory allocation failed.
+  NoMem = hs::CH_NOMEM,
+  /// The engine was terminated by callback.
+  ///
+  /// This return value indicates that the target buffer was partially scanned,
+  /// but that the callback function requested that scanning cease after a match
+  /// was located.
+  ScanTerminated = hs::CH_SCAN_TERMINATED,
+  /// The pattern compiler failed, and the @ref ch_compile_error_t should be
+  /// inspected for more detail.
+  CompilerError = hs::CH_COMPILER_ERROR,
+  /// The given database was built for a different version of the Chimera
+  /// matcher.
+  DbVersionError = hs::CH_DB_VERSION_ERROR,
+  /// The given database was built for a different platform (i.e., CPU type).
+  DbPlatformError = hs::CH_DB_PLATFORM_ERROR,
+  /// The given database was built for a different mode of operation.
+  ///
+  /// This error is returned when streaming calls are used with a non-streaming
+  /// database and vice versa.
+  DbModeError = hs::CH_DB_MODE_ERROR,
+  /// A parameter passed to this function was not correctly aligned.
+  BadAlign = hs::CH_BAD_ALIGN,
+  /// The memory allocator did not correctly return memory suitably aligned for
+  /// the largest representable data type on this platform.
+  BadAlloc = hs::CH_BAD_ALLOC,
+  /// The scratch region was already in use.
+  ///
+  /// This error is returned when Chimera is able to detect that the scratch
+  /// region given is already in use by another Chimera API call.
+  ///
+  /// A separate scratch region, allocated with @ref ch_alloc_scratch() or @ref
+  /// ch_clone_scratch(), is required for every concurrent caller of the Chimera
+  /// API.
+  ///
+  /// For example, this error might be returned when @ref ch_scan() has been
+  /// called inside a callback delivered by a currently-executing @ref ch_scan()
+  /// call using the same scratch region.
+  ///
+  /// Note: Not all concurrent uses of scratch regions may be detected. This
+  /// error is intended as a best-effort debugging tool, not a guarantee.
+  ScratchInUse = hs::CH_SCRATCH_IN_USE,
+  /// Unexpected internal error from Hyperscan.
+  ///
+  /// This error indicates that there was unexpected matching behaviors from
+  /// Hyperscan. This could be related to invalid usage of scratch space or
+  /// invalid memory operations by users.
+  #[num_enum(default)]
+  UnknownError = hs::CH_UNKNOWN_HS_ERROR,
+  /// Returned when pcre_exec (called for some expressions internally from @ref
+  /// ch_scan) failed due to a fatal error.
+  FailInternal = hs::CH_FAIL_INTERNAL,
+}
+
+impl ChimeraError {
+  #[inline]
+  pub(crate) fn from_native(x: hs::ch_error_t) -> Result<(), Self> {
+    static_assertions::const_assert_eq!(0, hs::CH_SUCCESS);
+    if x == 0 {
+      Ok(())
+    } else {
+      let s: Self = (x as i8).into();
+      Err(s)
+    }
+  }
+}

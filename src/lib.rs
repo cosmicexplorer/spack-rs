@@ -44,14 +44,14 @@ use thiserror::Error;
 pub mod versions {
   use hex_literal::hex;
 
-  pub mod re2_patches {
+  pub mod patches {
     use super::hex;
 
-    pub const RE2_PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/hs-native-fix.tar.gz";
-    pub const RE2_PATCHES_SHA256SUM: [u8; 32] =
-      hex!("e23ba7a64c931da32ee4787cb266a818a3acfdf95e4de8384cf32d9b7756c56d");
-    pub const RE2_PATCHES_TOPLEVEL_COMPONENT: &str = "spack-hs-native-fix";
+    pub const PATCHES_SPACK_URL: &str =
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/chimera.tar.gz";
+    pub const PATCHES_SHA256SUM: [u8; 32] =
+      hex!("9c235e0f694d701daa5c8f05830a5321141dd45e33cbf4bee10201b98c4f5530");
+    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-chimera";
   }
 
   /// The most recently released version of spack.

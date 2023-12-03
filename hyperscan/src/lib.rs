@@ -34,9 +34,17 @@ pub fn check_valid_platform() -> Result<(), error::HyperscanError> {
 }
 
 ///```
-/// let v = hyperscan_async::version().to_str().unwrap();
+/// let v = hyperscan_async::hyperscan_version().to_str().unwrap();
 /// assert!(v.starts_with("5.4.2 2023"));
 /// ```
-pub fn version() -> &'static std::ffi::CStr {
+pub fn hyperscan_version() -> &'static std::ffi::CStr {
   unsafe { std::ffi::CStr::from_ptr(hs::hs_version()) }
+}
+
+///```
+/// let v = hyperscan_async::chimera_version().to_str().unwrap();
+/// assert!(v.starts_with("5.4.2 2023"));
+/// ```
+pub fn chimera_version() -> &'static std::ffi::CStr {
+  unsafe { std::ffi::CStr::from_ptr(hs::ch_version()) }
 }

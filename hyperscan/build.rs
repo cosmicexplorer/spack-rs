@@ -26,6 +26,8 @@ async fn main() -> eyre::Result<()> {
     .raw_line("#[allow(unused, non_camel_case_types, improper_ctypes, clippy::all)]");
   bindings = bindings.allowlist_item("hs.*");
   bindings = bindings.allowlist_item("HS.*");
+  bindings = bindings.allowlist_item("ch.*");
+  bindings = bindings.allowlist_item("CH.*");
   for p in prefixes.iter().cloned() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
   }
