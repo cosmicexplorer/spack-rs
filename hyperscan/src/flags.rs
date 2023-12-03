@@ -387,3 +387,139 @@ impl ops::BitAndAssign for ExtFlags {
     *self = self.bitand(rhs);
   }
 }
+
+/// Pattern flags
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ChimeraFlags(u8);
+
+impl ChimeraFlags {
+  /// Set case-insensitive matching.
+  ///
+  /// This flag sets the expression to be matched case-insensitively by default.
+  /// The expression may still use PCRE tokens (notably `(?i)` and
+  /// `(?-i)`) to switch case-insensitive matching on and off.
+  pub const CASELESS: Self = Self(hs::CH_FLAG_CASELESS);
+  /// Matching a `.` will not exclude newlines.
+  ///
+  /// This flag sets any instances of the `.` token to match newline characters
+  /// as well as all other characters. The PCRE specification states that the
+  /// `.` token does not match newline characters by default, so without this
+  /// flag the `.` token will not cross line boundaries.
+  pub const DOTALL: Self = Self(hs::CH_FLAG_DOTALL);
+  /// Set multi-line anchoring.
+  ///
+  /// This flag instructs the expression to make the `^` and `$` tokens match
+  /// newline characters as well as the start and end of the stream. If this
+  /// flag is not specified, the `^` token will only ever match at the start
+  /// of a stream, and the `$` token will only ever match at the end of a
+  /// stream within the guidelines of the PCRE specification.
+  pub const MULTILINE: Self = Self(hs::CH_FLAG_MULTILINE);
+  /// Set single-match only mode.
+  ///
+  /// This flag sets the expression's match ID to match at most once, only the
+  /// first match for each invocation of @ref ch_scan() will be returned.
+  pub const SINGLEMATCH: Self = Self(hs::CH_FLAG_SINGLEMATCH);
+  /// Enable Unicode property support for this expression.
+  ///
+  /// This flag instructs Chimera to use Unicode properties, rather than the
+  /// default ASCII interpretations, for character mnemonics like `\w` and `\s`
+  /// as well as the POSIX character classes. It is only meaningful in
+  /// conjunction with @ref CH_FLAG_UTF8.
+  pub const UCP: Self = Self(hs::CH_FLAG_UCP);
+  /// Enable UTF-8 mode for this expression.
+  ///
+  /// This flag instructs Chimera to treat the pattern as a sequence of UTF-8
+  /// characters. The results of scanning invalid UTF-8 sequences with a Chimera
+  /// library that has been compiled with one or more patterns using this flag
+  /// are undefined.
+  pub const UTF8: Self = Self(hs::CH_FLAG_UTF8);
+
+  #[inline(always)]
+  pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
+}
+
+impl BitSet for ChimeraFlags {
+  #[inline]
+  fn nonzero(&self) -> bool { self.0 != 0 }
+}
+
+impl ops::BitOr for ChimeraFlags {
+  type Output = Self;
+
+  fn bitor(self, other: Self) -> Self { Self(self.0.bitor(other.0)) }
+}
+
+impl ops::BitOrAssign for ChimeraFlags {
+  fn bitor_assign(&mut self, rhs: Self) {
+    use ops::BitOr;
+    *self = self.bitor(rhs);
+  }
+}
+
+impl ops::BitAnd for ChimeraFlags {
+  type Output = Self;
+
+  fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
+}
+
+impl ops::BitAndAssign for ChimeraFlags {
+  fn bitand_assign(&mut self, rhs: Self) {
+    use ops::BitAnd;
+    *self = self.bitand(rhs);
+  }
+}
+
+/// Compile mode flags
+///
+/// The mode flags are used as values for the mode parameter of the various
+/// compile calls (@ref ch_compile(), @ref ch_compile_multi().
+///
+/// By default, the matcher will only supply the start and end offsets of the
+/// match when the match callback is called. Using mode flag @ref CH_MODE_GROUPS
+/// will also fill the `captured' array with the start and end offsets of all
+/// the capturing groups specified by the pattern that has matched.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct ChimeraMode(u32);
+
+impl ChimeraMode {
+  /// Enable capturing groups.
+  pub const GROUPS: Self = Self(hs::CH_MODE_GROUPS);
+  /// Disable capturing groups.
+  pub const NOGROUPS: Self = Self(hs::CH_MODE_NOGROUPS as u32);
+
+  #[inline(always)]
+  pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
+}
+
+impl BitSet for ChimeraMode {
+  #[inline]
+  fn nonzero(&self) -> bool { self.0 != 0 }
+}
+
+impl ops::BitOr for ChimeraMode {
+  type Output = Self;
+
+  fn bitor(self, other: Self) -> Self { Self(self.0.bitor(other.0)) }
+}
+
+impl ops::BitOrAssign for ChimeraMode {
+  fn bitor_assign(&mut self, rhs: Self) {
+    use ops::BitOr;
+    *self = self.bitor(rhs);
+  }
+}
+
+impl ops::BitAnd for ChimeraMode {
+  type Output = Self;
+
+  fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
+}
+
+impl ops::BitAndAssign for ChimeraMode {
+  fn bitand_assign(&mut self, rhs: Self) {
+    use ops::BitAnd;
+    *self = self.bitand(rhs);
+  }
+}

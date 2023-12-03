@@ -4,9 +4,9 @@
 //! ???
 
 use crate::{
-  database::Database,
-  error::{HyperscanCompileError, HyperscanError},
-  flags::{ExtFlags, Flags, Mode},
+  database::{ChimeraDb, Database},
+  error::{ChimeraCompileError, ChimeraError, HyperscanCompileError, HyperscanError},
+  flags::{ChimeraFlags, ChimeraMode, ExtFlags, Flags, Mode},
   hs,
 };
 
@@ -564,4 +564,44 @@ impl<'a> LiteralSet<'a> {
       .map(|i| unsafe { mem::transmute(i.as_ptr()) })
       .unwrap_or(ptr::null())
   }
+}
+
+#[derive(Clone)]
+pub struct ChimeraExpression(CString);
+
+impl fmt::Debug for ChimeraExpression {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_bytes();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "ChimeraExpression({:?})", s),
+      Err(_) => write!(f, "ChimeraExpression({:?})", b),
+    }
+  }
+}
+
+impl ChimeraExpression {
+  #[inline]
+  pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+
+  #[inline]
+  pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
+
+  #[inline]
+  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, ChimeraCompileError> {
+    Ok(Self(CString::new(x)?))
+  }
+
+  pub fn compile(
+    &self,
+    flags: ChimeraFlags,
+    mode: ChimeraMode,
+  ) -> Result<ChimeraDb, ChimeraCompileError> {
+    ChimeraDb::compile(self, flags, mode)
+  }
+}
+
+impl str::FromStr for ChimeraExpression {
+  type Err = ChimeraCompileError;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }

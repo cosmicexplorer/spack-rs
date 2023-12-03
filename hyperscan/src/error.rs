@@ -272,4 +272,55 @@ impl ChimeraError {
       Err(s)
     }
   }
+
+  #[inline]
+  pub(crate) fn copy_from_native_compile_error(
+    x: hs::ch_error_t,
+    c: *mut hs::ch_compile_error,
+  ) -> Result<(), ChimeraCompileError> {
+    match Self::from_native(x) {
+      Ok(()) => Ok(()),
+      Err(Self::CompilerError) => {
+        let e = ChimeraInnerCompileError::copy_from_native(unsafe { &mut *c }).unwrap();
+        Err(ChimeraCompileError::Compile(e))
+      },
+      Err(e) => Err(e.into()),
+    }
+  }
+}
+
+/// compile error(@{expression}): {message}
+#[derive(Debug, Display, Error)]
+pub struct ChimeraInnerCompileError {
+  pub message: String,
+  pub expression: ExpressionIndex,
+}
+
+impl ChimeraInnerCompileError {
+  #[inline]
+  pub fn copy_from_native(x: &mut hs::ch_compile_error) -> Result<Self, ChimeraError> {
+    let hs::ch_compile_error {
+      message,
+      expression,
+    } = x;
+    assert!(!message.is_null());
+    let ret = Self {
+      message: unsafe { CStr::from_ptr(*message) }
+        .to_string_lossy()
+        .to_string(),
+      expression: ExpressionIndex(*expression as c_uint),
+    };
+    ChimeraError::from_native(unsafe { hs::ch_free_compile_error(x) })?;
+    Ok(ret)
+  }
+}
+
+#[derive(Debug, Display, Error)]
+pub enum ChimeraCompileError {
+  /// non-compilation error: {0}
+  NonCompile(#[from] ChimeraError),
+  /// pattern compilation error: {0}
+  Compile(#[from] ChimeraInnerCompileError),
+  /// null byte in expression: {0}
+  NullByte(#[from] NulError),
 }

@@ -5,9 +5,11 @@
 
 use crate::{
   alloc,
-  error::{HyperscanCompileError, HyperscanError, HyperscanFlagsError},
-  expression::{Expression, ExpressionSet, Literal, LiteralSet},
-  flags::{Flags, Mode},
+  error::{
+    ChimeraCompileError, ChimeraError, HyperscanCompileError, HyperscanError, HyperscanFlagsError,
+  },
+  expression::{ChimeraExpression, Expression, ExpressionSet, Literal, LiteralSet},
+  flags::{ChimeraFlags, ChimeraMode, Flags, Mode},
   hs,
   state::{Platform, Scratch},
 };
@@ -532,5 +534,56 @@ impl SerializedDb {
       self.len(),
       db,
     ))
+  }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct ChimeraDb(*mut NativeChimeraDb);
+
+pub type NativeChimeraDb = hs::ch_database;
+
+impl ChimeraDb {
+  #[inline]
+  pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
+
+  #[inline]
+  pub(crate) fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
+
+  #[inline]
+  pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan_async::error::ChimeraCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*};
+  ///
+  /// let expr: ChimeraExpression = "(he)ll".parse()?;
+  /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn compile(
+    expression: &ChimeraExpression,
+    flags: ChimeraFlags,
+    mode: ChimeraMode,
+  ) -> Result<Self, ChimeraCompileError> {
+    let platform = Platform::get();
+
+    let mut db = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
+    ChimeraError::copy_from_native_compile_error(
+      unsafe {
+        hs::ch_compile(
+          expression.as_ptr(),
+          flags.into_native(),
+          mode.into_native(),
+          platform.as_ref_native(),
+          &mut db,
+          &mut compile_err,
+        )
+      },
+      compile_err,
+    )?;
+    Ok(unsafe { Self::from_native(db) })
   }
 }
