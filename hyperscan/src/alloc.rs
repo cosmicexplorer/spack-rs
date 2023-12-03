@@ -191,12 +191,12 @@ pub fn set_stream_allocator(
 }
 
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-/// use hyperscan::{expression::*, flags::*, matchers::*};
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// use hyperscan_async::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
 /// use std::{alloc::System, sync::Arc};
 ///
-/// hyperscan::alloc::set_allocator(Arc::new(System))?;
+/// hyperscan_async::alloc::set_allocator(Arc::new(System))?;
 ///
 /// let expr: Expression = "(he)ll".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;

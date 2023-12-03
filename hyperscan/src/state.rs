@@ -70,8 +70,8 @@ impl Scratch {
   pub const fn new() -> Self { Self(None) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::*, state::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -166,8 +166,8 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -243,8 +243,8 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_plus: Expression = "a+".parse()?;

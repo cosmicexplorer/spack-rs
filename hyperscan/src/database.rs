@@ -52,8 +52,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
@@ -98,8 +98,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
@@ -145,8 +145,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -224,8 +224,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
@@ -288,8 +288,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -312,8 +312,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
@@ -339,8 +339,8 @@ impl Database {
   pub fn info(&self) -> Result<DbInfo, HyperscanError> { DbInfo::extract_db_info(self) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -382,8 +382,8 @@ pub struct DbInfo(pub String);
 
 impl DbInfo {
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
-  /// use hyperscan::{expression::*, flags::*, database::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// use hyperscan_async::{expression::*, flags::*, database::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -435,8 +435,8 @@ impl SerializedDb {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
@@ -498,8 +498,8 @@ impl SerializedDb {
   /// [`Self::deserialized_size()`] in size!**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanCompileError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
   /// use futures_util::TryStreamExt;
   /// use std::mem;
   ///

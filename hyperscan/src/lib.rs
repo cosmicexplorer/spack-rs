@@ -24,8 +24,8 @@ pub mod state;
 pub mod stream;
 
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// hyperscan::check_valid_platform()?;
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
+/// hyperscan_async::check_valid_platform()?;
 /// # Ok(())
 /// # }
 /// ```
@@ -34,7 +34,7 @@ pub fn check_valid_platform() -> Result<(), error::HyperscanError> {
 }
 
 ///```
-/// let v = hyperscan::version().to_str().unwrap();
+/// let v = hyperscan_async::version().to_str().unwrap();
 /// assert!(v.starts_with("5.4.2 2023"));
 /// ```
 pub fn version() -> &'static std::ffi::CStr {

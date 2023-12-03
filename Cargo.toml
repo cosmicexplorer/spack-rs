@@ -19,7 +19,7 @@ repository              = "https://github.com/cosmicexplorer/spack-rs"
 authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 
 [workspace.dependencies]
-hyperscan               = { path = "hyperscan" }
+hyperscan-async         = { path = "hyperscan", package = "hyperscan" }
 re2                     = { path = "re2" }
 spack                   = { path = ".", version = "0.0.1", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.0" }
