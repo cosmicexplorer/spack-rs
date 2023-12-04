@@ -5,7 +5,7 @@
 
 use crate::{
   database::{ChimeraDb, Database},
-  error::{ChimeraCompileError, ChimeraError, HyperscanCompileError, HyperscanError},
+  error::{chimera::ChimeraCompileError, HyperscanCompileError, HyperscanError},
   flags::{ChimeraFlags, ChimeraMode, ExtFlags, Flags, Mode},
   hs,
 };

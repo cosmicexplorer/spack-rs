@@ -120,17 +120,6 @@ impl Scratch {
     self.0.map(|mut p| unsafe { p.as_mut() })
   }
 
-  pub fn get_size(&self) -> Result<usize, HyperscanError> {
-    match self.as_ref_native() {
-      None => Ok(0),
-      Some(p) => {
-        let mut n = mem::MaybeUninit::<usize>::uninit();
-        HyperscanError::from_native(unsafe { hs::hs_scratch_size(p, n.as_mut_ptr()) })?;
-        Ok(unsafe { n.assume_init() })
-      },
-    }
-  }
-
   fn into_slice_ctx(m: SliceMatcher) -> usize {
     let ctx: *mut SliceMatcher = Box::into_raw(Box::new(m));
     ctx as usize
@@ -333,6 +322,17 @@ impl Scratch {
     }
   }
 
+  pub fn get_size(&self) -> Result<usize, HyperscanError> {
+    match self.as_ref_native() {
+      None => Ok(0),
+      Some(p) => {
+        let mut n = mem::MaybeUninit::<usize>::uninit();
+        HyperscanError::from_native(unsafe { hs::hs_scratch_size(p, n.as_mut_ptr()) })?;
+        Ok(unsafe { n.assume_init() })
+      },
+    }
+  }
+
   pub fn try_clone(&self) -> Result<Self, HyperscanError> {
     match self.as_ref_native() {
       None => Ok(Self::new()),
@@ -432,5 +432,185 @@ mod test {
 
     assert_eq!(&matches, &["asdf"]);
     Ok(())
+  }
+}
+
+pub mod chimera {
+  use super::*;
+  use crate::{database::ChimeraDb, error::chimera::*, matchers::chimera::*};
+
+  use tokio::sync::mpsc;
+
+  #[derive(Debug)]
+  #[repr(transparent)]
+  pub struct ChimeraScratch(Option<NonNull<hs::ch_scratch>>);
+
+  impl ChimeraScratch {
+    #[inline]
+    pub const fn new() -> Self { Self(None) }
+
+    pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraError> {
+      let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
+      ChimeraError::from_native(unsafe {
+        hs::ch_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
+      })?;
+      self.0 = NonNull::new(scratch_ptr);
+      Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn as_ref_native(&self) -> Option<&hs::ch_scratch> {
+      self.0.map(|p| unsafe { p.as_ref() })
+    }
+
+    #[inline]
+    pub(crate) fn as_mut_native(&mut self) -> Option<&mut hs::ch_scratch> {
+      self.0.map(|mut p| unsafe { p.as_mut() })
+    }
+
+    fn into_ctx(m: ChimeraSliceMatcher) -> usize {
+      let ctx: *mut ChimeraSliceMatcher = Box::into_raw(Box::new(m));
+      ctx as usize
+    }
+
+    fn from_ctx<'data, 'code>(ctx: usize) -> Pin<Box<ChimeraSliceMatcher<'data, 'code>>> {
+      Box::into_pin(unsafe { Box::from_raw(ctx as *mut ChimeraSliceMatcher) })
+    }
+
+    fn into_db(db: &ChimeraDb) -> usize {
+      let db: *const ChimeraDb = db;
+      db as usize
+    }
+
+    fn from_db<'a>(db: usize) -> &'a ChimeraDb { unsafe { &*(db as *const ChimeraDb) } }
+
+    fn into_scratch(scratch: &mut ChimeraScratch) -> usize {
+      let scratch: *mut ChimeraScratch = scratch;
+      scratch as usize
+    }
+
+    fn from_scratch<'a>(scratch: usize) -> &'a mut ChimeraScratch {
+      unsafe { &mut *(scratch as *mut ChimeraScratch) }
+    }
+
+    ///```
+    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraScanError> {
+    /// # tokio_test::block_on(async {
+    /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
+    /// use futures_util::TryStreamExt;
+    ///
+    /// let expr: ChimeraExpression = "a+".parse().unwrap();
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS).unwrap();
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
+    ///   &db,
+    ///   "aardvark".into(),
+    ///   ScanFlags::default(),
+    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
+    ///  .try_collect()
+    ///  .await?;
+    /// assert_eq!(&matches, &["aa", "a"]);
+    /// # Ok(())
+    /// # })}
+    ///```
+    pub fn scan<'data, S: ChimeraScanner<'data>>(
+      &mut self,
+      db: &ChimeraDb,
+      data: ByteSlice<'data>,
+      flags: ScanFlags,
+    ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>>+'data {
+      let mut s = S::new();
+      let (matcher, matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut s);
+
+      let ctx = Self::into_ctx(matcher);
+      let scratch = Self::into_scratch(self);
+      let db = Self::into_db(db);
+
+      let scan_task = task::spawn_blocking(move || {
+        let scratch: &mut Self = Self::from_scratch(scratch);
+        let db: &ChimeraDb = Self::from_db(db);
+        let mut matcher: Pin<Box<ChimeraSliceMatcher>> = Self::from_ctx(ctx);
+        let parent_slice = matcher.parent_slice();
+        ChimeraError::from_native(unsafe {
+          hs::ch_scan(
+            db.as_ref_native(),
+            parent_slice.as_ptr(),
+            parent_slice.native_len(),
+            flags.into_native(),
+            scratch.as_mut_native().unwrap(),
+            Some(match_chimera_slice),
+            Some(error_callback_chimera),
+            mem::transmute(matcher.as_mut().get_mut()),
+          )
+        })
+      });
+
+      /* try_stream! doesn't like tokio::select! with ?, so we will implement it by hand. */
+      let (merged_tx, merged_rx) =
+        mpsc::unbounded_channel::<Result<ChimeraMatch<'data>, ChimeraScanError>>();
+      /* task::spawn accepts a 'static future, which means we need to lie about this lifetime: */
+      let mut matches_rx: mpsc::UnboundedReceiver<ChimeraMatch<'static>> =
+        unsafe { mem::transmute(matches_rx) };
+      let merged_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =
+        unsafe { mem::transmute(merged_tx) };
+      task::spawn(async move {
+        loop {
+          let send_result = tokio::select! {
+            Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)),
+            Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())),
+            else => break,
+          };
+          if send_result.is_err() {
+            break;
+          }
+        }
+        if let Err(e) = scan_task.await.unwrap() {
+          let _ = merged_tx.send(Err(e.into()));
+        }
+      });
+      tokio_stream::wrappers::UnboundedReceiverStream::new(merged_rx)
+    }
+
+    pub fn get_size(&self) -> Result<usize, ChimeraError> {
+      match self.as_ref_native() {
+        None => Ok(0),
+        Some(p) => {
+          let mut n = mem::MaybeUninit::<usize>::uninit();
+          ChimeraError::from_native(unsafe { hs::ch_scratch_size(p, n.as_mut_ptr()) })?;
+          Ok(unsafe { n.assume_init() })
+        },
+      }
+    }
+
+    pub fn try_clone(&self) -> Result<Self, ChimeraError> {
+      match self.as_ref_native() {
+        None => Ok(Self::new()),
+        Some(p) => {
+          let mut scratch_ptr = ptr::null_mut();
+          ChimeraError::from_native(unsafe { hs::ch_clone_scratch(p, &mut scratch_ptr) })?;
+          Ok(Self(NonNull::new(scratch_ptr)))
+        },
+      }
+    }
+
+    pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraError> {
+      if let Some(p) = self.as_mut_native() {
+        ChimeraError::from_native(unsafe { hs::ch_free_scratch(p) })?;
+      }
+      Ok(())
+    }
+  }
+
+  impl Clone for ChimeraScratch {
+    fn clone(&self) -> Self { self.try_clone().unwrap() }
+  }
+
+  impl ops::Drop for ChimeraScratch {
+    fn drop(&mut self) {
+      unsafe {
+        self.try_drop().unwrap();
+      }
+    }
   }
 }

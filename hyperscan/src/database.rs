@@ -6,12 +6,13 @@
 use crate::{
   alloc,
   error::{
-    ChimeraCompileError, ChimeraError, HyperscanCompileError, HyperscanError, HyperscanFlagsError,
+    chimera::{ChimeraCompileError, ChimeraError},
+    HyperscanCompileError, HyperscanError, HyperscanFlagsError,
   },
   expression::{ChimeraExpression, Expression, ExpressionSet, Literal, LiteralSet},
   flags::{ChimeraFlags, ChimeraMode, Flags, Mode},
   hs,
-  state::{Platform, Scratch},
+  state::{chimera::ChimeraScratch, Platform, Scratch},
 };
 
 use std::{
@@ -554,7 +555,7 @@ impl ChimeraDb {
   pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::ChimeraCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*};
   ///
   /// let expr: ChimeraExpression = "(he)ll".parse()?;
@@ -585,5 +586,11 @@ impl ChimeraDb {
       compile_err,
     )?;
     Ok(unsafe { Self::from_native(db) })
+  }
+
+  pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraError> {
+    let mut scratch = ChimeraScratch::new();
+    scratch.setup_for_db(self)?;
+    Ok(scratch)
   }
 }

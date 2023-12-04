@@ -8,7 +8,6 @@ use crate::flags::ScanFlags;
 use displaydoc::Display;
 use tokio::sync::mpsc;
 
-
 use std::{
   cmp, mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
@@ -306,7 +305,6 @@ pub mod contiguous_slice {
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
     ) -> (Self, mpsc::UnboundedReceiver<Match<'data>>) {
-      /* FIXME: make these unbounded!!! */
       let (matches_tx, matches_rx) = mpsc::unbounded_channel();
       let s = Self {
         parent_slice,
@@ -354,10 +352,7 @@ pub mod contiguous_slice {
     };
 
     let result = slice_matcher.handle_match(&m);
-    if result == MatchResult::Continue {
-      slice_matcher.push_new_match(m);
-    }
-
+    slice_matcher.push_new_match(m);
     result.into_native()
   }
 }
@@ -388,7 +383,6 @@ pub mod vectored_slice {
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
     ) -> (Self, mpsc::UnboundedReceiver<VectoredMatch<'data>>) {
-      /* FIXME: make these unbounded!!! */
       let (matches_tx, matches_rx) = mpsc::unbounded_channel();
       let s = Self {
         parent_slices,
@@ -434,10 +428,263 @@ pub mod vectored_slice {
     };
 
     let result = slice_matcher.handle_match(&m);
-    if result == MatchResult::Continue {
-      slice_matcher.push_new_match(m);
+    slice_matcher.push_new_match(m);
+    result.into_native()
+  }
+}
+
+pub mod chimera {
+  use super::*;
+  use crate::{error::chimera::*, hs};
+
+  use displaydoc::Display;
+
+  use std::{
+    ffi::{c_uint, c_ulonglong, c_void},
+    mem, ops,
+    pin::Pin,
+    ptr, slice,
+  };
+
+  #[derive(
+    Debug,
+    Display,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    num_enum::TryFromPrimitive,
+    num_enum::IntoPrimitive,
+  )]
+  #[repr(u8)]
+  pub enum ChimeraMatchResult {
+    /// Continue matching.
+    Continue = hs::CH_CALLBACK_CONTINUE,
+    /// Terminate matching.
+    Terminate = hs::CH_CALLBACK_TERMINATE,
+    /// Skip remaining matches for this ID and continue.
+    SkipPattern = hs::CH_CALLBACK_SKIP_PATTERN,
+  }
+
+  impl ChimeraMatchResult {
+    #[inline(always)]
+    pub(crate) fn into_native(self) -> hs::ch_callback_t {
+      let x: u8 = self.into();
+      x.into()
+    }
+  }
+
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  enum ChimeraCaptureOffset {
+    Active(ops::Range<usize>),
+    Inactive,
+  }
+
+  impl ChimeraCaptureOffset {
+    pub fn index<'a>(self, source: ByteSlice<'a>) -> Option<ByteSlice<'a>> {
+      match self {
+        Self::Inactive => None,
+        Self::Active(range) => source.index_range(range),
+      }
+    }
+  }
+
+  #[derive(Debug)]
+  struct ChimeraMatchEvent {
+    pub id: ExpressionIndex,
+    pub range: ops::Range<usize>,
+    pub flags: ScanFlags,
+    pub captures: Vec<ChimeraCaptureOffset>,
+    pub context: Option<ptr::NonNull<c_void>>,
+  }
+
+  impl ChimeraMatchEvent {
+    #[inline(always)]
+    pub fn coerce_args(
+      id: c_uint,
+      from: c_ulonglong,
+      to: c_ulonglong,
+      flags: c_uint,
+      size: c_uint,
+      captured: *const hs::ch_capture,
+      context: *mut c_void,
+    ) -> Self {
+      let captures: Vec<ChimeraCaptureOffset> =
+        unsafe { slice::from_raw_parts(captured, size as usize) }
+          .iter()
+          .map(|hs::ch_capture { flags, from, to }| {
+            if *flags == hs::CH_CAPTURE_FLAG_INACTIVE as c_uint {
+              ChimeraCaptureOffset::Inactive
+            } else {
+              assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
+              ChimeraCaptureOffset::Active(RangeIndex::bounded_range(
+                RangeIndex(*from),
+                RangeIndex(*to),
+              ))
+            }
+          })
+          .collect();
+      Self {
+        id: ExpressionIndex(id),
+        range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
+        flags: ScanFlags::from_native(flags),
+        captures,
+        context: ptr::NonNull::new(context),
+      }
     }
 
+    #[inline(always)]
+    pub unsafe fn extract_context<'a, T>(
+      context: Option<ptr::NonNull<c_void>>,
+    ) -> Option<Pin<&'a mut T>> {
+      context.map(|c| Pin::new_unchecked(&mut *mem::transmute::<*mut c_void, *mut T>(c.as_ptr())))
+    }
+  }
+
+  #[derive(Debug)]
+  pub struct ChimeraMatch<'a> {
+    pub id: ExpressionIndex,
+    pub source: ByteSlice<'a>,
+    pub flags: ScanFlags,
+    pub captures: Vec<Option<ByteSlice<'a>>>,
+  }
+
+  pub trait ChimeraScanner<'data> {
+    fn handle_match(&mut self, m: &ChimeraMatch<'data>) -> ChimeraMatchResult;
+    fn handle_error(&mut self, e: &ChimeraMatchError) -> ChimeraMatchResult;
+    fn new() -> Self
+    where Self: Sized;
+  }
+
+  pub struct TrivialChimeraScanner;
+
+  impl<'data> ChimeraScanner<'data> for TrivialChimeraScanner {
+    fn handle_match(&mut self, _m: &ChimeraMatch<'data>) -> ChimeraMatchResult {
+      ChimeraMatchResult::Continue
+    }
+
+    fn handle_error(&mut self, _e: &ChimeraMatchError) -> ChimeraMatchResult {
+      ChimeraMatchResult::Continue
+    }
+
+    fn new() -> Self
+    where Self: Sized {
+      Self
+    }
+  }
+
+  pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
+    parent_slice: ByteSlice<'data>,
+    matches_tx: mpsc::UnboundedSender<ChimeraMatch<'data>>,
+    errors_tx: mpsc::UnboundedSender<ChimeraMatchError>,
+    handler: &'code mut dyn ChimeraScanner<'data>,
+  }
+
+  impl<'data, 'code> ChimeraSliceMatcher<'data, 'code> {
+    #[inline]
+    pub fn new(
+      parent_slice: ByteSlice<'data>,
+      scanner: &'code mut impl ChimeraScanner<'data>,
+    ) -> (
+      Self,
+      mpsc::UnboundedReceiver<ChimeraMatch<'data>>,
+      mpsc::UnboundedReceiver<ChimeraMatchError>,
+    ) {
+      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
+      let (errors_tx, errors_rx) = mpsc::unbounded_channel();
+      let s = Self {
+        parent_slice,
+        matches_tx,
+        errors_tx,
+        handler: scanner,
+      };
+      (s, matches_rx, errors_rx)
+    }
+
+    #[inline]
+    pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
+
+    #[inline(always)]
+    pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
+      self.parent_slice.index_range(range).unwrap()
+    }
+
+    #[inline(always)]
+    pub fn push_new_match(&self, m: ChimeraMatch<'data>) { self.matches_tx.send(m).unwrap(); }
+
+    #[inline(always)]
+    pub fn handle_match(&mut self, m: &ChimeraMatch<'data>) -> ChimeraMatchResult {
+      self.handler.handle_match(m)
+    }
+
+    #[inline(always)]
+    pub fn push_new_error(&self, e: ChimeraMatchError) { self.errors_tx.send(e).unwrap(); }
+
+    #[inline(always)]
+    pub fn handle_error(&mut self, e: &ChimeraMatchError) -> ChimeraMatchResult {
+      self.handler.handle_error(e)
+    }
+  }
+
+  pub(crate) unsafe extern "C" fn match_chimera_slice(
+    id: c_uint,
+    from: c_ulonglong,
+    to: c_ulonglong,
+    flags: c_uint,
+    size: c_uint,
+    captured: *const hs::ch_capture,
+    context: *mut c_void,
+  ) -> hs::ch_callback_t {
+    let ChimeraMatchEvent {
+      id,
+      range,
+      flags,
+      captures,
+      context,
+    } = ChimeraMatchEvent::coerce_args(id, from, to, flags, size, captured, context);
+    let mut matcher: Pin<&mut ChimeraSliceMatcher<'_, '_>> =
+      ChimeraMatchEvent::extract_context::<'_, ChimeraSliceMatcher<'_, '_>>(context).unwrap();
+    let matched_substring = matcher.index_range(range);
+    let m = ChimeraMatch {
+      id,
+      source: matched_substring,
+      flags,
+      captures: captures
+        .into_iter()
+        .map(|c| c.index(matcher.parent_slice()))
+        .collect(),
+    };
+
+    let result = matcher.handle_match(&m);
+    /* TODO: do we want to make configurable whether SkipPattern still forwards
+     * the match to the channel? */
+    matcher.push_new_match(m);
+    result.into_native()
+  }
+
+  pub(crate) unsafe extern "C" fn error_callback_chimera(
+    error_type: hs::ch_error_event_t,
+    id: c_uint,
+    info: *mut c_void,
+    ctx: *mut c_void,
+  ) -> hs::ch_callback_t {
+    let error_type = ChimeraMatchErrorType::from_native(error_type);
+    let id = ExpressionIndex(id);
+    let info = ptr::NonNull::new(info);
+    let ctx = ptr::NonNull::new(ctx);
+    let mut matcher: Pin<&mut ChimeraSliceMatcher<'_, '_>> =
+      ChimeraMatchEvent::extract_context::<'_, ChimeraSliceMatcher<'_, '_>>(ctx).unwrap();
+    let e = ChimeraMatchError {
+      error_type,
+      id,
+      info,
+    };
+
+    let result = matcher.handle_error(&e);
+    matcher.push_new_error(e);
     result.into_native()
   }
 }
