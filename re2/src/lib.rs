@@ -129,7 +129,7 @@ pub struct RE2(re2_c::RE2Wrapper);
 
 impl RE2 {
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::RE2;
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
@@ -165,7 +165,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
   /// assert_eq!(r.pattern().as_str(), "asdf");
   /// # Ok(())
@@ -175,7 +175,7 @@ impl RE2 {
   pub fn pattern(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.pattern()) } }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -189,7 +189,7 @@ impl RE2 {
   pub fn options(&self) -> Options { unsafe { *self.0.options() }.into() }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -226,7 +226,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::RE2;
   ///
   /// assert_eq!(0, "a.df".parse::<RE2>()?.num_captures());
@@ -240,7 +240,7 @@ impl RE2 {
   pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::RE2;
   ///
   /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
@@ -280,7 +280,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.full_match("asdf"));
   /// assert!(!r.full_match("asdfe"));
@@ -295,7 +295,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -342,7 +342,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.partial_match("asdf"));
   /// assert!(r.partial_match("asdfe"));
@@ -358,7 +358,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{*, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -408,7 +408,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "asdf";
   /// assert!(r.consume(&mut s));
@@ -426,7 +426,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -474,7 +474,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "the asdf";
   /// assert!(r.find_and_consume(&mut s));
@@ -492,7 +492,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -543,7 +543,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
   /// assert!(r.replace(&mut s, "duh"));
@@ -558,7 +558,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view(
   ///   "all the king's horses and all the king's men".into());
@@ -581,7 +581,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "(.h)e".parse()?;
   /// let mut s = re2::string::StringWrapper::blank();
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
@@ -603,7 +603,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
@@ -632,7 +632,7 @@ impl RE2 {
   /// panics!**
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
@@ -675,7 +675,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
   /// r.check_rewrite_string("a").unwrap();
   /// r.check_rewrite_string(r"a\0b").unwrap();
@@ -706,7 +706,7 @@ impl RE2 {
   }
 
   ///```
-  /// # fn main() -> Result<(), re2::error::CompileError> {
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let mut sw = re2::string::StringWrapper::blank();
   /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
   /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));

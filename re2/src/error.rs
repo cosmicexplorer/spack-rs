@@ -157,3 +157,19 @@ pub enum SetCompileError {
   /// out of memory
   OutOfMemory,
 }
+
+#[derive(Debug, Display, Error)]
+pub enum RE2Error {
+  /// re2 runtime error: {0}
+  Runtime(#[from] RE2ErrorCode),
+  /// pattern compilation error: {0}
+  Compile(#[from] CompileError),
+  /// error rewriting string: {0}
+  Rewrite(#[from] RewriteError),
+  /// error in set compilation: {0}
+  Set(#[from] SetErrorInfo),
+  /// error in set pattern: {0}
+  SetPattern(#[from] SetPatternError),
+  /// error compiling set: {0}
+  SetCompile(#[from] SetCompileError),
+}
