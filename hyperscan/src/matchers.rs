@@ -441,7 +441,7 @@ pub mod chimera {
 
   use std::{
     ffi::{c_uint, c_ulonglong, c_void},
-    mem, ops,
+    ops,
     pin::Pin,
     ptr, slice,
   };
@@ -540,7 +540,7 @@ pub mod chimera {
     pub unsafe fn extract_context<'a, T>(
       context: Option<ptr::NonNull<c_void>>,
     ) -> Option<Pin<&'a mut T>> {
-      context.map(|c| Pin::new_unchecked(&mut *mem::transmute::<*mut c_void, *mut T>(c.as_ptr())))
+      MatchEvent::extract_context(context)
     }
   }
 
