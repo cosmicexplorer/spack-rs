@@ -118,6 +118,7 @@ impl HyperscanRuntimeError {
     }
   }
 
+  #[cfg(feature = "compile")]
   #[inline]
   pub(crate) fn copy_from_native_compile_error(
     x: hs::hs_error_t,
@@ -142,6 +143,8 @@ pub enum HyperscanFlagsError {
   SomHorizonModeRequired,
 }
 
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 /// compile error(@{expression}): {message}
 #[derive(Debug, Display, Error)]
 pub struct CompileError {
@@ -149,6 +152,7 @@ pub struct CompileError {
   pub expression: ExpressionIndex,
 }
 
+#[cfg(feature = "compile")]
 impl CompileError {
   #[inline]
   pub fn copy_from_native(x: &mut hs::hs_compile_error) -> Result<Self, HyperscanRuntimeError> {
@@ -168,6 +172,8 @@ impl CompileError {
   }
 }
 
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 #[derive(Debug, Display, Error)]
 pub enum HyperscanCompileError {
   /// flags error: {0}
@@ -192,6 +198,8 @@ pub enum CompressionError {
 pub enum HyperscanError {
   /// error from the hyperscan runtime: {0}
   Runtime(#[from] HyperscanRuntimeError),
+  #[cfg(feature = "compile")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   /// compile error: {0}
   Compile(#[from] HyperscanCompileError),
   /// error compressing stream: {0}

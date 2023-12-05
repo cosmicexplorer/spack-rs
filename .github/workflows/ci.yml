@@ -33,7 +33,7 @@ jobs:
       name: cache spack
       uses: actions/cache@v3
       env:
-        cache-name: cache-spack-dir
+        cache-name: cache-spack-dir-checker
       with:
         path: ~/.spack/summonings
         # No need to split cache by os, as spack already ensures this separation!
@@ -44,15 +44,22 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: fmt
-        args: --check --verbose
+        args: --check --verbose --all
 
     - name: check clippy
       uses: actions-rs/cargo@v1
       with:
         command: clippy
+        args: --all
 
-  test-rust:
-    name: test against ${{ matrix.rust-toolchain }} rust
+    - name: check clippy against hyperscan chimera
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: -p hyperscan-async --no-default-features --features chimera
+
+  test-spack:
+    name: test spack-rs against ${{ matrix.rust-toolchain }} rust
     strategy:
       fail-fast: true
       matrix:
@@ -79,7 +86,7 @@ jobs:
       name: cache spack
       uses: actions/cache@v3
       env:
-        cache-name: cache-spack-dir
+        cache-name: cache-spack-dir-spack-tests
       with:
         path: ~/.spack/summonings
         # No need to split cache by os, as spack already ensures this separation!
@@ -90,4 +97,104 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all-features -vv
+        args: -p spack-rs -p super-process
+
+  test-re2:
+    name: test re2 against ${{ matrix.rust-toolchain }} rust
+    strategy:
+      fail-fast: true
+      matrix:
+        rust-toolchain: ['stable', 'nightly']
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: install rust ${{ matrix.rust-toolchain }}
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
+        override: true
+        components: rustfmt
+
+    - id: cache-rust-tests
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - id: cache-spack
+      name: cache spack
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-spack-dir-re2-tests
+      with:
+        path: ~/.spack/summonings
+        # No need to split cache by os, as spack already ensures this separation!
+        # FIXME: i think the above is wrong -- we need to split the cache key by os so that github allows each job per os to write to its own cache (otherwise only the first to complete will be saved)
+        key: spack-summonings-${{ env.cache-name }}-v8
+
+    - name: test dynamic
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p re2 --no-default-features --features dynamic -vv
+
+    - name: test static
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p re2 --no-default-features --features static -vv
+
+  test-hyperscan:
+    name: test hyperscan against ${{ matrix.rust-toolchain }} rust
+    strategy:
+      fail-fast: true
+      matrix:
+        rust-toolchain: ['stable', 'nightly']
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: install rust ${{ matrix.rust-toolchain }}
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
+        override: true
+        components: rustfmt
+
+    - id: cache-rust-tests
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - id: cache-spack
+      name: cache spack
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-spack-dir-hyperscan-tests
+      with:
+        path: ~/.spack/summonings
+        # No need to split cache by os, as spack already ensures this separation!
+        # FIXME: i think the above is wrong -- we need to split the cache key by os so that github allows each job per os to write to its own cache (otherwise only the first to complete will be saved)
+        key: spack-summonings-${{ env.cache-name }}-v8
+
+    - name: test hyperscan-static-with-compile
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p hyperscan-async --no-default-features --features static,compile -vv
+
+    - name: test hyperscan-dynamic-with-compile
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p hyperscan-async --no-default-features --features dynamic,compile -vv
+
+    - name: test hyperscan-static-chimera
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p hyperscan-async --no-default-features --features chimera -vv

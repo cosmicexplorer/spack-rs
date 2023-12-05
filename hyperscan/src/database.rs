@@ -5,11 +5,15 @@
 
 use crate::{
   alloc,
-  error::{HyperscanCompileError, HyperscanFlagsError, HyperscanRuntimeError},
-  expression::{Expression, ExpressionSet, Literal, LiteralSet},
+  error::{HyperscanFlagsError, HyperscanRuntimeError},
   flags::{Flags, Mode},
   hs,
   state::{Platform, Scratch},
+};
+#[cfg(feature = "compile")]
+use crate::{
+  error::HyperscanCompileError,
+  expression::{Expression, ExpressionSet, Literal, LiteralSet},
 };
 
 use std::{
@@ -71,6 +75,8 @@ impl Database {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "compile")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   pub fn compile(
     expression: &Expression,
     flags: Flags,
@@ -117,6 +123,8 @@ impl Database {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "compile")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   pub fn compile_literal(
     literal: &Literal,
     flags: Flags,
@@ -182,6 +190,8 @@ impl Database {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "compile")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
@@ -259,6 +269,8 @@ impl Database {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "compile")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,

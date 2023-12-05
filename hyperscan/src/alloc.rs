@@ -232,7 +232,8 @@ pub mod chimera {
   use super::*;
   use crate::error::chimera::*;
 
-  /* FIXME: use RwLock instead? */
+  /* FIXME: push the Mutex up into the LayoutTracker so the allocator itself
+   * can run without locking! */
   static CHIMERA_DB_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 

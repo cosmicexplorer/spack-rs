@@ -417,7 +417,7 @@ pub mod metadata {
 
   use displaydoc::Display;
   use guppy::CargoMetadata;
-  use indexmap::IndexMap;
+  use indexmap::{IndexMap, IndexSet};
   use serde_json;
   use thiserror::Error;
 
@@ -450,51 +450,96 @@ pub mod metadata {
       CargoMetadata::parse_json(cargo_cmd.clone().invoke().await?.decode(cargo_cmd)?.stdout)?;
     let package_graph = metadata.build_graph()?;
 
-    let labelled_metadata: Vec<(spec::CrateName, spec::LabelledPackageMetadata)> = package_graph
+    let labelled_metadata: Vec<(
+      spec::CrateName,
+      spec::LabelledPackageMetadata,
+      Vec<spec::CargoFeature>,
+    )> = package_graph
       .packages()
       .filter_map(|p| {
         let name = spec::CrateName(p.name().to_string());
         let spack_metadata = p.metadata_table().as_object()?.get("spack")?.clone();
-        Some((name, spack_metadata))
+        dbg!(&spack_metadata);
+        let features: Vec<_> = p
+          .named_features()
+          .map(|s| spec::CargoFeature(s.to_string()))
+          .collect();
+        Some((name, spack_metadata, features))
       })
-      .map(|(name, spack_metadata)| {
+      .map(|(name, spack_metadata, features)| {
         let spec_metadata: spec::LabelledPackageMetadata = serde_json::from_value(spack_metadata)?;
-        Ok((name, spec_metadata))
+        Ok((name, spec_metadata, features))
       })
       .collect::<Result<Vec<_>, MetadataError>>()?;
 
-    let mut resolves: IndexMap<spec::EnvLabel, Vec<spec::Spec>> = IndexMap::new();
-    let mut recipes: IndexMap<spec::CrateName, spec::Recipe> = IndexMap::new();
+    let mut resolves: IndexMap<spec::Label, Vec<spec::Spec>> = IndexMap::new();
+    let mut recipes: IndexMap<
+      spec::CrateName,
+      IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)>,
+    > = IndexMap::new();
+    let mut declared_features_by_package: IndexMap<spec::CrateName, Vec<spec::CargoFeature>> =
+      IndexMap::new();
 
-    for (crate_name, metadata) in labelled_metadata.into_iter() {
-      dbg!(&metadata);
-      let spec::LabelledPackageMetadata {
-        env_label,
-        spec,
-        deps,
-      } = metadata;
-      let env_label = spec::EnvLabel(env_label);
-      let spec = spec::Spec(spec);
+    for (crate_name, spec::LabelledPackageMetadata { envs }, features) in
+      labelled_metadata.into_iter()
+    {
+      dbg!(&envs);
 
-      let sub_deps: Vec<spec::SubDep> = deps
-        .into_iter()
-        .map(|(pkg_name, spec::Dep { r#type, lib_names })| {
-          Ok(spec::SubDep {
-            pkg_name: spec::PackageName(pkg_name),
-            r#type: r#type.parse()?,
-            lib_names,
+      assert!(declared_features_by_package
+        .insert(crate_name.clone(), features)
+        .is_none());
+
+      for (label, env) in envs.into_iter() {
+        let spec::Env {
+          spec,
+          deps,
+          features,
+        } = env;
+        let env_label = spec::Label(label);
+        let spec = spec::Spec(spec);
+        let feature_map = if let Some(spec::FeatureLayout {
+          needed,
+          conflicting,
+        }) = features
+        {
+          let needed: IndexSet<_> = needed
+            .unwrap_or_default()
+            .into_iter()
+            .map(spec::CargoFeature)
+            .collect();
+          let conflicting: IndexSet<_> = conflicting
+            .unwrap_or_default()
+            .into_iter()
+            .map(spec::CargoFeature)
+            .collect();
+          spec::FeatureMap {
+            needed,
+            conflicting,
+          }
+        } else {
+          spec::FeatureMap::default()
+        };
+
+        let sub_deps: Vec<spec::SubDep> = deps
+          .into_iter()
+          .map(|(pkg_name, spec::Dep { r#type, lib_names })| {
+            Ok(spec::SubDep {
+              pkg_name: spec::PackageName(pkg_name),
+              r#type: r#type.parse()?,
+              lib_names,
+            })
           })
-        })
-        .collect::<Result<Vec<_>, spec::SpecError>>()?;
+          .collect::<Result<Vec<_>, spec::SpecError>>()?;
 
-      let recipe = spec::Recipe {
-        env_label: env_label.clone(),
-        sub_deps,
-      };
+        let recipe = spec::Recipe { sub_deps };
 
-      assert!(recipes.insert(crate_name.clone(), recipe).is_none());
-
-      resolves.entry(env_label).or_default().push(spec);
+        resolves.entry(env_label.clone()).or_default().push(spec);
+        assert!(recipes
+          .entry(crate_name.clone())
+          .or_default()
+          .insert(env_label, (recipe, feature_map))
+          .is_none());
+      }
     }
 
     Ok(spec::DisjointResolves {
@@ -503,6 +548,7 @@ pub mod metadata {
         .map(|(label, specs)| (label, spec::EnvInstructions { specs }))
         .collect(),
       recipes,
+      declared_features_by_package,
     })
   }
 
@@ -514,6 +560,15 @@ pub mod metadata {
 /// High-level API for build scripts that consumes `[package.metadata.spack]`.
 pub mod declarative {
   use super::prefix;
+  use crate::metadata_spec::spec;
+
+  use indexmap::IndexMap;
+
+  use std::env;
+
+  fn currently_has_feature(feature: &spec::CargoFeature) -> bool {
+    env::var(feature.to_env_var_name()).is_ok()
+  }
 
   pub async fn resolve_dependencies() -> eyre::Result<Vec<prefix::Prefix>> {
     use crate::{commands::*, subprocess::spack::SpackInvocation, utils::metadata};
@@ -524,14 +579,58 @@ pub mod declarative {
 
     /* Parse `cargo metadata` for the entire workspace. */
     let metadata = metadata::get_metadata().await?;
-    /* Get the current package's recipe. */
+    /* Get the current package name. */
     let cur_pkg_name = metadata::get_cur_pkg_name();
-    let cur_recipe = metadata.recipes.get(&cur_pkg_name).unwrap();
+
+    /* Get the current package's recipe. */
+    let declared_recipes: &IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)> =
+      metadata.recipes.get(&cur_pkg_name).unwrap();
+    dbg!(&declared_recipes);
+
+    /* Get the declared features for the current package. */
+    let declared_features = metadata
+      .declared_features_by_package
+      .get(&cur_pkg_name)
+      .unwrap();
+    let activated_features = spec::FeatureSet(
+      declared_features
+        .iter()
+        .filter(|f| currently_has_feature(f))
+        .cloned()
+        .collect(),
+    );
+
+    /* Get the recipe matching the current set of activated features. */
+    let matching_recipes: Vec<(&spec::Label, &spec::Recipe)> = declared_recipes
+      .into_iter()
+      .filter(|(_, (_, feature_map))| feature_map.evaluate(&activated_features))
+      .map(|(label, (recipe, _))| (label, recipe))
+      .collect();
+
+    let (env_label, cur_recipe) = match matching_recipes.len() {
+      0 => {
+        return Err(eyre::Report::msg(format!(
+          "no recipe found for given features {:?} from declared recipes {:?}",
+          activated_features, declared_recipes,
+        )))
+      },
+      1 => matching_recipes[0],
+      _ => {
+        return Err(eyre::Report::msg(format!(
+          "more than one recipe {:?} matched for given features {:?} from declared recipes {:?}",
+          matching_recipes, activated_features, declared_recipes,
+        )))
+      },
+    };
+    dbg!(&env_label);
+    dbg!(&cur_recipe);
 
     /* Get a hashed name for the current environment to resolve. */
-    let env_instructions = Cow::Borrowed(metadata.by_label.get(&cur_recipe.env_label).unwrap());
+    let env_instructions = metadata.by_label.get(env_label).unwrap();
+    dbg!(env_instructions);
     let env_hash = env_instructions.compute_digest();
-    let env = EnvName(env_hash.hashed_env_name(&cur_recipe.env_label.0));
+    let env = EnvName(env_hash.hashed_env_name(&env_label.0));
+    dbg!(&env);
 
     /* Ensure spack is available. */
     let spack = SpackInvocation::summon().await?;
@@ -542,7 +641,7 @@ pub mod declarative {
       spack: spack.clone(),
       env,
     }
-    .idempotent_env_create(env_instructions)
+    .idempotent_env_create(Cow::Borrowed(env_instructions))
     .await?;
 
     let mut dep_prefixes: Vec<prefix::Prefix> = Vec::new();

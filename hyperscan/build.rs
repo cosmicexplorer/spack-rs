@@ -11,6 +11,16 @@ use std::{env, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+  if cfg!(feature = "chimera") {
+    assert!(!cfg!(feature = "dynamic"), "chimera requires static");
+    assert!(cfg!(feature = "compile"), "chimera requires compile");
+  } else if cfg!(feature = "dynamic") {
+    assert!(
+      !cfg!(feature = "static"),
+      "dynamic and static are incompatible"
+    );
+  }
+
   let prefixes = resolve_dependencies().await?;
 
   let mut bindings = bindgen::Builder::default()
@@ -30,6 +40,9 @@ async fn main() -> eyre::Result<()> {
   bindings = bindings.allowlist_item("CH.*");
   for p in prefixes.iter().cloned() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
+  }
+  if cfg!(feature = "chimera") {
+    bindings = bindings.clang_arg("-D__INCLUDE_CHIMERA__");
   }
   let outfile = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
   bindings.generate()?.write_to_file(outfile)?;

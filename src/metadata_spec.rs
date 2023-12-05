@@ -4,23 +4,30 @@
 pub mod spec {
   use base64ct::{Base64Url, Encoding};
   use displaydoc::Display;
-  use indexmap::IndexMap;
+  use indexmap::{IndexMap, IndexSet};
   use serde::Deserialize;
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
   use std::str;
 
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct EnvLabel(pub String);
-
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct Spec(pub String);
-
   #[derive(Debug, Clone, Deserialize)]
   pub struct Dep {
     pub r#type: String,
     pub lib_names: Vec<String>,
+  }
+
+  #[derive(Debug, Clone, Deserialize)]
+  pub struct FeatureLayout {
+    pub needed: Option<IndexSet<String>>,
+    pub conflicting: Option<IndexSet<String>>,
+  }
+
+  #[derive(Debug, Clone, Deserialize)]
+  pub struct Env {
+    pub spec: String,
+    pub deps: IndexMap<String, Dep>,
+    pub features: Option<FeatureLayout>,
   }
 
   /// This is deserialized from the output of `cargo metadata --format-version
@@ -30,16 +37,22 @@ pub mod spec {
   /// `[package.metadata.spack]` section as follows:
   ///```toml
   /// [package.metadata.spack]
-  /// env_label               = "re2-runtime-deps"
-  /// spec                    = "re2@2023-11-01~shared ^ abseil-cpp+shared"
-  /// deps                    = { re2 = { type = "dynamic", lib_names = ["re2"] } }
+  /// envs = [{
+  ///   label = "re2",
+  ///   spec = "re2@2023-11-01+shared",
+  ///   deps = { re2 = { type = "dynamic", lib_names = ["re2"] } }
+  /// }]
   /// ```
   #[derive(Debug, Clone, Deserialize)]
   pub struct LabelledPackageMetadata {
-    pub env_label: String,
-    pub spec: String,
-    pub deps: IndexMap<String, Dep>,
+    pub envs: IndexMap<String, Env>,
   }
+
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct Label(pub String);
+
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct Spec(pub String);
 
   /// Name of a package from the [`Spec`] resolver.
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -87,7 +100,6 @@ pub mod spec {
 
   #[derive(Debug, Clone)]
   pub struct Recipe {
-    pub env_label: EnvLabel,
     pub sub_deps: Vec<SubDep>,
   }
 
@@ -122,9 +134,52 @@ pub mod spec {
     }
   }
 
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct CargoFeature(pub String);
+
+  impl CargoFeature {
+    /// This [environment variable] will be set in the current package's build
+    /// script if the feature is activated.
+    ///
+    /// [environment variable]: https://doc.rust-lang.org/cargo/reference/environment-variables.html.
+    pub fn to_env_var_name(&self) -> String {
+      format!("CARGO_FEATURE_{}", self.0.to_uppercase().replace('-', "_"))
+    }
+  }
+
+  #[derive(Debug, Clone, Default)]
+  pub struct FeatureMap {
+    pub needed: IndexSet<CargoFeature>,
+    pub conflicting: IndexSet<CargoFeature>,
+  }
+
+  impl FeatureMap {
+    pub fn evaluate(&self, features: &FeatureSet) -> bool {
+      let Self {
+        needed,
+        conflicting,
+      } = self;
+      for n in needed.iter() {
+        if !features.0.contains(n) {
+          return false;
+        }
+      }
+      for c in conflicting.iter() {
+        if features.0.contains(c) {
+          return false;
+        }
+      }
+      true
+    }
+  }
+
+  #[derive(Debug, Clone, Default)]
+  pub struct FeatureSet(pub IndexSet<CargoFeature>);
+
   #[derive(Debug, Clone)]
   pub struct DisjointResolves {
-    pub by_label: IndexMap<EnvLabel, EnvInstructions>,
-    pub recipes: IndexMap<CrateName, Recipe>,
+    pub by_label: IndexMap<Label, EnvInstructions>,
+    pub recipes: IndexMap<CrateName, IndexMap<Label, (Recipe, FeatureMap)>>,
+    pub declared_features_by_package: IndexMap<CrateName, Vec<CargoFeature>>,
   }
 }

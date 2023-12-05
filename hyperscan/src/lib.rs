@@ -19,6 +19,8 @@ pub(crate) use bindings::root as hs;
 pub mod alloc;
 pub mod database;
 pub mod error;
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 pub mod expression;
 pub mod flags;
 pub mod matchers;

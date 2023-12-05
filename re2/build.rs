@@ -15,6 +15,13 @@ use std::{env, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+  if cfg!(feature = "static") {
+    assert!(
+      !cfg!(feature = "dynamic"),
+      "dynamic and static cannot coexist"
+    );
+  }
+
   let prefixes = resolve_dependencies().await?;
 
   let mut bindings = bindgen::Builder::default()

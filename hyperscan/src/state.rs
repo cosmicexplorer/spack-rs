@@ -370,7 +370,6 @@ unsafe impl Sync for Scratch {}
 #[cfg(test)]
 mod test {
   use crate::{
-    expression::Expression,
     flags::{Flags, Mode, ScanFlags},
     matchers::MatchResult,
   };
@@ -379,9 +378,10 @@ mod test {
 
   use std::{mem::ManuallyDrop, sync::Arc};
 
+  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn try_clone_still_valid() -> Result<(), eyre::Report> {
-    let a_expr: Expression = "asdf$".parse()?;
+    let a_expr: crate::expression::Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 
     /* Allocate a new scratch. */
@@ -411,9 +411,10 @@ mod test {
     Ok(())
   }
 
+  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn make_mut() -> Result<(), eyre::Report> {
-    let a_expr: Expression = "asdf$".parse()?;
+    let a_expr: crate::expression::Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 
     /* Allocate a new scratch into an Arc. */

@@ -194,7 +194,9 @@ impl LiveStream {
 
   pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     let mut ret = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_copy_stream(&mut ret, self.as_ref_native()) })?;
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_copy_stream(&mut ret, self.as_ref_native())
+    })?;
     Ok(unsafe { Self::from_native(ret) })
   }
 
@@ -504,7 +506,9 @@ impl Streamer {
     self.sink.scan(data).await
   }
 
-  pub async fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> { self.sink.flush_eod().await }
+  pub async fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
+    self.sink.flush_eod().await
+  }
 
   pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     let mut sink = self.sink.try_clone()?;
@@ -654,7 +658,9 @@ impl Streamer {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanRuntimeError> { self.sink.reset_no_flush() }
+  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanRuntimeError> {
+    self.sink.reset_no_flush()
+  }
 
   ///```
   /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
@@ -834,18 +840,16 @@ impl CompressedStream {
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::{
-    expression::Expression,
-    flags::{Flags, Mode},
-  };
+  use crate::flags::{Flags, Mode};
 
   use futures_util::StreamExt;
 
   use std::{mem, sync::Arc};
 
+  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn clone_scratch() -> Result<(), eyre::Report> {
-    let expr: Expression = "asdf$".parse()?;
+    let expr: crate::expression::Expression = "asdf$".parse()?;
     let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 
     let scratch = Arc::new(db.allocate_scratch()?);
@@ -863,9 +867,10 @@ mod test {
     Ok(())
   }
 
+  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn compress() -> Result<(), eyre::Report> {
-    let expr: Expression = "a+".parse()?;
+    let expr: crate::expression::Expression = "a+".parse()?;
     let db = expr.compile(
       Flags::UTF8 | Flags::SOM_LEFTMOST,
       Mode::STREAM | Mode::SOM_HORIZON_LARGE,
