@@ -390,6 +390,8 @@ impl ops::BitAndAssign for ExtFlags {
   }
 }
 
+#[cfg(feature = "chimera")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::BitSet;
   use crate::hs;

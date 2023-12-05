@@ -47,3 +47,14 @@ tokio-test.workspace    = true
 
 [lints]
 workspace               = true
+
+[features]
+default                 = ["shared", "compile"]
+shared                  = []
+static                  = []
+compile                 = []
+chimera                 = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

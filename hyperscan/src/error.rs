@@ -198,6 +198,8 @@ pub enum HyperscanError {
   Compression(#[from] CompressionError),
 }
 
+#[cfg(feature = "chimera")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
 

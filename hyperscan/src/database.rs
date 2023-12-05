@@ -535,6 +535,8 @@ impl SerializedDb {
   }
 }
 
+#[cfg(feature = "chimera")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use crate::{
     alloc::chimera::chimera_misc_free_func,

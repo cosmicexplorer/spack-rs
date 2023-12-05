@@ -435,6 +435,8 @@ mod test {
   }
 }
 
+#[cfg(feature = "chimera")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
   use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};

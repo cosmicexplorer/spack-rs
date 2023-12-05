@@ -433,6 +433,8 @@ pub mod vectored_slice {
   }
 }
 
+#[cfg(feature = "chimera")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
   use crate::{error::chimera::*, hs};
