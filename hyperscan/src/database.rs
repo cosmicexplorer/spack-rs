@@ -9,7 +9,10 @@ use crate::{
     chimera::{ChimeraCompileError, ChimeraError},
     HyperscanCompileError, HyperscanError, HyperscanFlagsError,
   },
-  expression::{ChimeraExpression, Expression, ExpressionSet, Literal, LiteralSet},
+  expression::{
+    ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits, Expression, ExpressionSet,
+    Literal, LiteralSet,
+  },
   flags::{ChimeraFlags, ChimeraMode, Flags, Mode},
   hs,
   state::{chimera::ChimeraScratch, Platform, Scratch},
@@ -158,10 +161,10 @@ impl Database {
   /// // Example of providing ExprExt info (not available in ::compile()!):
   /// let ext = ExprExt::from_min_length(1);
   ///
-  /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
-  ///   .with_flags(&[Flags::UTF8, Flags::UTF8])
-  ///   .with_ids(&[ExprId(1), ExprId(2)])
-  ///   .with_exts(&[None, Some(&ext)]);
+  /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///   .with_flags([Flags::UTF8, Flags::UTF8])
+  ///   .with_ids([ExprId(1), ExprId(2)])
+  ///   .with_exts([None, Some(&ext)]);
   ///
   /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
   ///
@@ -233,9 +236,9 @@ impl Database {
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
   /// let free_lit: Literal = "fr\0e\0e".parse()?;
-  /// let lit_set = LiteralSet::from_lits(&[&hell_lit, &free_lit])
-  ///   .with_flags(&[Flags::default(), Flags::default()])
-  ///   .with_ids(&[ExprId(2), ExprId(1)]);
+  /// let lit_set = LiteralSet::from_lits([&hell_lit, &free_lit])
+  ///   .with_flags([Flags::default(), Flags::default()])
+  ///   .with_ids([ExprId(2), ExprId(1)]);
   ///
   /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK)?;
   ///
@@ -588,9 +591,133 @@ impl ChimeraDb {
     Ok(unsafe { Self::from_native(db) })
   }
 
+  ///```
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraScanError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::chimera::*};
+  /// use futures_util::TryStreamExt;
+  ///
+  /// let a_expr: ChimeraExpression = "a+".parse().unwrap();
+  /// let b_expr: ChimeraExpression = "b+".parse().unwrap();
+  /// let exprs = ChimeraExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
+  ///   .with_ids([ExprId(1), ExprId(2)])
+  ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
+  /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS).unwrap();
+  /// let mut scratch = db.allocate_scratch().unwrap();
+  ///
+  /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
+  ///   &db,
+  ///   "aardvark imbibbe".into(),
+  ///   ScanFlags::default(),
+  /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
+  ///  .try_collect()
+  ///  .await?;
+  /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn compile_multi(
+    exprs: &ChimeraExpressionSet,
+    mode: ChimeraMode,
+  ) -> Result<Self, ChimeraCompileError> {
+    let platform = Platform::get();
+
+    let mut db = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
+    ChimeraError::copy_from_native_compile_error(
+      unsafe {
+        if let Some(ChimeraMatchLimits {
+          match_limit,
+          match_limit_recursion,
+        }) = exprs.limits()
+        {
+          hs::ch_compile_ext_multi(
+            exprs.expressions_ptr(),
+            exprs.flags_ptr(),
+            exprs.ids_ptr(),
+            exprs.num_elements(),
+            mode.into_native(),
+            match_limit,
+            match_limit_recursion,
+            platform.as_ref_native(),
+            &mut db,
+            &mut compile_err,
+          )
+        } else {
+          hs::ch_compile_multi(
+            exprs.expressions_ptr(),
+            exprs.flags_ptr(),
+            exprs.ids_ptr(),
+            exprs.num_elements(),
+            mode.into_native(),
+            platform.as_ref_native(),
+            &mut db,
+            &mut compile_err,
+          )
+        }
+      },
+      compile_err,
+    )?;
+    Ok(unsafe { Self::from_native(db) })
+  }
+
+  pub fn get_db_size(&self) -> Result<usize, ChimeraError> {
+    let mut database_size = MaybeUninit::<usize>::uninit();
+    ChimeraError::from_native(unsafe {
+      hs::ch_database_size(self.as_ref_native(), database_size.as_mut_ptr())
+    })?;
+    Ok(unsafe { database_size.assume_init() })
+  }
+
+  pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraError> { ChimeraDbInfo::extract_db_info(self) }
+
   pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraError> {
     let mut scratch = ChimeraScratch::new();
     scratch.setup_for_db(self)?;
     Ok(scratch)
+  }
+
+  pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraError> {
+    ChimeraError::from_native(hs::ch_free_database(self.as_mut_native()))
+  }
+}
+
+impl ops::Drop for ChimeraDb {
+  fn drop(&mut self) {
+    unsafe {
+      self.try_drop().unwrap();
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChimeraDbInfo(pub String);
+
+impl ChimeraDbInfo {
+  ///```
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> {
+  /// use hyperscan_async::{expression::*, flags::*, database::*};
+  ///
+  /// let expr: ChimeraExpression = "a+".parse()?;
+  /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+  /// let info = ChimeraDbInfo::extract_db_info(&db)?;
+  /// assert_eq!(&info.0, "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraError> {
+    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    ChimeraError::from_native(unsafe {
+      hs::ch_database_info(db.as_ref_native(), info.as_mut_ptr())
+    })?;
+    let info = unsafe { info.assume_init() };
+    let ret = unsafe { CStr::from_ptr(info) }
+      .to_string_lossy()
+      /* FIXME: avoid copying! */
+      .to_string();
+    unsafe {
+      alloc::misc_free_func(info as *mut c_void);
+    }
+    Ok(Self(ret))
   }
 }

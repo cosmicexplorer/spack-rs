@@ -162,9 +162,9 @@ impl Scratch {
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
   /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
-  /// let expr_set = ExpressionSet::from_exprs(&[&a_expr, &b_expr])
-  ///   .with_flags(&[flags, flags])
-  ///   .with_ids(&[ExprId(1), ExprId(2)]);
+  /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///   .with_flags([flags, flags])
+  ///   .with_ids([ExprId(1), ExprId(2)]);
   /// let db = expr_set.compile(Mode::BLOCK)?;
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -240,9 +240,9 @@ impl Scratch {
   /// let b_plus: Expression = "b+".parse()?;
   /// let asdf: Expression = "asdf(.)".parse()?;
   /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
-  /// let expr_set = ExpressionSet::from_exprs(&[&a_plus, &b_plus, &asdf])
-  ///   .with_flags(&[flags, flags, flags])
-  ///   .with_ids(&[ExprId(0), ExprId(3), ExprId(2)]);
+  /// let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
+  ///   .with_flags([flags, flags, flags])
+  ///   .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
   /// let db = expr_set.compile(Mode::VECTORED)?;
   /// let mut scratch = db.allocate_scratch()?;
   ///

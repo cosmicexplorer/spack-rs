@@ -17,7 +17,7 @@ use std::{
   fmt,
   marker::PhantomData,
   mem, ops,
-  os::raw::{c_char, c_uint, c_ulonglong},
+  os::raw::{c_char, c_uint, c_ulong, c_ulonglong},
   ptr, str,
 };
 
@@ -173,9 +173,9 @@ pub struct ExpressionSet<'a> {
 }
 
 impl<'a> ExpressionSet<'a> {
-  pub fn from_exprs(exprs: &[&'a Expression]) -> Self {
+  pub fn from_exprs(exprs: impl IntoIterator<Item=&'a Expression>) -> Self {
     Self {
-      ptrs: exprs.iter().map(|e| e.as_ptr()).collect(),
+      ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
       flags: None,
       ids: None,
       exts: None,
@@ -183,29 +183,30 @@ impl<'a> ExpressionSet<'a> {
     }
   }
 
-  pub fn with_flags(mut self, flags: &[Flags]) -> Self {
+  pub fn with_flags(mut self, flags: impl IntoIterator<Item=Flags>) -> Self {
+    let flags: Vec<_> = flags.into_iter().collect();
     assert_eq!(self.ptrs.len(), flags.len());
-    self.flags = Some(flags.to_vec());
+    self.flags = Some(flags);
     self
   }
 
-  pub fn with_ids(mut self, ids: &[ExprId]) -> Self {
+  pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
+    let ids: Vec<_> = ids.into_iter().collect();
     assert_eq!(self.ptrs.len(), ids.len());
-    self.ids = Some(ids.to_vec());
+    self.ids = Some(ids);
     self
   }
 
-  pub fn with_exts(mut self, exts: &[Option<&'a ExprExt>]) -> Self {
+  pub fn with_exts(mut self, exts: impl IntoIterator<Item=Option<&'a ExprExt>>) -> Self {
+    let exts: Vec<*const hs::hs_expr_ext> = exts
+      .into_iter()
+      .map(|e| {
+        e.map(|e| e.as_ref_native() as *const hs::hs_expr_ext)
+          .unwrap_or(ptr::null())
+      })
+      .collect();
     assert_eq!(self.ptrs.len(), exts.len());
-    self.exts = Some(
-      exts
-        .iter()
-        .map(|e| {
-          e.map(|e| e.as_ref_native() as *const hs::hs_expr_ext)
-            .unwrap_or(ptr::null())
-        })
-        .collect(),
-    );
+    self.exts = Some(exts);
     self
   }
 
@@ -512,23 +513,33 @@ pub struct LiteralSet<'a> {
 }
 
 impl<'a> LiteralSet<'a> {
-  pub fn from_lits(lits: &[&'a Literal]) -> Self {
+  pub fn from_lits(lits: impl IntoIterator<Item=&'a Literal>) -> Self {
+    let mut ptrs: Vec<_> = Vec::new();
+    let mut lens: Vec<_> = Vec::new();
+
+    for l in lits.into_iter() {
+      ptrs.push(l.as_ptr());
+      lens.push(l.as_bytes().len());
+    }
+
     Self {
-      ptrs: lits.iter().map(|l| l.as_ptr()).collect(),
-      lens: lits.iter().map(|l| l.as_bytes().len()).collect(),
+      ptrs,
+      lens,
       flags: None,
       ids: None,
       _ph: PhantomData,
     }
   }
 
-  pub fn with_flags(mut self, flags: &[Flags]) -> Self {
+  pub fn with_flags(mut self, flags: impl IntoIterator<Item=Flags>) -> Self {
+    let flags: Vec<_> = flags.into_iter().collect();
     assert_eq!(self.ptrs.len(), flags.len());
     self.flags = Some(flags.to_vec());
     self
   }
 
-  pub fn with_ids(mut self, ids: &[ExprId]) -> Self {
+  pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
+    let ids: Vec<_> = ids.into_iter().collect();
     assert_eq!(self.ptrs.len(), ids.len());
     self.ids = Some(ids.to_vec());
     self
@@ -604,4 +615,84 @@ impl str::FromStr for ChimeraExpression {
   type Err = ChimeraCompileError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ChimeraMatchLimits {
+  /// A limit from pcre_extra on the amount of match function called in PCRE to
+  /// limit backtracking that can take place.
+  pub match_limit: c_ulong,
+  /// A limit from pcre_extra on the recursion depth of match function in PCRE.
+  pub match_limit_recursion: c_ulong,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChimeraExpressionSet<'a> {
+  ptrs: Vec<*const c_char>,
+  flags: Option<Vec<ChimeraFlags>>,
+  ids: Option<Vec<ExprId>>,
+  limits: Option<ChimeraMatchLimits>,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> ChimeraExpressionSet<'a> {
+  pub fn from_exprs(exprs: impl IntoIterator<Item=&'a ChimeraExpression>) -> Self {
+    Self {
+      ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
+      flags: None,
+      ids: None,
+      limits: None,
+      _ph: PhantomData,
+    }
+  }
+
+  pub fn with_flags(mut self, flags: impl IntoIterator<Item=ChimeraFlags>) -> Self {
+    let flags: Vec<_> = flags.into_iter().collect();
+    assert_eq!(self.ptrs.len(), flags.len());
+    self.flags = Some(flags);
+    self
+  }
+
+  pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
+    let ids: Vec<_> = ids.into_iter().collect();
+    assert_eq!(self.ptrs.len(), ids.len());
+    self.ids = Some(ids);
+    self
+  }
+
+  pub fn with_limits(mut self, limits: ChimeraMatchLimits) -> Self {
+    self.limits = Some(limits);
+    self
+  }
+
+  pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
+    ChimeraDb::compile_multi(&self, mode)
+  }
+
+  #[inline]
+  pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
+
+  #[inline]
+  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+
+  #[inline]
+  pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
+
+  #[inline]
+  pub(crate) fn flags_ptr(&self) -> *const c_uint {
+    self
+      .flags
+      .as_ref()
+      .map(|f| unsafe { mem::transmute(f.as_ptr()) })
+      .unwrap_or(ptr::null())
+  }
+
+  #[inline]
+  pub(crate) fn ids_ptr(&self) -> *const c_uint {
+    self
+      .ids
+      .as_ref()
+      .map(|i| unsafe { mem::transmute(i.as_ptr()) })
+      .unwrap_or(ptr::null())
+  }
 }
