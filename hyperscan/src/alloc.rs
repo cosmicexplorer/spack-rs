@@ -219,3 +219,146 @@ pub fn set_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), Hyp
   set_stream_allocator(allocator)?;
   Ok(())
 }
+
+pub mod chimera {
+  use super::*;
+  use crate::error::chimera::*;
+
+  /* FIXME: use RwLock instead? */
+  static CHIMERA_DB_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
+  unsafe extern "C" fn chimera_db_alloc_func(size: usize) -> *mut c_void {
+    match CHIMERA_DB_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => allocator
+        .allocate(size)
+        .map(|p| mem::transmute(p.as_ptr()))
+        .unwrap_or(ptr::null_mut()),
+      None => libc::malloc(size),
+    }
+  }
+
+  unsafe extern "C" fn chimera_db_free_func(p: *mut c_void) {
+    match CHIMERA_DB_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => {
+        if let Some(p) = NonNull::new(p as *mut u8) {
+          allocator.deallocate(p);
+        }
+      },
+      None => libc::free(p),
+    }
+  }
+
+  pub fn set_chimera_db_allocator(
+    allocator: Arc<impl GlobalAlloc+'static>,
+  ) -> Result<(), ChimeraError> {
+    let tracker = LayoutTracker::new(allocator);
+    let _ = CHIMERA_DB_ALLOCATOR.lock().insert(tracker);
+    ChimeraError::from_native(unsafe {
+      hs::ch_set_database_allocator(Some(chimera_db_alloc_func), Some(chimera_db_free_func))
+    })
+  }
+
+  static CHIMERA_MISC_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
+
+  unsafe extern "C" fn chimera_misc_alloc_func(size: usize) -> *mut c_void {
+    match CHIMERA_MISC_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => allocator
+        .allocate(size)
+        .map(|p| mem::transmute(p.as_ptr()))
+        .unwrap_or(ptr::null_mut()),
+      None => libc::malloc(size),
+    }
+  }
+
+  pub(crate) unsafe extern "C" fn chimera_misc_free_func(p: *mut c_void) {
+    match CHIMERA_MISC_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => {
+        if let Some(p) = NonNull::new(p as *mut u8) {
+          allocator.deallocate(p);
+        }
+      },
+      None => libc::free(p),
+    }
+  }
+
+  pub fn set_chimera_misc_allocator(
+    allocator: Arc<impl GlobalAlloc+'static>,
+  ) -> Result<(), ChimeraError> {
+    let tracker = LayoutTracker::new(allocator);
+    let _ = CHIMERA_MISC_ALLOCATOR.lock().insert(tracker);
+    ChimeraError::from_native(unsafe {
+      hs::ch_set_misc_allocator(Some(chimera_misc_alloc_func), Some(chimera_misc_free_func))
+    })
+  }
+
+  static CHIMERA_SCRATCH_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
+
+  unsafe extern "C" fn chimera_scratch_alloc_func(size: usize) -> *mut c_void {
+    match CHIMERA_SCRATCH_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => allocator
+        .allocate(size)
+        .map(|p| mem::transmute(p.as_ptr()))
+        .unwrap_or(ptr::null_mut()),
+      None => libc::malloc(size),
+    }
+  }
+
+  unsafe extern "C" fn chimera_scratch_free_func(p: *mut c_void) {
+    match CHIMERA_SCRATCH_ALLOCATOR.lock().as_mut() {
+      Some(allocator) => {
+        if let Some(p) = NonNull::new(p as *mut u8) {
+          allocator.deallocate(p);
+        }
+      },
+      None => libc::free(p),
+    }
+  }
+
+  pub fn set_chimera_scratch_allocator(
+    allocator: Arc<impl GlobalAlloc+'static>,
+  ) -> Result<(), ChimeraError> {
+    let tracker = LayoutTracker::new(allocator);
+    let _ = CHIMERA_SCRATCH_ALLOCATOR.lock().insert(tracker);
+    ChimeraError::from_native(unsafe {
+      hs::ch_set_scratch_allocator(
+        Some(chimera_scratch_alloc_func),
+        Some(chimera_scratch_free_func),
+      )
+    })
+  }
+
+  ///```
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> { tokio_test::block_on(async {
+  /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
+  /// use futures_util::TryStreamExt;
+  /// use std::{alloc::System, sync::Arc};
+  ///
+  /// hyperscan_async::alloc::chimera::set_chimera_allocator(Arc::new(System))?;
+  ///
+  /// let expr: ChimeraExpression = "(he)ll".parse()?;
+  /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+  ///
+  /// let mut scratch = db.allocate_scratch()?;
+  ///
+  /// let matches: Vec<&str> = scratch
+  ///   .scan::<TrivialChimeraScanner>(&db, "hello".into(), ScanFlags::default())
+  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .try_collect()
+  ///   .await.unwrap();
+  /// assert_eq!(&matches, &["hell"]);
+  /// # Ok(())
+  /// # })}
+  /// ```
+  pub fn set_chimera_allocator(
+    allocator: Arc<impl GlobalAlloc+'static>,
+  ) -> Result<(), ChimeraError> {
+    set_chimera_db_allocator(allocator.clone())?;
+    set_chimera_misc_allocator(allocator.clone())?;
+    set_chimera_scratch_allocator(allocator)?;
+    Ok(())
+  }
+}

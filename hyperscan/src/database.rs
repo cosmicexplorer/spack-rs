@@ -716,7 +716,7 @@ impl ChimeraDbInfo {
       /* FIXME: avoid copying! */
       .to_string();
     unsafe {
-      alloc::misc_free_func(info as *mut c_void);
+      alloc::chimera::chimera_misc_free_func(info as *mut c_void);
     }
     Ok(Self(ret))
   }
