@@ -6,8 +6,8 @@
 use crate::{
   alloc,
   error::{
-    chimera::{ChimeraCompileError, ChimeraError},
-    HyperscanCompileError, HyperscanError, HyperscanFlagsError,
+    chimera::{ChimeraCompileError, ChimeraRuntimeError},
+    HyperscanCompileError, HyperscanRuntimeError, HyperscanFlagsError,
   },
   expression::{
     ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits, Expression, ExpressionSet,
@@ -42,7 +42,7 @@ impl Database {
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
 
-  pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanError> {
+  pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
     let mut scratch = Scratch::new();
     scratch.setup_for_db(self)?;
     Ok(scratch)
@@ -58,7 +58,7 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
@@ -87,7 +87,7 @@ impl Database {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
           expression.as_ptr(),
@@ -104,7 +104,7 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
@@ -133,7 +133,7 @@ impl Database {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit(
           literal.as_ptr(),
@@ -151,7 +151,7 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
@@ -197,7 +197,7 @@ impl Database {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         if let Some(exts_ptr) = expression_set.exts_ptr() {
           hs::hs_compile_ext_multi(
@@ -230,7 +230,7 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
@@ -274,7 +274,7 @@ impl Database {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit_multi(
           literal_set.literals_ptr(),
@@ -294,7 +294,7 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
   /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -309,16 +309,16 @@ impl Database {
   /// # }
   /// ```
   #[inline]
-  pub fn database_size(&self) -> Result<usize, HyperscanError> {
+  pub fn database_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_database_size(self.as_ref_native(), ret.as_mut_ptr())
     })?;
     Ok(unsafe { ret.assume_init() })
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
   /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -333,19 +333,19 @@ impl Database {
   /// # }
   /// ```
   #[inline]
-  pub fn stream_size(&self) -> Result<usize, HyperscanError> {
+  pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_stream_size(self.as_ref_native(), ret.as_mut_ptr())
     })?;
     Ok(unsafe { ret.assume_init() })
   }
 
   #[inline]
-  pub fn info(&self) -> Result<DbInfo, HyperscanError> { DbInfo::extract_db_info(self) }
+  pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
@@ -363,12 +363,12 @@ impl Database {
   /// # })}
   /// ```
   #[inline]
-  pub fn serialize(&self) -> Result<SerializedDb, HyperscanError> {
+  pub fn serialize(&self) -> Result<SerializedDb, HyperscanRuntimeError> {
     SerializedDb::serialize_db(self)
   }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
   }
 }
 
@@ -388,7 +388,7 @@ pub struct DbInfo(pub String);
 
 impl DbInfo {
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
   /// use hyperscan_async::{expression::*, flags::*, database::*};
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -398,9 +398,9 @@ impl DbInfo {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanError> {
+  pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_database_info(db.as_ref_native(), info.as_mut_ptr())
     })?;
     let info = unsafe { info.assume_init() };
@@ -418,10 +418,10 @@ impl DbInfo {
 pub struct SerializedDb(Box<[u8]>);
 
 impl SerializedDb {
-  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanError> {
+  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut serialized: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
     let mut length: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_serialize_database(
         db.as_ref_native(),
         serialized.as_mut_ptr(),
@@ -441,7 +441,7 @@ impl SerializedDb {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
   /// use hyperscan_async::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -451,9 +451,9 @@ impl SerializedDb {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanError> {
+  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
     let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_serialized_database_info(self.as_ptr(), self.len(), info.as_mut_ptr())
     })?;
     let info = unsafe { info.assume_init() };
@@ -476,9 +476,9 @@ impl SerializedDb {
   #[inline]
   pub const fn is_empty(&self) -> bool { self.0.is_empty() }
 
-  pub fn deserialize_db(&self) -> Result<Database, HyperscanError> {
+  pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_deserialize_database(self.as_ptr(), self.len(), deserialized.as_mut_ptr())
     })?;
     let deserialized = unsafe { deserialized.assume_init() };
@@ -487,9 +487,9 @@ impl SerializedDb {
 
   /// Return the size of the allocation necessary for a subsequent call to
   /// [`Self::deserialize_db_at()`].
-  pub fn deserialized_size(&self) -> Result<usize, HyperscanError> {
+  pub fn deserialized_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut deserialized_size: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_serialized_database_size(self.as_ptr(), self.len(), deserialized_size.as_mut_ptr())
     })?;
     let deserialized_size = unsafe { deserialized_size.assume_init() };
@@ -504,7 +504,7 @@ impl SerializedDb {
   /// [`Self::deserialized_size()`] in size!**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
   /// use futures_util::TryStreamExt;
   /// use std::mem;
@@ -532,8 +532,8 @@ impl SerializedDb {
   /// # Ok(())
   /// # })}
   /// ```
-  pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(hs::hs_deserialize_database_at(
+  pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(hs::hs_deserialize_database_at(
       self.as_ptr(),
       self.len(),
       db,
@@ -558,7 +558,7 @@ impl ChimeraDb {
   pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*};
   ///
   /// let expr: ChimeraExpression = "(he)ll".parse()?;
@@ -575,7 +575,7 @@ impl ChimeraDb {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    ChimeraError::copy_from_native_compile_error(
+    ChimeraRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::ch_compile(
           expression.as_ptr(),
@@ -592,18 +592,18 @@ impl ChimeraDb {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraScanError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::chimera::*};
   /// use futures_util::TryStreamExt;
   ///
-  /// let a_expr: ChimeraExpression = "a+".parse().unwrap();
-  /// let b_expr: ChimeraExpression = "b+".parse().unwrap();
+  /// let a_expr: ChimeraExpression = "a+".parse()?;
+  /// let b_expr: ChimeraExpression = "b+".parse()?;
   /// let exprs = ChimeraExpressionSet::from_exprs([&a_expr, &b_expr])
   ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
   ///   .with_ids([ExprId(1), ExprId(2)])
   ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
-  /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS).unwrap();
-  /// let mut scratch = db.allocate_scratch().unwrap();
+  /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS)?;
+  /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
   ///   &db,
@@ -624,7 +624,7 @@ impl ChimeraDb {
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    ChimeraError::copy_from_native_compile_error(
+    ChimeraRuntimeError::copy_from_native_compile_error(
       unsafe {
         if let Some(ChimeraMatchLimits {
           match_limit,
@@ -661,24 +661,24 @@ impl ChimeraDb {
     Ok(unsafe { Self::from_native(db) })
   }
 
-  pub fn get_db_size(&self) -> Result<usize, ChimeraError> {
+  pub fn get_db_size(&self) -> Result<usize, ChimeraRuntimeError> {
     let mut database_size = MaybeUninit::<usize>::uninit();
-    ChimeraError::from_native(unsafe {
+    ChimeraRuntimeError::from_native(unsafe {
       hs::ch_database_size(self.as_ref_native(), database_size.as_mut_ptr())
     })?;
     Ok(unsafe { database_size.assume_init() })
   }
 
-  pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraError> { ChimeraDbInfo::extract_db_info(self) }
+  pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraRuntimeError> { ChimeraDbInfo::extract_db_info(self) }
 
-  pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraError> {
+  pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
     let mut scratch = ChimeraScratch::new();
     scratch.setup_for_db(self)?;
     Ok(scratch)
   }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraError> {
-    ChimeraError::from_native(hs::ch_free_database(self.as_mut_native()))
+  pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
+    ChimeraRuntimeError::from_native(hs::ch_free_database(self.as_mut_native()))
   }
 }
 
@@ -695,7 +695,7 @@ pub struct ChimeraDbInfo(pub String);
 
 impl ChimeraDbInfo {
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> {
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
   /// use hyperscan_async::{expression::*, flags::*, database::*};
   ///
   /// let expr: ChimeraExpression = "a+".parse()?;
@@ -705,9 +705,9 @@ impl ChimeraDbInfo {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraError> {
+  pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraRuntimeError> {
     let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    ChimeraError::from_native(unsafe {
+    ChimeraRuntimeError::from_native(unsafe {
       hs::ch_database_info(db.as_ref_native(), info.as_mut_ptr())
     })?;
     let info = unsafe { info.assume_init() };

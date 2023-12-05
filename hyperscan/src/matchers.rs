@@ -221,7 +221,7 @@ pub enum MatchResult {
   /// If scanning is performed in streaming mode and this value is returned, any
   /// subsequent calls to @ref hs_scan_stream() for the same stream will
   /// immediately return with
-  /// [`SCAN_TERMINATED`](crate::error::HyperscanError::ScanTerminated).
+  /// [`SCAN_TERMINATED`](crate::error::HyperscanRuntimeError::ScanTerminated).
   CeaseMatching = 1,
 }
 

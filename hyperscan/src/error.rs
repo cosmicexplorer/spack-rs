@@ -29,7 +29,7 @@ use std::{
 )]
 #[repr(i8)]
 #[ignore_extra_doc_attributes]
-pub enum HyperscanError {
+pub enum HyperscanRuntimeError {
   /// A parameter passed to this function was invalid.
   ///
   /// This error is only returned in cases where the function can detect an
@@ -106,7 +106,7 @@ pub enum HyperscanError {
   UnknownError = hs::HS_UNKNOWN_ERROR,
 }
 
-impl HyperscanError {
+impl HyperscanRuntimeError {
   #[inline]
   pub(crate) fn from_native(x: hs::hs_error_t) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, hs::HS_SUCCESS);
@@ -151,7 +151,7 @@ pub struct CompileError {
 
 impl CompileError {
   #[inline]
-  pub fn copy_from_native(x: &mut hs::hs_compile_error) -> Result<Self, HyperscanError> {
+  pub fn copy_from_native(x: &mut hs::hs_compile_error) -> Result<Self, HyperscanRuntimeError> {
     let hs::hs_compile_error {
       message,
       expression,
@@ -163,7 +163,7 @@ impl CompileError {
         .to_string(),
       expression: ExpressionIndex(*expression as c_uint),
     };
-    HyperscanError::from_native(unsafe { hs::hs_free_compile_error(x) })?;
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_compile_error(x) })?;
     Ok(ret)
   }
 }
@@ -173,7 +173,7 @@ pub enum HyperscanCompileError {
   /// flags error: {0}
   Flags(#[from] HyperscanFlagsError),
   /// non-compilation error: {0}
-  NonCompile(#[from] HyperscanError),
+  NonCompile(#[from] HyperscanRuntimeError),
   /// pattern compilation error: {0}
   Compile(#[from] CompileError),
   /// null byte in expression: {0}
@@ -183,9 +183,19 @@ pub enum HyperscanCompileError {
 #[derive(Debug, Display, Error)]
 pub enum CompressionError {
   /// other error: {0}
-  Other(#[from] HyperscanError),
+  Other(#[from] HyperscanRuntimeError),
   /// not enough space for {0} in buf
   NoSpace(usize),
+}
+
+#[derive(Debug, Display, Error)]
+pub enum HyperscanError {
+  /// error from the hyperscan runtime: {0}
+  Runtime(#[from] HyperscanRuntimeError),
+  /// compile error: {0}
+  Compile(#[from] HyperscanCompileError),
+  /// error compressing stream: {0}
+  Compression(#[from] CompressionError),
 }
 
 pub mod chimera {
@@ -209,7 +219,7 @@ pub mod chimera {
   )]
   #[repr(i8)]
   #[ignore_extra_doc_attributes]
-  pub enum ChimeraError {
+  pub enum ChimeraRuntimeError {
     /// A parameter passed to this function was invalid.
     Invalid = hs::CH_INVALID,
     /// A memory allocation failed.
@@ -266,7 +276,7 @@ pub mod chimera {
     FailInternal = hs::CH_FAIL_INTERNAL,
   }
 
-  impl ChimeraError {
+  impl ChimeraRuntimeError {
     #[inline]
     pub(crate) fn from_native(x: hs::ch_error_t) -> Result<(), Self> {
       static_assertions::const_assert_eq!(0, hs::CH_SUCCESS);
@@ -303,7 +313,7 @@ pub mod chimera {
 
   impl ChimeraInnerCompileError {
     #[inline]
-    pub fn copy_from_native(x: &mut hs::ch_compile_error) -> Result<Self, ChimeraError> {
+    pub fn copy_from_native(x: &mut hs::ch_compile_error) -> Result<Self, ChimeraRuntimeError> {
       let hs::ch_compile_error {
         message,
         expression,
@@ -315,7 +325,7 @@ pub mod chimera {
           .to_string(),
         expression: ExpressionIndex(*expression as c_uint),
       };
-      ChimeraError::from_native(unsafe { hs::ch_free_compile_error(x) })?;
+      ChimeraRuntimeError::from_native(unsafe { hs::ch_free_compile_error(x) })?;
       Ok(ret)
     }
   }
@@ -323,7 +333,7 @@ pub mod chimera {
   #[derive(Debug, Display, Error)]
   pub enum ChimeraCompileError {
     /// non-compilation error: {0}
-    NonCompile(#[from] ChimeraError),
+    NonCompile(#[from] ChimeraRuntimeError),
     /// pattern compilation error: {0}
     Compile(#[from] ChimeraInnerCompileError),
     /// null byte in expression: {0}
@@ -371,8 +381,18 @@ pub mod chimera {
   #[derive(Debug, Display, Error)]
   pub enum ChimeraScanError {
     /// error from return value of ch_scan: {0}
-    ReturnValue(#[from] ChimeraError),
+    ReturnValue(#[from] ChimeraRuntimeError),
     /// streaming pcre error: {0}
     MatchError(#[from] ChimeraMatchError),
+  }
+
+  #[derive(Debug, Display, Error)]
+  pub enum ChimeraError {
+    /// error from chimera runtime: {0}
+    Runtime(#[from] ChimeraRuntimeError),
+    /// compile error: {0}
+    Compile(#[from] ChimeraCompileError),
+    /// error during chimera scan: {0}
+    Scan(#[from] ChimeraScanError),
   }
 }

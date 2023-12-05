@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-use crate::{error::HyperscanError, hs};
+use crate::{error::HyperscanRuntimeError, hs};
 
 use libc;
 use once_cell::sync::Lazy;
@@ -81,10 +81,12 @@ unsafe extern "C" fn db_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_db_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
+pub fn set_db_allocator(
+  allocator: Arc<impl GlobalAlloc+'static>,
+) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = DB_ALLOCATOR.lock().insert(tracker);
-  HyperscanError::from_native(unsafe {
+  HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_database_allocator(Some(db_alloc_func), Some(db_free_func))
   })
 }
@@ -114,10 +116,12 @@ pub(crate) unsafe extern "C" fn misc_free_func(p: *mut c_void) {
   }
 }
 
-pub fn set_misc_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
+pub fn set_misc_allocator(
+  allocator: Arc<impl GlobalAlloc+'static>,
+) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = MISC_ALLOCATOR.lock().insert(tracker);
-  HyperscanError::from_native(unsafe {
+  HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_misc_allocator(Some(misc_alloc_func), Some(misc_free_func))
   })
 }
@@ -148,10 +152,10 @@ unsafe extern "C" fn scratch_free_func(p: *mut c_void) {
 
 pub fn set_scratch_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
-) -> Result<(), HyperscanError> {
+) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = SCRATCH_ALLOCATOR.lock().insert(tracker);
-  HyperscanError::from_native(unsafe {
+  HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_scratch_allocator(Some(scratch_alloc_func), Some(scratch_free_func))
   })
 }
@@ -182,16 +186,16 @@ unsafe extern "C" fn stream_free_func(p: *mut c_void) {
 
 pub fn set_stream_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
-) -> Result<(), HyperscanError> {
+) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
   let _ = STREAM_ALLOCATOR.lock().insert(tracker);
-  HyperscanError::from_native(unsafe {
+  HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_stream_allocator(Some(stream_alloc_func), Some(stream_free_func))
   })
 }
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
 /// use hyperscan_async::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
 /// use std::{alloc::System, sync::Arc};
@@ -212,7 +216,9 @@ pub fn set_stream_allocator(
 /// # Ok(())
 /// # })}
 /// ```
-pub fn set_allocator(allocator: Arc<impl GlobalAlloc+'static>) -> Result<(), HyperscanError> {
+pub fn set_allocator(
+  allocator: Arc<impl GlobalAlloc+'static>,
+) -> Result<(), HyperscanRuntimeError> {
   set_db_allocator(allocator.clone())?;
   set_misc_allocator(allocator.clone())?;
   set_scratch_allocator(allocator.clone())?;
@@ -251,10 +257,10 @@ pub mod chimera {
 
   pub fn set_chimera_db_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
-  ) -> Result<(), ChimeraError> {
+  ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
     let _ = CHIMERA_DB_ALLOCATOR.lock().insert(tracker);
-    ChimeraError::from_native(unsafe {
+    ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_database_allocator(Some(chimera_db_alloc_func), Some(chimera_db_free_func))
     })
   }
@@ -286,10 +292,10 @@ pub mod chimera {
 
   pub fn set_chimera_misc_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
-  ) -> Result<(), ChimeraError> {
+  ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
     let _ = CHIMERA_MISC_ALLOCATOR.lock().insert(tracker);
-    ChimeraError::from_native(unsafe {
+    ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_misc_allocator(Some(chimera_misc_alloc_func), Some(chimera_misc_free_func))
     })
   }
@@ -320,10 +326,10 @@ pub mod chimera {
 
   pub fn set_chimera_scratch_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
-  ) -> Result<(), ChimeraError> {
+  ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
     let _ = CHIMERA_SCRATCH_ALLOCATOR.lock().insert(tracker);
-    ChimeraError::from_native(unsafe {
+    ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_scratch_allocator(
         Some(chimera_scratch_alloc_func),
         Some(chimera_scratch_free_func),
@@ -332,7 +338,7 @@ pub mod chimera {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
   /// use futures_util::TryStreamExt;
   /// use std::{alloc::System, sync::Arc};
@@ -348,14 +354,14 @@ pub mod chimera {
   ///   .scan::<TrivialChimeraScanner>(&db, "hello".into(), ScanFlags::default())
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
-  ///   .await.unwrap();
+  ///   .await?;
   /// assert_eq!(&matches, &["hell"]);
   /// # Ok(())
   /// # })}
   /// ```
   pub fn set_chimera_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
-  ) -> Result<(), ChimeraError> {
+  ) -> Result<(), ChimeraRuntimeError> {
     set_chimera_db_allocator(allocator.clone())?;
     set_chimera_misc_allocator(allocator.clone())?;
     set_chimera_scratch_allocator(allocator)?;

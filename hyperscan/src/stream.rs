@@ -3,7 +3,7 @@
 
 use crate::{
   database::Database,
-  error::{CompressionError, HyperscanError},
+  error::{CompressionError, HyperscanRuntimeError},
   flags::ScanFlags,
   hs,
   matchers::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult},
@@ -30,7 +30,7 @@ use std::{
 };
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
 /// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*};
 /// use futures_util::StreamExt;
 ///
@@ -179,9 +179,9 @@ impl LiveStream {
   #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.0 } }
 
-  pub fn try_open(db: &Database) -> Result<Self, HyperscanError> {
+  pub fn try_open(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut ret = ptr::null_mut();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_open_stream(
         db.as_ref_native(),
         /* NB: ignoring flags for now! */
@@ -192,24 +192,24 @@ impl LiveStream {
     Ok(unsafe { Self::from_native(ret) })
   }
 
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     let mut ret = ptr::null_mut();
-    HyperscanError::from_native(unsafe { hs::hs_copy_stream(&mut ret, self.as_ref_native()) })?;
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_copy_stream(&mut ret, self.as_ref_native()) })?;
     Ok(unsafe { Self::from_native(ret) })
   }
 
-  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe {
+  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_reset_and_copy_stream(self.as_mut_native(), source.as_ref_native())
     })
   }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
   }
 
-  pub fn try_reset(&mut self) -> Result<(), HyperscanError> {
-    HyperscanError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
+  pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
   }
 }
 
@@ -237,7 +237,7 @@ pub(crate) struct StreamSink {
 }
 
 impl StreamSink {
-  pub async fn scan(&mut self, data: ByteSlice<'_>) -> Result<(), HyperscanError> {
+  pub async fn scan(&mut self, data: ByteSlice<'_>) -> Result<(), HyperscanRuntimeError> {
     let data_len = data.native_len();
     let data = data.as_ptr() as usize;
     let s: *mut Self = self;
@@ -252,7 +252,7 @@ impl StreamSink {
       } = unsafe { &mut *(s as *mut Self) };
       let p_matcher: *mut StreamMatcher = matcher;
       let p_matcher = p_matcher as usize;
-      HyperscanError::from_native(unsafe {
+      HyperscanRuntimeError::from_native(unsafe {
         hs::hs_scan_stream(
           live.as_mut_native(),
           data as *const c_char,
@@ -269,7 +269,7 @@ impl StreamSink {
     .unwrap()
   }
 
-  pub async fn flush_eod(&mut self) -> Result<(), HyperscanError> {
+  pub async fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
     let s: *mut Self = self;
     let s = s as usize;
 
@@ -282,7 +282,7 @@ impl StreamSink {
       } = unsafe { &mut *(s as *mut Self) };
       let p_matcher: *mut StreamMatcher = matcher;
       let p_matcher = p_matcher as usize;
-      HyperscanError::from_native(unsafe {
+      HyperscanRuntimeError::from_native(unsafe {
         hs::hs_direct_flush_stream(
           live.as_mut_native(),
           Arc::make_mut(scratch).as_mut_native().unwrap(),
@@ -295,7 +295,7 @@ impl StreamSink {
     .unwrap()
   }
 
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     let Self {
       live,
       scratch,
@@ -314,7 +314,7 @@ impl StreamSink {
     })
   }
 
-  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanError> {
+  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
     let Self {
       live,
       scratch,
@@ -328,7 +328,7 @@ impl StreamSink {
     Ok(())
   }
 
-  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanError> {
+  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanRuntimeError> {
     self.live.try_reset()?;
     self.matcher.handler.reset();
     assert!(self.write_future.is_none());
@@ -336,7 +336,7 @@ impl StreamSink {
     Ok(())
   }
 
-  pub async fn reset_flush(&mut self) -> Result<(), HyperscanError> {
+  pub async fn reset_flush(&mut self) -> Result<(), HyperscanRuntimeError> {
     self.flush_eod().await?;
     self.reset_no_flush()
   }
@@ -438,7 +438,7 @@ impl AsyncWrite for StreamSink {
 }
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
 /// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*, error::*};
 /// use futures_util::StreamExt;
 /// use tokio::io::AsyncWriteExt;
@@ -461,8 +461,8 @@ impl AsyncWrite for StreamSink {
 ///
 /// let msg = "aardvark";
 /// if let Err(e) = s.write_all(msg.as_bytes()).await {
-///   let e = e.into_inner().unwrap().downcast::<HyperscanError>().unwrap();
-///   assert_eq!(*e, HyperscanError::ScanTerminated);
+///   let e = e.into_inner().unwrap().downcast::<HyperscanRuntimeError>().unwrap();
+///   assert_eq!(*e, HyperscanRuntimeError::ScanTerminated);
 /// } else { unreachable!(); }
 /// s.shutdown().await.unwrap();
 /// let rx = s.stream_results();
@@ -482,7 +482,7 @@ impl Streamer {
   pub fn open<S: StreamScanner+'static>(
     db: &Database,
     scratch: Arc<Scratch>,
-  ) -> Result<Self, HyperscanError> {
+  ) -> Result<Self, HyperscanRuntimeError> {
     let live = LiveStream::try_open(db)?;
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -500,13 +500,13 @@ impl Streamer {
     })
   }
 
-  pub async fn scan(&mut self, data: ByteSlice<'_>) -> Result<(), HyperscanError> {
+  pub async fn scan(&mut self, data: ByteSlice<'_>) -> Result<(), HyperscanRuntimeError> {
     self.sink.scan(data).await
   }
 
-  pub async fn flush_eod(&mut self) -> Result<(), HyperscanError> { self.sink.flush_eod().await }
+  pub async fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> { self.sink.flush_eod().await }
 
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     let mut sink = self.sink.try_clone()?;
 
     let (tx, rx) = mpsc::unbounded_channel();
@@ -515,7 +515,7 @@ impl Streamer {
     Ok(Self { sink, rx })
   }
 
-  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanError> {
+  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
     self.sink.try_clone_from(&source.sink)?;
     let _ = self.reset_channel();
     Ok(())
@@ -537,7 +537,7 @@ impl Streamer {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   ///
@@ -550,7 +550,7 @@ impl Streamer {
   ///
   /// let s1 = Streamer::open::<TrivialScanner>(&db, scratch.into())?;
   ///
-  /// let compressed = s1.compress(CompressReserveBehavior::NewBuf).unwrap();
+  /// let compressed = s1.compress(CompressReserveBehavior::NewBuf)?;
   /// std::mem::drop(s1);
   ///
   /// let msg = "aardvark";
@@ -574,7 +574,7 @@ impl Streamer {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*, error::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
@@ -603,8 +603,8 @@ impl Streamer {
   /// s2.reset_no_flush()?;
   /// let rx2 = s2.reset_channel();
   /// if let Err(e) = s2.write_all(b"asdfasdfasdf").await {
-  ///   let e = e.into_inner().unwrap().downcast::<HyperscanError>().unwrap();
-  ///   assert_eq!(*e, HyperscanError::ScanTerminated);
+  ///   let e = e.into_inner().unwrap().downcast::<HyperscanRuntimeError>().unwrap();
+  ///   assert_eq!(*e, HyperscanRuntimeError::ScanTerminated);
   /// } else { unreachable!(); }
   /// s2.shutdown().await.unwrap();
   /// let rx3 = s2.stream_results();
@@ -622,7 +622,7 @@ impl Streamer {
   /// **TODO: docs**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
@@ -654,10 +654,10 @@ impl Streamer {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanError> { self.sink.reset_no_flush() }
+  pub fn reset_no_flush(&mut self) -> Result<(), HyperscanRuntimeError> { self.sink.reset_no_flush() }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
@@ -688,7 +688,7 @@ impl Streamer {
   /// # Ok(())
   /// # })}
   /// ```
-  pub async fn reset_flush(&mut self) -> Result<(), HyperscanError> {
+  pub async fn reset_flush(&mut self) -> Result<(), HyperscanRuntimeError> {
     self.sink.reset_flush().await
   }
 
@@ -766,8 +766,8 @@ impl CompressedStream {
   ) -> Result<Self, CompressionError> {
     let mut required_space = mem::MaybeUninit::<usize>::zeroed();
     assert_eq!(
-      Err(HyperscanError::InsufficientSpace),
-      HyperscanError::from_native(unsafe {
+      Err(HyperscanRuntimeError::InsufficientSpace),
+      HyperscanRuntimeError::from_native(unsafe {
         hs::hs_compress_stream(
           (*live).as_ref_native(),
           ptr::null_mut(),
@@ -781,7 +781,7 @@ impl CompressedStream {
     let buf = match into.reserve(required_space) {
       ReserveResponse::NoSpace(_) => return Err(CompressionError::NoSpace(required_space)),
       ReserveResponse::MadeSpace(mut buf) => {
-        HyperscanError::from_native(unsafe {
+        HyperscanRuntimeError::from_native(unsafe {
           hs::hs_compress_stream(
             live.as_ref_native(),
             mem::transmute(buf.as_mut_ptr()),
@@ -804,9 +804,9 @@ impl CompressedStream {
    * Streamer argument (similar to .try_clone_from() elsewhere in this file).
    * Would require patching the hyperscan API again to expose a method that
    * separates the "reset" from the "expand into" operation. */
-  pub fn expand(&self, db: &Database) -> Result<Streamer, HyperscanError> {
+  pub fn expand(&self, db: &Database) -> Result<Streamer, HyperscanRuntimeError> {
     let mut inner = ptr::null_mut();
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_expand_stream(
         db.as_ref_native(),
         &mut inner,

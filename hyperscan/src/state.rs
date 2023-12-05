@@ -5,7 +5,7 @@
 
 use crate::{
   database::Database,
-  error::HyperscanError,
+  error::HyperscanRuntimeError,
   flags::{CpuFeatures, ScanFlags, TuneFamily},
   hs,
   matchers::{
@@ -48,9 +48,9 @@ impl Platform {
   }
 
   #[inline]
-  fn populate() -> Result<Self, HyperscanError> {
+  fn populate() -> Result<Self, HyperscanRuntimeError> {
     let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
-    HyperscanError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
     Ok(unsafe { Self(s.assume_init()) })
   }
 
@@ -70,7 +70,7 @@ impl Scratch {
   pub const fn new() -> Self { Self(None) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
@@ -101,9 +101,9 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanError> {
+  pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanRuntimeError> {
     let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
-    HyperscanError::from_native(unsafe {
+    HyperscanRuntimeError::from_native(unsafe {
       hs::hs_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
     })?;
     self.0 = NonNull::new(scratch_ptr);
@@ -155,7 +155,7 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   /// use futures_util::TryStreamExt;
   ///
@@ -188,7 +188,7 @@ impl Scratch {
   ///   .scan(&db, "abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
   ///   .try_for_each(|_| async { Ok(()) })
   ///   .await;
-  /// assert!(matches![ret, Err(HyperscanError::ScanTerminated)]);
+  /// assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
   /// # Ok(())
   /// # })}
   /// ```
@@ -198,7 +198,7 @@ impl Scratch {
     data: ByteSlice<'data>,
     flags: ScanFlags,
     mut f: F,
-  ) -> impl Stream<Item=Result<Match<'data>, HyperscanError>>+'data {
+  ) -> impl Stream<Item=Result<Match<'data>, HyperscanRuntimeError>>+'data {
     let (matcher, mut matches_rx) = SliceMatcher::new(data, &mut f);
 
     let ctx = Self::into_slice_ctx(matcher);
@@ -210,7 +210,7 @@ impl Scratch {
       let db: &Database = Self::from_db(db);
       let mut matcher: Pin<Box<SliceMatcher>> = Self::from_slice_ctx(ctx);
       let parent_slice = matcher.parent_slice();
-      HyperscanError::from_native(unsafe {
+      HyperscanRuntimeError::from_native(unsafe {
         hs::hs_scan(
           db.as_ref_native(),
           parent_slice.as_ptr(),
@@ -232,7 +232,7 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan_async::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
@@ -279,7 +279,7 @@ impl Scratch {
     data: VectoredByteSlices<'data>,
     flags: ScanFlags,
     mut f: F,
-  ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanError>>+'data {
+  ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanRuntimeError>>+'data {
     /* NB: while static arrays take up no extra runtime space, a ref to a
     slice
     * takes up more than pointer space! */
@@ -300,7 +300,7 @@ impl Scratch {
       let mut matcher: Pin<Box<VectoredSliceMatcher>> = Self::from_vectored_ctx(ctx);
       let parent_slices = matcher.parent_slices();
       let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
-      HyperscanError::from_native(unsafe {
+      HyperscanRuntimeError::from_native(unsafe {
         hs::hs_scan_vector(
           db.as_ref_native(),
           data_pointers.as_ptr(),
@@ -322,31 +322,31 @@ impl Scratch {
     }
   }
 
-  pub fn get_size(&self) -> Result<usize, HyperscanError> {
+  pub fn get_size(&self) -> Result<usize, HyperscanRuntimeError> {
     match self.as_ref_native() {
       None => Ok(0),
       Some(p) => {
         let mut n = mem::MaybeUninit::<usize>::uninit();
-        HyperscanError::from_native(unsafe { hs::hs_scratch_size(p, n.as_mut_ptr()) })?;
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, n.as_mut_ptr()) })?;
         Ok(unsafe { n.assume_init() })
       },
     }
   }
 
-  pub fn try_clone(&self) -> Result<Self, HyperscanError> {
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
     match self.as_ref_native() {
       None => Ok(Self::new()),
       Some(p) => {
         let mut scratch_ptr = ptr::null_mut();
-        HyperscanError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
         Ok(Self(NonNull::new(scratch_ptr)))
       },
     }
   }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanError> {
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
     if let Some(p) = self.as_mut_native() {
-      HyperscanError::from_native(unsafe { hs::hs_free_scratch(p) })?;
+      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
     }
     Ok(())
   }
@@ -449,9 +449,9 @@ pub mod chimera {
     #[inline]
     pub const fn new() -> Self { Self(None) }
 
-    pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraError> {
+    pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraRuntimeError> {
       let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
-      ChimeraError::from_native(unsafe {
+      ChimeraRuntimeError::from_native(unsafe {
         hs::ch_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
       })?;
       self.0 = NonNull::new(scratch_ptr);
@@ -494,13 +494,13 @@ pub mod chimera {
     }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraScanError> {
+    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
     /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
-    /// let expr: ChimeraExpression = "a+".parse().unwrap();
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS).unwrap();
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
@@ -532,7 +532,7 @@ pub mod chimera {
         let db: &ChimeraDb = Self::from_db(db);
         let mut matcher: Pin<Box<ChimeraSliceMatcher>> = Self::from_ctx(ctx);
         let parent_slice = matcher.parent_slice();
-        ChimeraError::from_native(unsafe {
+        ChimeraRuntimeError::from_native(unsafe {
           hs::ch_scan(
             db.as_ref_native(),
             parent_slice.as_ptr(),
@@ -572,31 +572,31 @@ pub mod chimera {
       tokio_stream::wrappers::UnboundedReceiverStream::new(merged_rx)
     }
 
-    pub fn get_size(&self) -> Result<usize, ChimeraError> {
+    pub fn get_size(&self) -> Result<usize, ChimeraRuntimeError> {
       match self.as_ref_native() {
         None => Ok(0),
         Some(p) => {
           let mut n = mem::MaybeUninit::<usize>::uninit();
-          ChimeraError::from_native(unsafe { hs::ch_scratch_size(p, n.as_mut_ptr()) })?;
+          ChimeraRuntimeError::from_native(unsafe { hs::ch_scratch_size(p, n.as_mut_ptr()) })?;
           Ok(unsafe { n.assume_init() })
         },
       }
     }
 
-    pub fn try_clone(&self) -> Result<Self, ChimeraError> {
+    pub fn try_clone(&self) -> Result<Self, ChimeraRuntimeError> {
       match self.as_ref_native() {
         None => Ok(Self::new()),
         Some(p) => {
           let mut scratch_ptr = ptr::null_mut();
-          ChimeraError::from_native(unsafe { hs::ch_clone_scratch(p, &mut scratch_ptr) })?;
+          ChimeraRuntimeError::from_native(unsafe { hs::ch_clone_scratch(p, &mut scratch_ptr) })?;
           Ok(Self(NonNull::new(scratch_ptr)))
         },
       }
     }
 
-    pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraError> {
+    pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
       if let Some(p) = self.as_mut_native() {
-        ChimeraError::from_native(unsafe { hs::ch_free_scratch(p) })?;
+        ChimeraRuntimeError::from_native(unsafe { hs::ch_free_scratch(p) })?;
       }
       Ok(())
     }

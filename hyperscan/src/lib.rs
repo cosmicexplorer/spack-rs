@@ -24,13 +24,13 @@ pub mod state;
 pub mod stream;
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanRuntimeError> {
 /// hyperscan_async::check_valid_platform()?;
 /// # Ok(())
 /// # }
 /// ```
-pub fn check_valid_platform() -> Result<(), error::HyperscanError> {
-  error::HyperscanError::from_native(unsafe { hs::hs_valid_platform() })
+pub fn check_valid_platform() -> Result<(), error::HyperscanRuntimeError> {
+  error::HyperscanRuntimeError::from_native(unsafe { hs::hs_valid_platform() })
 }
 
 ///```

@@ -5,7 +5,7 @@
 
 use crate::{
   database::{ChimeraDb, Database},
-  error::{chimera::ChimeraCompileError, HyperscanCompileError, HyperscanError},
+  error::{chimera::ChimeraCompileError, HyperscanCompileError, HyperscanRuntimeError},
   flags::{ChimeraFlags, ChimeraMode, ExtFlags, Flags, Mode},
   hs,
 };
@@ -22,7 +22,7 @@ use std::{
 };
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanCompileError> {
+/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
 /// use hyperscan_async::{expression::*, flags::Flags};
 ///
 /// let expr: Expression = "(he)llo".parse()?;
@@ -73,7 +73,7 @@ impl Expression {
   pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
     let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_info(
           self.as_ptr(),
@@ -96,7 +96,7 @@ impl Expression {
   ) -> Result<ExprInfo, HyperscanCompileError> {
     let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
-    HyperscanError::copy_from_native_compile_error(
+    HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_ext_info(
           self.as_ptr(),
