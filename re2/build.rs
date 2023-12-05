@@ -5,7 +5,10 @@
 
 //! ???
 
-use spack::utils::declarative::{bindings, resolve_dependencies};
+use spack::{
+  metadata_spec::spec,
+  utils::declarative::{bindings, resolve},
+};
 
 use bindgen;
 use cc;
@@ -15,14 +18,19 @@ use std::{env, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-  if cfg!(feature = "static") {
-    assert!(
-      !cfg!(feature = "dynamic"),
-      "dynamic and static cannot coexist"
-    );
-  }
+  let is_rustdoc = env::var("RUSTDOC").is_ok();
 
-  let prefixes = resolve_dependencies().await?;
+  let prefixes = if is_rustdoc {
+    resolve::resolve_dependencies_for_label(spec::Label("re2-dynamic".to_string())).await?
+  } else {
+    if cfg!(feature = "static") {
+      assert!(
+        !cfg!(feature = "dynamic"),
+        "dynamic and static cannot coexist"
+      );
+    }
+    resolve::resolve_dependencies().await?
+  };
 
   let mut bindings = bindgen::Builder::default()
     .clang_args(&["-x", "c++"])
@@ -53,7 +61,9 @@ async fn main() -> eyre::Result<()> {
   })
   .await??;
 
-  println!("cargo:rustc-link-lib=stdc++");
+  if !is_rustdoc {
+    println!("cargo:rustc-link-lib=stdc++");
+  }
 
   Ok(())
 }

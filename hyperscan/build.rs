@@ -3,7 +3,10 @@
 
 //! ???
 
-use spack::utils::declarative::{bindings, resolve_dependencies};
+use spack::{
+  metadata_spec::spec,
+  utils::declarative::{bindings, resolve},
+};
 
 use bindgen;
 
@@ -11,17 +14,23 @@ use std::{env, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-  if cfg!(feature = "chimera") {
-    assert!(cfg!(feature = "static"), "chimera requires static");
-    assert!(cfg!(feature = "compile"), "chimera requires compile");
-  } else if cfg!(feature = "dynamic") {
-    assert!(
-      !cfg!(feature = "static"),
-      "dynamic and static are incompatible"
-    );
-  }
+  let is_rustdoc = env::var("RUSTDOC").is_ok();
 
-  let prefixes = resolve_dependencies().await?;
+  let prefixes = if is_rustdoc {
+    resolve::resolve_dependencies_for_label(spec::Label("hyperscan-static-chimera".to_string()))
+      .await?
+  } else {
+    if cfg!(feature = "chimera") {
+      assert!(cfg!(feature = "static"), "chimera requires static");
+      assert!(cfg!(feature = "compile"), "chimera requires compile");
+    } else if cfg!(feature = "dynamic") {
+      assert!(
+        !cfg!(feature = "static"),
+        "dynamic and static are incompatible"
+      );
+    }
+    resolve::resolve_dependencies().await?
+  };
 
   let mut bindings = bindgen::Builder::default()
     .clang_args(&["-x", "c++"])
@@ -38,10 +47,10 @@ async fn main() -> eyre::Result<()> {
   bindings = bindings.allowlist_item("HS.*");
   bindings = bindings.allowlist_item("ch.*");
   bindings = bindings.allowlist_item("CH.*");
-  for p in prefixes.iter().cloned() {
+  for p in prefixes.into_iter() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
   }
-  if cfg!(feature = "chimera") {
+  if is_rustdoc || cfg!(feature = "chimera") {
     bindings = bindings.clang_arg("-D__INCLUDE_CHIMERA__");
   }
   let outfile = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");

@@ -143,10 +143,11 @@ pub enum HyperscanFlagsError {
   SomHorizonModeRequired,
 }
 
+/// compile error(@{expression}): {message}
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
-/// compile error(@{expression}): {message}
 #[derive(Debug, Display, Error)]
+#[ignore_extra_doc_attributes]
 pub struct CompileError {
   pub message: String,
   pub expression: ExpressionIndex,
@@ -195,12 +196,13 @@ pub enum CompressionError {
 }
 
 #[derive(Debug, Display, Error)]
+#[ignore_extra_doc_attributes]
 pub enum HyperscanError {
   /// error from the hyperscan runtime: {0}
   Runtime(#[from] HyperscanRuntimeError),
+  /// compile error: {0}
   #[cfg(feature = "compile")]
   #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
-  /// compile error: {0}
   Compile(#[from] HyperscanCompileError),
   /// error compressing stream: {0}
   Compression(#[from] CompressionError),

@@ -60,7 +60,7 @@ once_cell.workspace     = true
 parking_lot.workspace   = true
 static_assertions.workspace = true
 thiserror.workspace     = true
-tokio                   = { workspace = true, features = ["rt", "sync", "io-util"] }
+tokio                   = { workspace = true, features = ["rt", "sync", "io-util", "macros"] }
 tokio-stream            = "0.1.14"
 
 [dev-dependencies]

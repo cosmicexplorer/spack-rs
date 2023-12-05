@@ -559,114 +559,155 @@ pub mod metadata {
 
 /// High-level API for build scripts that consumes `[package.metadata.spack]`.
 pub mod declarative {
-  use super::prefix;
-  use crate::metadata_spec::spec;
-
-  use indexmap::IndexMap;
-
-  use std::env;
-
-  fn currently_has_feature(feature: &spec::CargoFeature) -> bool {
-    env::var(feature.to_env_var_name()).is_ok()
-  }
-
-  pub async fn resolve_dependencies() -> eyre::Result<Vec<prefix::Prefix>> {
-    use crate::{commands::*, subprocess::spack::SpackInvocation, utils::metadata};
+  pub mod resolve {
+    use crate::{
+      commands::*,
+      metadata_spec::spec,
+      subprocess::spack::SpackInvocation,
+      utils::{declarative::linker, metadata, prefix},
+    };
 
     use std::borrow::Cow;
 
-    println!("cargo:rerun-if-changed=Cargo.toml");
+    use indexmap::IndexMap;
 
-    /* Parse `cargo metadata` for the entire workspace. */
-    let metadata = metadata::get_metadata().await?;
-    /* Get the current package name. */
-    let cur_pkg_name = metadata::get_cur_pkg_name();
-
-    /* Get the current package's recipe. */
-    let declared_recipes: &IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)> =
-      metadata.recipes.get(&cur_pkg_name).unwrap();
-    dbg!(&declared_recipes);
-
-    /* Get the declared features for the current package. */
-    let declared_features = metadata
-      .declared_features_by_package
-      .get(&cur_pkg_name)
-      .unwrap();
-    let activated_features = spec::FeatureSet(
-      declared_features
-        .iter()
-        .filter(|f| currently_has_feature(f))
-        .cloned()
-        .collect(),
-    );
-
-    /* Get the recipe matching the current set of activated features. */
-    let matching_recipes: Vec<(&spec::Label, &spec::Recipe)> = declared_recipes
-      .into_iter()
-      .filter(|(_, (_, feature_map))| feature_map.evaluate(&activated_features))
-      .map(|(label, (recipe, _))| (label, recipe))
-      .collect();
-
-    let (env_label, cur_recipe) = match matching_recipes.len() {
-      0 => {
-        return Err(eyre::Report::msg(format!(
-          "no recipe found for given features {:?} from declared recipes {:?}",
-          activated_features, declared_recipes,
-        )))
-      },
-      1 => matching_recipes[0],
-      _ => {
-        return Err(eyre::Report::msg(format!(
-          "more than one recipe {:?} matched for given features {:?} from declared recipes {:?}",
-          matching_recipes, activated_features, declared_recipes,
-        )))
-      },
-    };
-    dbg!(&env_label);
-    dbg!(&cur_recipe);
-
-    /* Get a hashed name for the current environment to resolve. */
-    let env_instructions = metadata.by_label.get(env_label).unwrap();
-    dbg!(env_instructions);
-    let env_hash = env_instructions.compute_digest();
-    let env = EnvName(env_hash.hashed_env_name(&env_label.0));
-    dbg!(&env);
-
-    /* Ensure spack is available. */
-    let spack = SpackInvocation::summon().await?;
-
-    /* Create the environment and install all specs into it if not already
-     * created. */
-    let env = env::EnvCreate {
-      spack: spack.clone(),
-      env,
+    fn currently_has_feature(feature: &spec::CargoFeature) -> bool {
+      std::env::var(feature.to_env_var_name()).is_ok()
     }
-    .idempotent_env_create(Cow::Borrowed(env_instructions))
-    .await?;
 
-    let mut dep_prefixes: Vec<prefix::Prefix> = Vec::new();
+    async fn resolve_recipe(
+      env_label: spec::Label,
+      recipe: &spec::Recipe,
+      env_instructions: &spec::EnvInstructions,
+    ) -> eyre::Result<Vec<prefix::Prefix>> {
+      let env_hash = env_instructions.compute_digest();
+      let env = EnvName(env_hash.hashed_env_name(&env_label.0));
+      dbg!(&env);
 
-    /* Process each resolved dependency to hook it up into cargo. */
-    for sub_dep in cur_recipe.sub_deps.iter() {
-      let env = env.clone();
-      let spack = spack.clone();
-      let req = find::FindPrefix {
+      /* Ensure spack is available. */
+      let spack = SpackInvocation::summon().await?;
+
+      /* Create the environment and install all specs into it if not already
+       * created. */
+      let env = env::EnvCreate {
         spack: spack.clone(),
-        spec: CLISpec::new(&sub_dep.pkg_name.0),
-        env: Some(env.clone()),
-      };
-      let prefix = req.find_prefix().await?.unwrap();
-
-      linker::link_against_dependency(
-        prefix.clone(),
-        sub_dep.r#type,
-        sub_dep.lib_names.iter().map(|s| s.as_str()),
-      )
+        env,
+      }
+      .idempotent_env_create(Cow::Borrowed(env_instructions))
       .await?;
-      dep_prefixes.push(prefix);
+
+      let mut dep_prefixes: Vec<prefix::Prefix> = Vec::new();
+
+      /* Process each resolved dependency to hook it up into cargo. */
+      for sub_dep in recipe.sub_deps.iter() {
+        let env = env.clone();
+        let spack = spack.clone();
+        let req = find::FindPrefix {
+          spack: spack.clone(),
+          spec: CLISpec::new(&sub_dep.pkg_name.0),
+          env: Some(env.clone()),
+        };
+        let prefix = req.find_prefix().await?.unwrap();
+
+        linker::link_against_dependency(
+          prefix.clone(),
+          sub_dep.r#type,
+          sub_dep.lib_names.iter().map(|s| s.as_str()),
+        )
+        .await?;
+        dep_prefixes.push(prefix);
+      }
+
+      Ok(dep_prefixes)
     }
 
-    Ok(dep_prefixes)
+    pub async fn resolve_dependencies_for_label(
+      env_label: spec::Label,
+    ) -> eyre::Result<Vec<prefix::Prefix>> {
+      println!("cargo:rerun-if-changed=Cargo.toml");
+
+      /* Parse `cargo metadata` for the entire workspace. */
+      let metadata = metadata::get_metadata().await?;
+      /* Get the current package name. */
+      let cur_pkg_name = metadata::get_cur_pkg_name();
+
+      /* Get the current package's recipe with the given label. */
+      let declared_recipes: &IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)> =
+        metadata.recipes.get(&cur_pkg_name).unwrap();
+      dbg!(declared_recipes);
+      let specified_recipe: &spec::Recipe = declared_recipes
+        .get(&env_label)
+        .map(|(recipe, _)| recipe)
+        .ok_or_else(|| {
+          eyre::Report::msg(format!(
+            "unable to find label {:?} in declarations {:?}",
+            &env_label, declared_recipes,
+          ))
+        })?;
+
+      let env_instructions = metadata.by_label.get(&env_label).unwrap();
+      dbg!(env_instructions);
+
+      resolve_recipe(env_label, specified_recipe, env_instructions).await
+    }
+
+    pub async fn resolve_dependencies() -> eyre::Result<Vec<prefix::Prefix>> {
+      println!("cargo:rerun-if-changed=Cargo.toml");
+
+      /* Parse `cargo metadata` for the entire workspace. */
+      let metadata = metadata::get_metadata().await?;
+      /* Get the current package name. */
+      let cur_pkg_name = metadata::get_cur_pkg_name();
+
+      /* Get the current package's recipes. */
+      let declared_recipes: &IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)> =
+        metadata.recipes.get(&cur_pkg_name).unwrap();
+      dbg!(&declared_recipes);
+
+      /* Get the declared features for the current package. */
+      let declared_features = metadata
+        .declared_features_by_package
+        .get(&cur_pkg_name)
+        .unwrap();
+      let activated_features = spec::FeatureSet(
+        declared_features
+          .iter()
+          .filter(|f| currently_has_feature(f))
+          .cloned()
+          .collect(),
+      );
+
+      /* Get the recipe matching the current set of activated features. */
+      let matching_recipes: Vec<(&spec::Label, &spec::Recipe)> = declared_recipes
+        .into_iter()
+        .filter(|(_, (_, feature_map))| feature_map.evaluate(&activated_features))
+        .map(|(label, (recipe, _))| (label, recipe))
+        .collect();
+
+      let (env_label, cur_recipe) = match matching_recipes.len() {
+        0 => {
+          return Err(eyre::Report::msg(format!(
+            "no recipe found for given features {:?} from declared recipes {:?}",
+            activated_features, declared_recipes,
+          )))
+        },
+        1 => matching_recipes[0],
+        _ => {
+          return Err(eyre::Report::msg(format!(
+            "more than one recipe {:?} matched for given features {:?} from declared recipes {:?}",
+            matching_recipes, activated_features, declared_recipes,
+          )))
+        },
+      };
+      dbg!(&env_label);
+      dbg!(&cur_recipe);
+
+      /* Get a hashed name for the current environment to resolve. */
+      let env_instructions = metadata.by_label.get(env_label).unwrap();
+      dbg!(env_instructions);
+
+      resolve_recipe(env_label.clone(), cur_recipe, env_instructions).await
+    }
   }
 
   pub mod bindings {

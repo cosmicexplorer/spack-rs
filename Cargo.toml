@@ -41,7 +41,7 @@ parking_lot             = "0.12.1"
 static_assertions       = "1.1.0"
 tempfile                = "3.3.0"
 thiserror               = "1.0.30"
-tokio                   = "1.33.0"
+tokio                   = "1.33.*"
 tokio-test              = "0.4.2"
 
 [package]
