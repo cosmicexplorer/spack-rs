@@ -208,7 +208,7 @@ pub fn set_stream_allocator(
 /// let mut scratch = db.allocate_scratch()?;
 ///
 /// let matches: Vec<&str> = scratch
-///   .scan(&db, "hello".into(), ScanFlags::default(), |_| MatchResult::Continue)
+///   .scan(&db, "hello".into(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(m.source.as_str()) })
 ///   .try_collect()
 ///   .await?;
@@ -342,7 +342,7 @@ pub mod chimera {
 
   ///```
   /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::chimera::*, flags::{*, chimera::*}, matchers::chimera::*};
+  /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
   /// use futures_util::TryStreamExt;
   /// use std::{alloc::System, sync::Arc};
   ///
@@ -354,7 +354,7 @@ pub mod chimera {
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan::<TrivialChimeraScanner>(&db, "hello".into(), ScanFlags::default())
+  ///   .scan::<TrivialChimeraScanner>(&db, "hello".into())
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;

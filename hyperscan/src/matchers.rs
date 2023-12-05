@@ -3,8 +3,6 @@
 
 //! ???
 
-use crate::flags::ScanFlags;
-
 use displaydoc::Display;
 use tokio::sync::mpsc;
 
@@ -250,7 +248,6 @@ impl MatchResult {
 pub(crate) struct MatchEvent {
   pub id: ExpressionIndex,
   pub range: ops::Range<usize>,
-  pub flags: ScanFlags,
   pub context: Option<ptr::NonNull<c_void>>,
 }
 
@@ -264,10 +261,10 @@ impl MatchEvent {
     context: *mut c_void,
   ) -> Self {
     static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
+    assert_eq!(flags, 0);
     Self {
       id: ExpressionIndex(id),
       range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
-      flags: ScanFlags::from_native(flags),
       context: ptr::NonNull::new(context),
     }
   }
@@ -287,7 +284,6 @@ pub mod contiguous_slice {
   pub struct Match<'a> {
     pub id: ExpressionIndex,
     pub source: ByteSlice<'a>,
-    pub flags: ScanFlags,
   }
 
   /* TODO: only available on nightly! */
@@ -336,19 +332,13 @@ pub mod contiguous_slice {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent {
-      id,
-      range,
-      flags,
-      context,
-    } = MatchEvent::coerce_args(id, from, to, flags, context);
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
     let mut slice_matcher: Pin<&mut SliceMatcher> =
       MatchEvent::extract_context::<'_, SliceMatcher>(context).unwrap();
     let matched_substring = slice_matcher.index_range(range);
     let m = Match {
       id,
       source: matched_substring,
-      flags,
     };
 
     let result = slice_matcher.handle_match(&m);
@@ -364,7 +354,6 @@ pub mod vectored_slice {
   pub struct VectoredMatch<'a> {
     pub id: ExpressionIndex,
     pub source: Vec<ByteSlice<'a>>,
-    pub flags: ScanFlags,
   }
 
   /* TODO: only available on nightly! */
@@ -412,19 +401,13 @@ pub mod vectored_slice {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent {
-      id,
-      range,
-      flags,
-      context,
-    } = MatchEvent::coerce_args(id, from, to, flags, context);
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
     let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
       MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
     let matched_substring = slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
       source: matched_substring,
-      flags,
     };
 
     let result = slice_matcher.handle_match(&m);
@@ -498,7 +481,6 @@ pub mod chimera {
   struct ChimeraMatchEvent {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
-    pub flags: ScanFlags,
     pub captures: Vec<ChimeraCaptureOffset>,
     pub context: Option<ptr::NonNull<c_void>>,
   }
@@ -514,6 +496,7 @@ pub mod chimera {
       captured: *const hs::ch_capture,
       context: *mut c_void,
     ) -> Self {
+      assert_eq!(flags, 0);
       let captures: Vec<ChimeraCaptureOffset> =
         unsafe { slice::from_raw_parts(captured, size as usize) }
           .iter()
@@ -532,7 +515,6 @@ pub mod chimera {
       Self {
         id: ExpressionIndex(id),
         range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
-        flags: ScanFlags::from_native(flags),
         captures,
         context: ptr::NonNull::new(context),
       }
@@ -550,7 +532,6 @@ pub mod chimera {
   pub struct ChimeraMatch<'a> {
     pub id: ExpressionIndex,
     pub source: ByteSlice<'a>,
-    pub flags: ScanFlags,
     pub captures: Vec<Option<ByteSlice<'a>>>,
   }
 
@@ -643,7 +624,6 @@ pub mod chimera {
     let ChimeraMatchEvent {
       id,
       range,
-      flags,
       captures,
       context,
     } = ChimeraMatchEvent::coerce_args(id, from, to, flags, size, captured, context);
@@ -653,7 +633,6 @@ pub mod chimera {
     let m = ChimeraMatch {
       id,
       source: matched_substring,
-      flags,
       captures: captures
         .into_iter()
         .map(|c| c.index(matcher.parent_slice()))

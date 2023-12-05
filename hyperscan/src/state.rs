@@ -6,7 +6,7 @@
 use crate::{
   database::Database,
   error::HyperscanRuntimeError,
-  flags::{CpuFeatures, ScanFlags, TuneFamily},
+  flags::{CpuFeatures, TuneFamily},
   hs,
   matchers::{
     contiguous_slice::{match_slice_ref, Match, SliceMatcher},
@@ -84,16 +84,15 @@ impl Scratch {
   /// scratch.setup_for_db(&a_db)?;
   /// scratch.setup_for_db(&b_db)?;
   ///
-  /// let scan_flags = ScanFlags::default();
   /// let s: ByteSlice = "ababaabb".into();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&a_db, s, scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&a_db, s, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "a", "a", "aa"]);
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&b_db, s, scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&b_db, s, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -168,24 +167,22 @@ impl Scratch {
   /// let db = expr_set.compile(Mode::BLOCK)?;
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let scan_flags = ScanFlags::default();
-  ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "imbibbe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "imbibbe".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["b", "b", "bb"]);
   ///
   /// let ret = scratch
-  ///   .scan(&db, "abwuebiaubeb".into(), scan_flags, |_| MatchResult::CeaseMatching)
+  ///   .scan(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
   ///   .try_for_each(|_| async { Ok(()) })
   ///   .await;
   /// assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
@@ -196,7 +193,6 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-    flags: ScanFlags,
     mut f: F,
   ) -> impl Stream<Item=Result<Match<'data>, HyperscanRuntimeError>>+'data {
     let (matcher, mut matches_rx) = SliceMatcher::new(data, &mut f);
@@ -215,7 +211,8 @@ impl Scratch {
           db.as_ref_native(),
           parent_slice.as_ptr(),
           parent_slice.native_len(),
-          flags.into_native(),
+          /* NB: ignoring flags for now! */
+          0,
           scratch.as_mut_native().unwrap(),
           Some(match_slice_ref),
           mem::transmute(matcher.as_mut().get_mut()),
@@ -253,7 +250,7 @@ impl Scratch {
   ///   "dfeg".into(),
   /// ];
   /// let matches: Vec<(u32, String)> = scratch
-  ///   .scan_vectored(&db, data.as_ref().into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .scan_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
   ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
   ///     let joined = source.into_iter().map(|s| s.as_str()).collect::<Vec<_>>().concat();
   ///     Ok((id, joined))
@@ -277,7 +274,6 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data>,
-    flags: ScanFlags,
     mut f: F,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanRuntimeError>>+'data {
     /* NB: while static arrays take up no extra runtime space, a ref to a
@@ -306,7 +302,8 @@ impl Scratch {
           data_pointers.as_ptr(),
           lengths.as_ptr(),
           parent_slices.native_len(),
-          flags.into_native(),
+          /* NB: ignoring flags for now! */
+          0,
           scratch.as_mut_native().unwrap(),
           Some(match_slice_vectored_ref),
           mem::transmute(matcher.as_mut().get_mut()),
@@ -370,7 +367,7 @@ unsafe impl Sync for Scratch {}
 #[cfg(test)]
 mod test {
   use crate::{
-    flags::{Flags, Mode, ScanFlags},
+    flags::{Flags, Mode},
     matchers::MatchResult,
   };
 
@@ -395,9 +392,7 @@ mod test {
 
     /* Operate on the clone. */
     let matches: Vec<&str> = s2
-      .scan(&db, "asdf".into(), ScanFlags::default(), |_| {
-        MatchResult::Continue
-      })
+      .scan(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(m.source.as_str()) })
       .try_collect()
       .await?;
@@ -424,9 +419,7 @@ mod test {
 
     /* Operate on the result of Arc::make_mut(). */
     let matches: Vec<&str> = Arc::make_mut(&mut s2)
-      .scan(&db, "asdf".into(), ScanFlags::default(), |_| {
-        MatchResult::Continue
-      })
+      .scan(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(m.source.as_str()) })
       .try_collect()
       .await?;
@@ -499,7 +492,7 @@ pub mod chimera {
     ///```
     /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::chimera::*, flags::{*, chimera::*}, matchers::chimera::*};
+    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
@@ -509,7 +502,6 @@ pub mod chimera {
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
     ///   &db,
     ///   "aardvark".into(),
-    ///   ScanFlags::default(),
     /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
     ///  .try_collect()
     ///  .await?;
@@ -521,7 +513,6 @@ pub mod chimera {
       &mut self,
       db: &ChimeraDb,
       data: ByteSlice<'data>,
-      flags: ScanFlags,
     ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>>+'data {
       let mut s = S::new();
       let (matcher, matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut s);
@@ -540,7 +531,8 @@ pub mod chimera {
             db.as_ref_native(),
             parent_slice.as_ptr(),
             parent_slice.native_len(),
-            flags.into_native(),
+            /* NB: ignoring flags for now! */
+            0,
             scratch.as_mut_native().unwrap(),
             Some(match_chimera_slice),
             Some(error_callback_chimera),
@@ -562,6 +554,7 @@ pub mod chimera {
       task::spawn(async move {
         loop {
           let send_result = tokio::select! {
+            biased;
             Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)),
             Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())),
             else => break,

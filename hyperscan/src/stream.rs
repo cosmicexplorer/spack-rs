@@ -4,7 +4,6 @@
 use crate::{
   database::Database,
   error::{CompressionError, HyperscanRuntimeError},
-  flags::ScanFlags,
   hs,
   matchers::{ByteSlice, ExpressionIndex, MatchEvent, MatchResult},
   state::Scratch,
@@ -185,7 +184,7 @@ impl LiveStream {
       hs::hs_open_stream(
         db.as_ref_native(),
         /* NB: ignoring flags for now! */
-        ScanFlags::default().into_native(),
+        0,
         &mut ret,
       )
     })?;
@@ -260,7 +259,7 @@ impl StreamSink {
           data as *const c_char,
           data_len,
           /* NB: ignore flags for now! */
-          ScanFlags::default().into_native(),
+          0,
           Arc::make_mut(scratch).as_mut_native().unwrap(),
           Some(match_slice_stream),
           p_matcher as *mut c_void,

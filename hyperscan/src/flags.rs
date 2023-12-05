@@ -312,19 +312,6 @@ impl TuneFamily {
   pub(crate) fn from_native(x: c_uint) -> Self { (x as u8).into() }
 }
 
-
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct ScanFlags(c_uint);
-
-impl ScanFlags {
-  #[inline(always)]
-  pub const fn from_native(x: c_uint) -> Self { Self(x) }
-
-  #[inline(always)]
-  pub const fn into_native(self) -> c_uint { self.0 }
-}
-
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ExtFlags(u8);

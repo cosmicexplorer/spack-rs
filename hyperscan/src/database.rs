@@ -68,9 +68,8 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "hello".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "hello".into(), |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -116,9 +115,8 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "he\0llo".into(), |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -175,17 +173,15 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let scan_flags = ScanFlags::default();
-  ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "aardvark".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "imbibe".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "imbibe".into(), |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(m.source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -251,9 +247,8 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let scan_flags = ScanFlags::default();
   /// let matches: Vec<(u32, &str)> = scratch
-  ///   .scan(&db, "he\0llo".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "he\0llo".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
   ///     Ok((id, source.as_str()))
   ///   })
@@ -262,7 +257,7 @@ impl Database {
   /// assert_eq!(&matches, &[(2, "he\0ll")]);
   ///
   /// let matches: Vec<(u32, &str)> = scratch
-  ///   .scan(&db, "fr\0e\0edom".into(), scan_flags, |_| MatchResult::Continue)
+  ///   .scan(&db, "fr\0e\0edom".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
   ///     Ok((id, source.as_str()))
   ///   })
@@ -363,7 +358,7 @@ impl Database {
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -551,7 +546,7 @@ impl SerializedDb {
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "aardvark".into(), ScanFlags::default(), |_| MatchResult::Continue)
+  ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
   ///   .try_collect()
   ///   .await?;
@@ -642,7 +637,7 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::{*, chimera::*}, flags::{*, chimera::*}, database::chimera::*, matchers::chimera::*};
+    /// use hyperscan_async::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
@@ -657,10 +652,8 @@ pub mod chimera {
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
     ///   &db,
     ///   "aardvark imbibbe".into(),
-    ///   ScanFlags::default(),
     /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
-    ///  .try_collect()
-    ///  .await?;
+    ///  .try_collect().await?;
     /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
     /// # Ok(())
     /// # })}
