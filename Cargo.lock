@@ -919,6 +919,7 @@ version = "0.0.0"
 dependencies = [
  "async-stream",
  "bindgen",
+ "cfg-if",
  "displaydoc",
  "eyre",
  "futures-core",

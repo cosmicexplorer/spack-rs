@@ -3,18 +3,21 @@
 
 //! ???
 
-use crate::{
-  alloc,
-  error::{HyperscanFlagsError, HyperscanRuntimeError},
-  flags::{Flags, Mode},
-  hs,
-  state::{Platform, Scratch},
-};
+#[cfg(feature = "static")]
+use crate::alloc;
 #[cfg(feature = "compile")]
 use crate::{
   error::HyperscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
 };
+use crate::{
+  error::{HyperscanFlagsError, HyperscanRuntimeError},
+  flags::{Flags, Mode},
+  hs,
+  state::{Platform, Scratch},
+};
+
+use cfg_if::cfg_if;
 
 use std::{
   ffi::CStr,
@@ -415,7 +418,13 @@ impl DbInfo {
       /* FIXME: avoid copying! */
       .to_string();
     unsafe {
-      alloc::misc_free_func(info as *mut c_void);
+      cfg_if! {
+        if #[cfg(feature = "static")] {
+          alloc::misc_free_func(info as *mut c_void);
+        } else {
+          libc::free(info as *mut c_void);
+        }
+      }
     }
     Ok(Self(ret))
   }
@@ -441,7 +450,13 @@ impl SerializedDb {
     /* FIXME: avoid copying! */
     let ret: Box<[u8]> = data.to_vec().into_boxed_slice();
     unsafe {
-      alloc::misc_free_func(serialized as *mut c_void);
+      cfg_if! {
+        if #[cfg(feature = "static")] {
+          alloc::misc_free_func(serialized as *mut c_void);
+        } else {
+          libc::free(serialized as *mut c_void);
+        }
+      }
     }
     Ok(Self(ret))
   }
@@ -468,7 +483,13 @@ impl SerializedDb {
       /* FIXME: avoid copying! */
       .to_string();
     unsafe {
-      alloc::misc_free_func(info as *mut c_void);
+      cfg_if! {
+        if #[cfg(feature = "static")] {
+          alloc::misc_free_func(info as *mut c_void);
+        } else {
+          libc::free(info as *mut c_void);
+        }
+      }
     }
     Ok(DbInfo(ret))
   }
@@ -551,7 +572,6 @@ impl SerializedDb {
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use crate::{
-    alloc::chimera::chimera_misc_free_func,
     error::chimera::{ChimeraCompileError, ChimeraRuntimeError},
     expression::chimera::{ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits},
     flags::chimera::{ChimeraFlags, ChimeraMode},
@@ -559,6 +579,7 @@ pub mod chimera {
     state::{chimera::ChimeraScratch, Platform},
   };
 
+  use cfg_if::cfg_if;
 
   use std::{
     ffi::CStr,
@@ -746,7 +767,13 @@ pub mod chimera {
       /* FIXME: avoid copying! */
       .to_string();
       unsafe {
-        chimera_misc_free_func(info as *mut c_void);
+        cfg_if! {
+          if #[cfg(feature = "static")] {
+            crate::alloc::chimera::chimera_misc_free_func(info as *mut c_void);
+          } else {
+            libc::free(info as *mut c_void);
+          }
+        }
       }
       Ok(Self(ret))
     }

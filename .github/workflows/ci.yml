@@ -50,13 +50,13 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: --all
+        args: --all -vv
 
     - name: check clippy against hyperscan chimera
       uses: actions-rs/cargo@v1
       with:
         command: clippy
-        args: -p hyperscan-async --no-default-features --features chimera
+        args: -p hyperscan-async --no-default-features --features chimera,static,compile
 
   test-spack:
     name: test spack-rs against ${{ matrix.rust-toolchain }} rust
@@ -193,8 +193,10 @@ jobs:
         command: test
         args: -p hyperscan-async --no-default-features --features dynamic,compile -vv
 
+    # FIXME: add hyperscan-static-runtime-only and hyperscan-dynamic-runtime-only!!
+
     - name: test hyperscan-static-chimera
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera -vv
+        args: -p hyperscan-async --no-default-features --features chimera,static,compile -vv

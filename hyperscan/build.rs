@@ -12,7 +12,7 @@ use std::{env, path::PathBuf};
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
   if cfg!(feature = "chimera") {
-    assert!(!cfg!(feature = "dynamic"), "chimera requires static");
+    assert!(cfg!(feature = "static"), "chimera requires static");
     assert!(cfg!(feature = "compile"), "chimera requires compile");
   } else if cfg!(feature = "dynamic") {
     assert!(

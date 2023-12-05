@@ -391,15 +391,15 @@ pub mod prefix {
       for lib in self.found_libraries.into_iter() {
         println!("cargo:rerun-if-changed={}", lib.path.display());
         println!("cargo:rustc-link-lib={}", lib.minus_l_arg());
-        println!(
-          "cargo:rustc-link-search=native={}",
-          lib.containing_directory().display()
-        );
         containing_dirs.insert(lib.containing_directory().to_path_buf());
 
         if rpath_behavior == RpathBehavior::SetRpathForContainingDirs {
           assert_eq!(lib.kind, LibraryType::Dynamic);
         }
+      }
+
+      for dir in containing_dirs.iter() {
+        println!("cargo:rustc-link-search=native={}", dir.display());
       }
 
       if rpath_behavior == RpathBehavior::SetRpathForContainingDirs {

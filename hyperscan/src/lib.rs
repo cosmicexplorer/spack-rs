@@ -16,6 +16,8 @@ mod bindings {
 }
 pub(crate) use bindings::root as hs;
 
+#[cfg(feature = "static")]
+#[cfg_attr(docsrs, doc(cfg(feature = "static")))]
 pub mod alloc;
 pub mod database;
 pub mod error;

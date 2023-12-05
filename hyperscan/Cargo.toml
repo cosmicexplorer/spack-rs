@@ -24,7 +24,6 @@ spec                    = "hyperscan@v5.4.2+shared~chimera"
 deps                    = { hyperscan = { type = "dynamic", lib_names = ["hs"] } }
 features                = { needed = ["dynamic", "compile"], conflicting = ["chimera"] }
 
-# FIXME: add these to CI!
 [package.metadata.spack.envs.hyperscan-static-runtime-only]
 spec                    = "hyperscan@v5.4.2+static~chimera"
 deps                    = { hyperscan = { type = "static", lib_names = ["hs_runtime"] } }
@@ -51,6 +50,7 @@ tokio                   = { workspace = true, features = ["rt-multi-thread", "ma
 
 [dependencies]
 async-stream.workspace  = true
+cfg-if                  = "1"
 displaydoc.workspace    = true
 futures-core.workspace  = true
 futures-util.workspace  = true
