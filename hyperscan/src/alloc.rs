@@ -339,7 +339,7 @@ pub mod chimera {
 
   ///```
   /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
+  /// use hyperscan_async::{expression::chimera::*, flags::{*, chimera::*}, matchers::chimera::*};
   /// use futures_util::TryStreamExt;
   /// use std::{alloc::System, sync::Arc};
   ///

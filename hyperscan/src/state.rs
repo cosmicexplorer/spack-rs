@@ -437,7 +437,7 @@ mod test {
 
 pub mod chimera {
   use super::*;
-  use crate::{database::ChimeraDb, error::chimera::*, matchers::chimera::*};
+  use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
 
   use tokio::sync::mpsc;
 
@@ -496,7 +496,7 @@ pub mod chimera {
     ///```
     /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::*, flags::*, matchers::chimera::*};
+    /// use hyperscan_async::{expression::chimera::*, flags::{*, chimera::*}, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
@@ -513,7 +513,7 @@ pub mod chimera {
     /// assert_eq!(&matches, &["aa", "a"]);
     /// # Ok(())
     /// # })}
-    ///```
+    /// ```
     pub fn scan<'data, S: ChimeraScanner<'data>>(
       &mut self,
       db: &ChimeraDb,
@@ -546,10 +546,12 @@ pub mod chimera {
         })
       });
 
-      /* try_stream! doesn't like tokio::select! with ?, so we will implement it by hand. */
+      /* try_stream! doesn't like tokio::select! with ?, so we will implement it by
+       * hand. */
       let (merged_tx, merged_rx) =
         mpsc::unbounded_channel::<Result<ChimeraMatch<'data>, ChimeraScanError>>();
-      /* task::spawn accepts a 'static future, which means we need to lie about this lifetime: */
+      /* task::spawn accepts a 'static future, which means we need to lie about
+       * this lifetime: */
       let mut matches_rx: mpsc::UnboundedReceiver<ChimeraMatch<'static>> =
         unsafe { mem::transmute(matches_rx) };
       let merged_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =

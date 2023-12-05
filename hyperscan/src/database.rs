@@ -5,17 +5,11 @@
 
 use crate::{
   alloc,
-  error::{
-    chimera::{ChimeraCompileError, ChimeraRuntimeError},
-    HyperscanCompileError, HyperscanRuntimeError, HyperscanFlagsError,
-  },
-  expression::{
-    ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits, Expression, ExpressionSet,
-    Literal, LiteralSet,
-  },
-  flags::{ChimeraFlags, ChimeraMode, Flags, Mode},
+  error::{HyperscanCompileError, HyperscanFlagsError, HyperscanRuntimeError},
+  expression::{Expression, ExpressionSet, Literal, LiteralSet},
+  flags::{Flags, Mode},
   hs,
-  state::{chimera::ChimeraScratch, Platform, Scratch},
+  state::{Platform, Scratch},
 };
 
 use std::{
@@ -541,183 +535,206 @@ impl SerializedDb {
   }
 }
 
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct ChimeraDb(*mut NativeChimeraDb);
+pub mod chimera {
+  use crate::{
+    alloc::chimera::chimera_misc_free_func,
+    error::chimera::{ChimeraCompileError, ChimeraRuntimeError},
+    expression::chimera::{ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits},
+    flags::chimera::{ChimeraFlags, ChimeraMode},
+    hs,
+    state::{chimera::ChimeraScratch, Platform},
+  };
 
-pub type NativeChimeraDb = hs::ch_database;
 
-impl ChimeraDb {
-  #[inline]
-  pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
+  use std::{
+    ffi::CStr,
+    mem::MaybeUninit,
+    ops,
+    os::raw::{c_char, c_void},
+    ptr,
+  };
 
-  #[inline]
-  pub(crate) fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
 
-  #[inline]
-  pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
+  #[derive(Debug)]
+  #[repr(transparent)]
+  pub struct ChimeraDb(*mut NativeChimeraDb);
 
-  ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*};
-  ///
-  /// let expr: ChimeraExpression = "(he)ll".parse()?;
-  /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
-  /// # Ok(())
-  /// # })}
-  /// ```
-  pub fn compile(
-    expression: &ChimeraExpression,
-    flags: ChimeraFlags,
-    mode: ChimeraMode,
-  ) -> Result<Self, ChimeraCompileError> {
-    let platform = Platform::get();
+  pub type NativeChimeraDb = hs::ch_database;
 
-    let mut db = ptr::null_mut();
-    let mut compile_err = ptr::null_mut();
-    ChimeraRuntimeError::copy_from_native_compile_error(
-      unsafe {
-        hs::ch_compile(
-          expression.as_ptr(),
-          flags.into_native(),
-          mode.into_native(),
-          platform.as_ref_native(),
-          &mut db,
-          &mut compile_err,
-        )
-      },
-      compile_err,
-    )?;
-    Ok(unsafe { Self::from_native(db) })
-  }
+  impl ChimeraDb {
+    #[inline]
+    pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
 
-  ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::chimera::*};
-  /// use futures_util::TryStreamExt;
-  ///
-  /// let a_expr: ChimeraExpression = "a+".parse()?;
-  /// let b_expr: ChimeraExpression = "b+".parse()?;
-  /// let exprs = ChimeraExpressionSet::from_exprs([&a_expr, &b_expr])
-  ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
-  ///   .with_ids([ExprId(1), ExprId(2)])
-  ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
-  /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS)?;
-  /// let mut scratch = db.allocate_scratch()?;
-  ///
-  /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
-  ///   &db,
-  ///   "aardvark imbibbe".into(),
-  ///   ScanFlags::default(),
-  /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
-  ///  .try_collect()
-  ///  .await?;
-  /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
-  /// # Ok(())
-  /// # })}
-  /// ```
-  pub fn compile_multi(
-    exprs: &ChimeraExpressionSet,
-    mode: ChimeraMode,
-  ) -> Result<Self, ChimeraCompileError> {
-    let platform = Platform::get();
+    #[inline]
+    pub(crate) fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
 
-    let mut db = ptr::null_mut();
-    let mut compile_err = ptr::null_mut();
-    ChimeraRuntimeError::copy_from_native_compile_error(
-      unsafe {
-        if let Some(ChimeraMatchLimits {
-          match_limit,
-          match_limit_recursion,
-        }) = exprs.limits()
-        {
-          hs::ch_compile_ext_multi(
-            exprs.expressions_ptr(),
-            exprs.flags_ptr(),
-            exprs.ids_ptr(),
-            exprs.num_elements(),
+    #[inline]
+    pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
+
+    ///```
+    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
+    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "(he)ll".parse()?;
+    /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// # Ok(())
+    /// # })}
+    /// ```
+    pub fn compile(
+      expression: &ChimeraExpression,
+      flags: ChimeraFlags,
+      mode: ChimeraMode,
+    ) -> Result<Self, ChimeraCompileError> {
+      let platform = Platform::get();
+
+      let mut db = ptr::null_mut();
+      let mut compile_err = ptr::null_mut();
+      ChimeraRuntimeError::copy_from_native_compile_error(
+        unsafe {
+          hs::ch_compile(
+            expression.as_ptr(),
+            flags.into_native(),
             mode.into_native(),
+            platform.as_ref_native(),
+            &mut db,
+            &mut compile_err,
+          )
+        },
+        compile_err,
+      )?;
+      Ok(unsafe { Self::from_native(db) })
+    }
+
+    ///```
+    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
+    /// use hyperscan_async::{expression::{*, chimera::*}, flags::{*, chimera::*}, database::chimera::*, matchers::chimera::*};
+    /// use futures_util::TryStreamExt;
+    ///
+    /// let a_expr: ChimeraExpression = "a+".parse()?;
+    /// let b_expr: ChimeraExpression = "b+".parse()?;
+    /// let exprs = ChimeraExpressionSet::from_exprs([&a_expr, &b_expr])
+    ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
+    ///   .with_ids([ExprId(1), ExprId(2)])
+    ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
+    /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
+    ///   &db,
+    ///   "aardvark imbibbe".into(),
+    ///   ScanFlags::default(),
+    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
+    ///  .try_collect()
+    ///  .await?;
+    /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
+    /// # Ok(())
+    /// # })}
+    /// ```
+    pub fn compile_multi(
+      exprs: &ChimeraExpressionSet,
+      mode: ChimeraMode,
+    ) -> Result<Self, ChimeraCompileError> {
+      let platform = Platform::get();
+
+      let mut db = ptr::null_mut();
+      let mut compile_err = ptr::null_mut();
+      ChimeraRuntimeError::copy_from_native_compile_error(
+        unsafe {
+          if let Some(ChimeraMatchLimits {
             match_limit,
             match_limit_recursion,
-            platform.as_ref_native(),
-            &mut db,
-            &mut compile_err,
-          )
-        } else {
-          hs::ch_compile_multi(
-            exprs.expressions_ptr(),
-            exprs.flags_ptr(),
-            exprs.ids_ptr(),
-            exprs.num_elements(),
-            mode.into_native(),
-            platform.as_ref_native(),
-            &mut db,
-            &mut compile_err,
-          )
-        }
-      },
-      compile_err,
-    )?;
-    Ok(unsafe { Self::from_native(db) })
-  }
+          }) = exprs.limits()
+          {
+            hs::ch_compile_ext_multi(
+              exprs.expressions_ptr(),
+              exprs.flags_ptr(),
+              exprs.ids_ptr(),
+              exprs.num_elements(),
+              mode.into_native(),
+              match_limit,
+              match_limit_recursion,
+              platform.as_ref_native(),
+              &mut db,
+              &mut compile_err,
+            )
+          } else {
+            hs::ch_compile_multi(
+              exprs.expressions_ptr(),
+              exprs.flags_ptr(),
+              exprs.ids_ptr(),
+              exprs.num_elements(),
+              mode.into_native(),
+              platform.as_ref_native(),
+              &mut db,
+              &mut compile_err,
+            )
+          }
+        },
+        compile_err,
+      )?;
+      Ok(unsafe { Self::from_native(db) })
+    }
 
-  pub fn get_db_size(&self) -> Result<usize, ChimeraRuntimeError> {
-    let mut database_size = MaybeUninit::<usize>::uninit();
-    ChimeraRuntimeError::from_native(unsafe {
-      hs::ch_database_size(self.as_ref_native(), database_size.as_mut_ptr())
-    })?;
-    Ok(unsafe { database_size.assume_init() })
-  }
+    pub fn get_db_size(&self) -> Result<usize, ChimeraRuntimeError> {
+      let mut database_size = MaybeUninit::<usize>::uninit();
+      ChimeraRuntimeError::from_native(unsafe {
+        hs::ch_database_size(self.as_ref_native(), database_size.as_mut_ptr())
+      })?;
+      Ok(unsafe { database_size.assume_init() })
+    }
 
-  pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraRuntimeError> { ChimeraDbInfo::extract_db_info(self) }
+    pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraRuntimeError> {
+      ChimeraDbInfo::extract_db_info(self)
+    }
 
-  pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
-    let mut scratch = ChimeraScratch::new();
-    scratch.setup_for_db(self)?;
-    Ok(scratch)
-  }
+    pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
+      let mut scratch = ChimeraScratch::new();
+      scratch.setup_for_db(self)?;
+      Ok(scratch)
+    }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
-    ChimeraRuntimeError::from_native(hs::ch_free_database(self.as_mut_native()))
-  }
-}
-
-impl ops::Drop for ChimeraDb {
-  fn drop(&mut self) {
-    unsafe {
-      self.try_drop().unwrap();
+    pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
+      ChimeraRuntimeError::from_native(hs::ch_free_database(self.as_mut_native()))
     }
   }
-}
 
-#[derive(Debug, Clone)]
-pub struct ChimeraDbInfo(pub String);
+  impl ops::Drop for ChimeraDb {
+    fn drop(&mut self) {
+      unsafe {
+        self.try_drop().unwrap();
+      }
+    }
+  }
 
-impl ChimeraDbInfo {
-  ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
-  /// use hyperscan_async::{expression::*, flags::*, database::*};
-  ///
-  /// let expr: ChimeraExpression = "a+".parse()?;
-  /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
-  /// let info = ChimeraDbInfo::extract_db_info(&db)?;
-  /// assert_eq!(&info.0, "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraRuntimeError> {
-    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    ChimeraRuntimeError::from_native(unsafe {
-      hs::ch_database_info(db.as_ref_native(), info.as_mut_ptr())
-    })?;
-    let info = unsafe { info.assume_init() };
-    let ret = unsafe { CStr::from_ptr(info) }
+  #[derive(Debug, Clone)]
+  pub struct ChimeraDbInfo(pub String);
+
+  impl ChimeraDbInfo {
+    ///```
+    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
+    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// let info = ChimeraDbInfo::extract_db_info(&db)?;
+    /// assert_eq!(&info.0, "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraRuntimeError> {
+      let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+      ChimeraRuntimeError::from_native(unsafe {
+        hs::ch_database_info(db.as_ref_native(), info.as_mut_ptr())
+      })?;
+      let info = unsafe { info.assume_init() };
+      let ret = unsafe { CStr::from_ptr(info) }
       .to_string_lossy()
       /* FIXME: avoid copying! */
       .to_string();
-    unsafe {
-      alloc::chimera::chimera_misc_free_func(info as *mut c_void);
+      unsafe {
+        chimera_misc_free_func(info as *mut c_void);
+      }
+      Ok(Self(ret))
     }
-    Ok(Self(ret))
   }
 }

@@ -4,9 +4,9 @@
 //! ???
 
 use crate::{
-  database::{ChimeraDb, Database},
-  error::{chimera::ChimeraCompileError, HyperscanCompileError, HyperscanRuntimeError},
-  flags::{ChimeraFlags, ChimeraMode, ExtFlags, Flags, Mode},
+  database::Database,
+  error::{HyperscanCompileError, HyperscanRuntimeError},
+  flags::{ExtFlags, Flags, Mode},
   hs,
 };
 
@@ -17,7 +17,7 @@ use std::{
   fmt,
   marker::PhantomData,
   mem, ops,
-  os::raw::{c_char, c_uint, c_ulong, c_ulonglong},
+  os::raw::{c_char, c_uint, c_ulonglong},
   ptr, str,
 };
 
@@ -577,122 +577,141 @@ impl<'a> LiteralSet<'a> {
   }
 }
 
-#[derive(Clone)]
-pub struct ChimeraExpression(CString);
+pub mod chimera {
+  use super::ExprId;
+  use crate::{
+    database::chimera::ChimeraDb,
+    error::chimera::ChimeraCompileError,
+    flags::chimera::{ChimeraFlags, ChimeraMode},
+  };
 
-impl fmt::Debug for ChimeraExpression {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let b = self.as_bytes();
-    match str::from_utf8(b) {
-      Ok(s) => write!(f, "ChimeraExpression({:?})", s),
-      Err(_) => write!(f, "ChimeraExpression({:?})", b),
-    }
-  }
-}
+  use std::{
+    ffi::CString,
+    fmt,
+    marker::PhantomData,
+    mem,
+    os::raw::{c_char, c_uint, c_ulong},
+    ptr, str,
+  };
 
-impl ChimeraExpression {
-  #[inline]
-  pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+  #[derive(Clone)]
+  pub struct ChimeraExpression(CString);
 
-  #[inline]
-  pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
-
-  #[inline]
-  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, ChimeraCompileError> {
-    Ok(Self(CString::new(x)?))
-  }
-
-  pub fn compile(
-    &self,
-    flags: ChimeraFlags,
-    mode: ChimeraMode,
-  ) -> Result<ChimeraDb, ChimeraCompileError> {
-    ChimeraDb::compile(self, flags, mode)
-  }
-}
-
-impl str::FromStr for ChimeraExpression {
-  type Err = ChimeraCompileError;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct ChimeraMatchLimits {
-  /// A limit from pcre_extra on the amount of match function called in PCRE to
-  /// limit backtracking that can take place.
-  pub match_limit: c_ulong,
-  /// A limit from pcre_extra on the recursion depth of match function in PCRE.
-  pub match_limit_recursion: c_ulong,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChimeraExpressionSet<'a> {
-  ptrs: Vec<*const c_char>,
-  flags: Option<Vec<ChimeraFlags>>,
-  ids: Option<Vec<ExprId>>,
-  limits: Option<ChimeraMatchLimits>,
-  _ph: PhantomData<&'a u8>,
-}
-
-impl<'a> ChimeraExpressionSet<'a> {
-  pub fn from_exprs(exprs: impl IntoIterator<Item=&'a ChimeraExpression>) -> Self {
-    Self {
-      ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
-      flags: None,
-      ids: None,
-      limits: None,
-      _ph: PhantomData,
+  impl fmt::Debug for ChimeraExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      let b = self.as_bytes();
+      match str::from_utf8(b) {
+        Ok(s) => write!(f, "ChimeraExpression({:?})", s),
+        Err(_) => write!(f, "ChimeraExpression({:?})", b),
+      }
     }
   }
 
-  pub fn with_flags(mut self, flags: impl IntoIterator<Item=ChimeraFlags>) -> Self {
-    let flags: Vec<_> = flags.into_iter().collect();
-    assert_eq!(self.ptrs.len(), flags.len());
-    self.flags = Some(flags);
-    self
+  impl ChimeraExpression {
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+
+    #[inline]
+    pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
+
+    #[inline]
+    pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, ChimeraCompileError> {
+      Ok(Self(CString::new(x)?))
+    }
+
+    pub fn compile(
+      &self,
+      flags: ChimeraFlags,
+      mode: ChimeraMode,
+    ) -> Result<ChimeraDb, ChimeraCompileError> {
+      ChimeraDb::compile(self, flags, mode)
+    }
   }
 
-  pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
-    let ids: Vec<_> = ids.into_iter().collect();
-    assert_eq!(self.ptrs.len(), ids.len());
-    self.ids = Some(ids);
-    self
+  impl str::FromStr for ChimeraExpression {
+    type Err = ChimeraCompileError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
   }
 
-  pub fn with_limits(mut self, limits: ChimeraMatchLimits) -> Self {
-    self.limits = Some(limits);
-    self
+  #[derive(Debug, Copy, Clone)]
+  pub struct ChimeraMatchLimits {
+    /// A limit from pcre_extra on the amount of match function called in PCRE
+    /// to limit backtracking that can take place.
+    pub match_limit: c_ulong,
+    /// A limit from pcre_extra on the recursion depth of match function in
+    /// PCRE.
+    pub match_limit_recursion: c_ulong,
   }
 
-  pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
-    ChimeraDb::compile_multi(&self, mode)
+  #[derive(Debug, Clone)]
+  pub struct ChimeraExpressionSet<'a> {
+    ptrs: Vec<*const c_char>,
+    flags: Option<Vec<ChimeraFlags>>,
+    ids: Option<Vec<ExprId>>,
+    limits: Option<ChimeraMatchLimits>,
+    _ph: PhantomData<&'a u8>,
   }
 
-  #[inline]
-  pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
+  impl<'a> ChimeraExpressionSet<'a> {
+    pub fn from_exprs(exprs: impl IntoIterator<Item=&'a ChimeraExpression>) -> Self {
+      Self {
+        ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
+        flags: None,
+        ids: None,
+        limits: None,
+        _ph: PhantomData,
+      }
+    }
 
-  #[inline]
-  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+    pub fn with_flags(mut self, flags: impl IntoIterator<Item=ChimeraFlags>) -> Self {
+      let flags: Vec<_> = flags.into_iter().collect();
+      assert_eq!(self.ptrs.len(), flags.len());
+      self.flags = Some(flags);
+      self
+    }
 
-  #[inline]
-  pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
+    pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
+      let ids: Vec<_> = ids.into_iter().collect();
+      assert_eq!(self.ptrs.len(), ids.len());
+      self.ids = Some(ids);
+      self
+    }
 
-  #[inline]
-  pub(crate) fn flags_ptr(&self) -> *const c_uint {
-    self
-      .flags
-      .as_ref()
-      .map(|f| unsafe { mem::transmute(f.as_ptr()) })
-      .unwrap_or(ptr::null())
-  }
+    pub fn with_limits(mut self, limits: ChimeraMatchLimits) -> Self {
+      self.limits = Some(limits);
+      self
+    }
 
-  #[inline]
-  pub(crate) fn ids_ptr(&self) -> *const c_uint {
-    self
-      .ids
-      .as_ref()
-      .map(|i| unsafe { mem::transmute(i.as_ptr()) })
-      .unwrap_or(ptr::null())
+    pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
+      ChimeraDb::compile_multi(&self, mode)
+    }
+
+    #[inline]
+    pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
+
+    #[inline]
+    pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+
+    #[inline]
+    pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
+
+    #[inline]
+    pub(crate) fn flags_ptr(&self) -> *const c_uint {
+      self
+        .flags
+        .as_ref()
+        .map(|f| unsafe { mem::transmute(f.as_ptr()) })
+        .unwrap_or(ptr::null())
+    }
+
+    #[inline]
+    pub(crate) fn ids_ptr(&self) -> *const c_uint {
+      self
+        .ids
+        .as_ref()
+        .map(|i| unsafe { mem::transmute(i.as_ptr()) })
+        .unwrap_or(ptr::null())
+    }
   }
 }
