@@ -66,20 +66,11 @@ jobs:
         override: true
         components: rustfmt, clippy
 
-    - id: cache-rust-style
+    - id: cache-rust-fmt
       name: cache rust
       uses: Swatinem/rust-cache@v2
       with:
         key: v1
-
-    - id: cache-spack
-      name: cache spack
-      uses: actions/cache@v3
-      env:
-        cache-name: cache-spack-dir-fmt
-      with:
-        path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v8
 
     - name: check fmt
       uses: actions-rs/cargo@v1
