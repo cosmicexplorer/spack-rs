@@ -396,6 +396,8 @@ pub mod chimera {
     ReturnValue(#[from] ChimeraRuntimeError),
     /// streaming pcre error: {0}
     MatchError(#[from] ChimeraMatchError),
+    /// join error: {0}
+    Join(#[from] tokio::task::JoinError),
   }
 
   #[derive(Debug, Display, Error)]

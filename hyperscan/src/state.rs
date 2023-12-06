@@ -551,20 +551,33 @@ pub mod chimera {
         unsafe { mem::transmute(matches_rx) };
       let merged_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =
         unsafe { mem::transmute(merged_tx) };
+      /* Spawn a task and *ignore* its JoinHandle, meaning we need to avoid
+       * panicking on unwrap! */
       task::spawn(async move {
         loop {
           let send_result = tokio::select! {
             biased;
-            Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)),
             Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())),
+            Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)),
             else => break,
           };
+          /* Since we don't want to propagate a panic by using .unwrap(), we simply
+           * break out of the loop if the send fails. */
           if send_result.is_err() {
             break;
           }
         }
-        if let Err(e) = scan_task.await.unwrap() {
-          let _ = merged_tx.send(Err(e.into()));
+        /* Propagate the error result of the scan task, or any internal panic that
+         * occurred in the scan task, into an Err instance in the merged
+         * Result stream. */
+        match scan_task.await {
+          Err(e) => {
+            let _ = merged_tx.send(Err(e.into()));
+          },
+          Ok(Err(e)) => {
+            let _ = merged_tx.send(Err(e.into()));
+          },
+          Ok(Ok(())) => (),
         }
       });
       tokio_stream::wrappers::UnboundedReceiverStream::new(merged_rx)
