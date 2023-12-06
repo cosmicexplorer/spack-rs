@@ -564,7 +564,7 @@ pub mod chimera {
           /* Since we don't want to propagate a panic by using .unwrap(), we simply
            * break out of the loop if the send fails. */
           if send_result.is_err() {
-            break;
+            return;
           }
         }
         /* Propagate the error result of the scan task, or any internal panic that
@@ -572,9 +572,11 @@ pub mod chimera {
          * Result stream. */
         match scan_task.await {
           Err(e) => {
+            /* Ignore any send failure, since we have no way to signal it. */
             let _ = merged_tx.send(Err(e.into()));
           },
           Ok(Err(e)) => {
+            /* Ignore any send failure, since we have no way to signal it. */
             let _ = merged_tx.send(Err(e.into()));
           },
           Ok(Ok(())) => (),
