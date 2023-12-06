@@ -554,19 +554,14 @@ pub mod chimera {
       /* Spawn a task and *ignore* its JoinHandle, meaning we need to avoid
        * panicking on unwrap! */
       task::spawn(async move {
-        loop {
-          let send_result = tokio::select! {
-            biased;
-            Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())),
-            Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)),
-            else => break,
-          };
+        while tokio::select! {
+          biased;
           /* Since we don't want to propagate a panic by using .unwrap(), we simply
            * break out of the loop if the send fails. */
-          if send_result.is_err() {
-            return;
-          }
-        }
+          Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())).is_ok(),
+          Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)).is_ok(),
+          else => false,
+        } {}
         /* Propagate the error result of the scan task, or any internal panic that
          * occurred in the scan task, into an Err instance in the merged
          * Result stream. */
