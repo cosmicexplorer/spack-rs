@@ -435,7 +435,7 @@ pub mod chimera {
   use super::*;
   use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
 
-  use tokio::sync::mpsc;
+  use async_stream::stream;
 
   #[derive(Debug)]
   #[repr(transparent)]
@@ -515,7 +515,7 @@ pub mod chimera {
       data: ByteSlice<'data>,
     ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>>+'data {
       let mut s = S::new();
-      let (matcher, matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut s);
+      let (matcher, mut matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut s);
 
       let ctx = Self::into_ctx(matcher);
       let scratch = Self::into_scratch(self);
@@ -541,25 +541,13 @@ pub mod chimera {
         })
       });
 
-      /* try_stream! doesn't like tokio::select! with ?, so we will implement it by
-       * hand. */
-      let (merged_tx, merged_rx) =
-        mpsc::unbounded_channel::<Result<ChimeraMatch<'data>, ChimeraScanError>>();
-      /* task::spawn accepts a 'static future, which means we need to lie about
-       * this lifetime: */
-      let mut matches_rx: mpsc::UnboundedReceiver<ChimeraMatch<'static>> =
-        unsafe { mem::transmute(matches_rx) };
-      let merged_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =
-        unsafe { mem::transmute(merged_tx) };
-      /* Spawn a task and *ignore* its JoinHandle, meaning we need to avoid
-       * panicking on unwrap! */
-      task::spawn(async move {
+      /* Need to use stream! instead of try_stream! in order to yield an Err inside
+       * of a select! expression! */
+      stream! {
         while tokio::select! {
           biased;
-          /* Since we don't want to propagate a panic by using .unwrap(), we simply
-           * break out of the loop if the send fails. */
-          Some(e) = errors_rx.recv() => merged_tx.send(Err(e.into())).is_ok(),
-          Some(m) = matches_rx.recv() => merged_tx.send(Ok(m)).is_ok(),
+          Some(e) = errors_rx.recv() => { yield Err(e.into()); true },
+          Some(m) = matches_rx.recv() => { yield Ok(m); true },
           else => false,
         } {}
         /* Propagate the error result of the scan task, or any internal panic that
@@ -567,17 +555,14 @@ pub mod chimera {
          * Result stream. */
         match scan_task.await {
           Err(e) => {
-            /* Ignore any send failure, since we have no way to signal it. */
-            let _ = merged_tx.send(Err(e.into()));
+            yield Err(e.into());
           },
           Ok(Err(e)) => {
-            /* Ignore any send failure, since we have no way to signal it. */
-            let _ = merged_tx.send(Err(e.into()));
+            yield Err(e.into());
           },
           Ok(Ok(())) => (),
         }
-      });
-      tokio_stream::wrappers::UnboundedReceiverStream::new(merged_rx)
+      }
     }
 
     pub fn get_size(&self) -> Result<usize, ChimeraRuntimeError> {
