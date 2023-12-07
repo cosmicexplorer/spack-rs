@@ -19,7 +19,6 @@ jobs:
           # These two fail because of dependencies and it's not clear why???
           # - -p spack-rs
           # - -p hyperscan-async
-          # This fails because of feature selection???
           - -p re2
     runs-on: ubuntu-latest
 
