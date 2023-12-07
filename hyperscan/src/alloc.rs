@@ -16,6 +16,11 @@ use std::{
   sync::Arc,
 };
 
+trait MallocLikeAllocator {
+  fn allocate(&self, size: usize) -> Option<NonNull<u8>>;
+  fn deallocate(&self, ptr: NonNull<u8>);
+}
+
 struct LayoutTracker {
   allocator: Arc<dyn GlobalAlloc>,
   layouts: Mutex<HashMap<NonNull<u8>, Layout>>,
@@ -39,16 +44,20 @@ impl LayoutTracker {
       layouts: Mutex::new(HashMap::new()),
     }
   }
+}
 
-  pub fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
-    /* Allocate everything with 8-byte alignment. */
+impl MallocLikeAllocator for LayoutTracker {
+  fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
+    /* NB: Allocate everything with 8-byte alignment. Only the database allocator
+     * is documented to require 8-byte alignment; nothing else seems to break
+     * if we use it for everything! */
     let layout = Layout::from_size_align(size, 8).unwrap();
     let ret = NonNull::new(unsafe { self.allocator.alloc(layout) })?;
     assert!(self.layouts.lock().insert(ret, layout).is_none());
     Some(ret)
   }
 
-  pub fn deallocate(&self, ptr: NonNull<u8>) {
+  fn deallocate(&self, ptr: NonNull<u8>) {
     let layout = self.layouts.lock().remove(&ptr).unwrap();
     unsafe {
       self.allocator.dealloc(ptr.as_ptr(), layout);
