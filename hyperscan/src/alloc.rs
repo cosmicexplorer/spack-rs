@@ -113,10 +113,49 @@ macro_rules! allocator {
 
 allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
+/// use futures_util::TryStreamExt;
+/// use std::{alloc::System, mem::ManuallyDrop, sync::Arc};
+///
+/// let tracker = LayoutTracker::new(Arc::new(System));
+/// assert!(set_db_allocator(tracker).unwrap().is_none());
+///
+/// let expr: Expression = "asdf".parse()?;
+/// // Use ManuallyDrop to avoid calling the hyperscan db free method, since we will be invalidating
+/// // the pointer by changing the allocator.
+/// let mut db = ManuallyDrop::new(expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?);
+///
+/// // Change the allocator to a fresh LayoutTracker:
+/// let mut tracker = set_db_allocator(LayoutTracker::new(Arc::new(System))).unwrap().unwrap();
+/// // Get the extant allocations:
+/// let allocs = tracker.current_allocations();
+/// // Verify that only the single known db was allocated:
+/// assert_eq!(1, allocs.len());
+/// let db_ptr: *mut NativeDb = db.as_mut_native();
+/// assert_eq!(allocs[0].as_ptr() as *mut NativeDb, db_ptr);
+///
+/// // Despite having reset the allocator, our previous db is still valid and can be used for
+/// // matching:
+/// let mut scratch = db.allocate_scratch()?;
+/// let matches: Vec<&str> = scratch.scan(&db, "asdfasdf".into(), |_| MatchResult::Continue)
+///   .and_then(|m| async move { Ok(m.source.as_str()) })
+///   .try_collect()
+///   .await?;
+/// assert_eq!(&matches, &["asdf", "asdf"]);
+///
+/// // Need to deallocate the db by hand in order to drop the original LayoutTracker
+/// // without panicking:
+/// tracker.deallocate(allocs[0]);
+///
+/// // NB: `db` is now INVALID and points to FREED MEMORY!!!
+/// # Ok(())
+/// # })}
+/// ```
 pub fn set_db_allocator(
-  allocator: Arc<impl GlobalAlloc+'static>,
+  tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
-  let tracker = LayoutTracker::new(allocator);
   let ret = DB_ALLOCATOR.write().replace(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_database_allocator(Some(db_alloc_func), Some(db_free_func))
@@ -127,9 +166,8 @@ pub fn set_db_allocator(
 allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 
 pub fn set_misc_allocator(
-  allocator: Arc<impl GlobalAlloc+'static>,
+  tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
-  let tracker = LayoutTracker::new(allocator);
   let ret = MISC_ALLOCATOR.write().replace(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_misc_allocator(Some(misc_alloc_func), Some(misc_free_func))
@@ -140,9 +178,8 @@ pub fn set_misc_allocator(
 allocator![SCRATCH_ALLOCATOR, scratch_alloc_func, scratch_free_func];
 
 pub fn set_scratch_allocator(
-  allocator: Arc<impl GlobalAlloc+'static>,
+  tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
-  let tracker = LayoutTracker::new(allocator);
   let ret = SCRATCH_ALLOCATOR.write().replace(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_scratch_allocator(Some(scratch_alloc_func), Some(scratch_free_func))
@@ -153,9 +190,8 @@ pub fn set_scratch_allocator(
 allocator![STREAM_ALLOCATOR, stream_alloc_func, stream_free_func];
 
 pub fn set_stream_allocator(
-  allocator: Arc<impl GlobalAlloc+'static>,
+  tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
-  let tracker = LayoutTracker::new(allocator);
   let ret = STREAM_ALLOCATOR.write().replace(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_stream_allocator(Some(stream_alloc_func), Some(stream_free_func))
@@ -188,10 +224,16 @@ pub fn set_stream_allocator(
 pub fn set_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
 ) -> Result<(), HyperscanRuntimeError> {
-  set_db_allocator(allocator.clone())?;
-  set_misc_allocator(allocator.clone())?;
-  set_scratch_allocator(allocator.clone())?;
-  set_stream_allocator(allocator)?;
+  for f in [
+    set_db_allocator,
+    set_misc_allocator,
+    set_scratch_allocator,
+    set_stream_allocator,
+  ]
+  .into_iter()
+  {
+    f(LayoutTracker::new(allocator.clone()))?;
+  }
   Ok(())
 }
 
@@ -208,9 +250,8 @@ pub mod chimera {
   ];
 
   pub fn set_chimera_db_allocator(
-    allocator: Arc<impl GlobalAlloc+'static>,
+    tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
-    let tracker = LayoutTracker::new(allocator);
     let ret = CHIMERA_DB_ALLOCATOR.write().replace(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_database_allocator(Some(chimera_db_alloc_func), Some(chimera_db_free_func))
@@ -225,9 +266,8 @@ pub mod chimera {
   ];
 
   pub fn set_chimera_misc_allocator(
-    allocator: Arc<impl GlobalAlloc+'static>,
+    tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
-    let tracker = LayoutTracker::new(allocator);
     let ret = CHIMERA_MISC_ALLOCATOR.write().replace(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_misc_allocator(Some(chimera_misc_alloc_func), Some(chimera_misc_free_func))
@@ -242,9 +282,8 @@ pub mod chimera {
   ];
 
   pub fn set_chimera_scratch_allocator(
-    allocator: Arc<impl GlobalAlloc+'static>,
+    tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
-    let tracker = LayoutTracker::new(allocator);
     let ret = CHIMERA_SCRATCH_ALLOCATOR.write().replace(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_scratch_allocator(
@@ -280,9 +319,15 @@ pub mod chimera {
   pub fn set_chimera_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
   ) -> Result<(), ChimeraRuntimeError> {
-    set_chimera_db_allocator(allocator.clone())?;
-    set_chimera_misc_allocator(allocator.clone())?;
-    set_chimera_scratch_allocator(allocator)?;
+    for f in [
+      set_chimera_db_allocator,
+      set_chimera_misc_allocator,
+      set_chimera_scratch_allocator,
+    ]
+    .into_iter()
+    {
+      f(LayoutTracker::new(allocator.clone()))?;
+    }
     Ok(())
   }
 }

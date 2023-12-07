@@ -24,9 +24,11 @@ use std::{
   ptr::{self, NonNull},
 };
 
+pub type NativeScratch = hs::hs_scratch;
+
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Scratch(Option<NonNull<hs::hs_scratch>>);
+pub struct Scratch(Option<NonNull<NativeScratch>>);
 
 impl Scratch {
   #[inline]
@@ -73,12 +75,10 @@ impl Scratch {
   }
 
   #[inline]
-  pub(crate) fn as_ref_native(&self) -> Option<&hs::hs_scratch> {
-    self.0.map(|p| unsafe { p.as_ref() })
-  }
+  pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
 
   #[inline]
-  pub(crate) fn as_mut_native(&mut self) -> Option<&mut hs::hs_scratch> {
+  pub fn as_mut_native(&mut self) -> Option<&mut NativeScratch> {
     self.0.map(|mut p| unsafe { p.as_mut() })
   }
 
@@ -399,9 +399,11 @@ pub mod chimera {
 
   use async_stream::stream;
 
+  pub type NativeChimeraScratch = hs::ch_scratch;
+
   #[derive(Debug)]
   #[repr(transparent)]
-  pub struct ChimeraScratch(Option<NonNull<hs::ch_scratch>>);
+  pub struct ChimeraScratch(Option<NonNull<NativeChimeraScratch>>);
 
   impl ChimeraScratch {
     #[inline]
@@ -417,12 +419,12 @@ pub mod chimera {
     }
 
     #[inline]
-    pub(crate) fn as_ref_native(&self) -> Option<&hs::ch_scratch> {
+    pub fn as_ref_native(&self) -> Option<&NativeChimeraScratch> {
       self.0.map(|p| unsafe { p.as_ref() })
     }
 
     #[inline]
-    pub(crate) fn as_mut_native(&mut self) -> Option<&mut hs::ch_scratch> {
+    pub fn as_mut_native(&mut self) -> Option<&mut NativeChimeraScratch> {
       self.0.map(|mut p| unsafe { p.as_mut() })
     }
 

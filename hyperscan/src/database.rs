@@ -38,10 +38,10 @@ impl Database {
   pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
 
   #[inline]
-  pub(crate) fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
+  pub fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
 
   #[inline]
-  pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
+  pub fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
 
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
     let mut scratch = Scratch::new();
@@ -638,10 +638,10 @@ pub mod chimera {
     pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
 
     #[inline]
-    pub(crate) fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
+    pub fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
 
     #[inline]
-    pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
+    pub fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
