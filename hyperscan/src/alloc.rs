@@ -113,6 +113,10 @@ macro_rules! allocator {
 
 allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 
+/// **NB: can also use
+/// e.g. [`Database::deserialize_db_at()`](crate::database::Database::deserialize_db_at) to reuse
+/// allocated databases from a prior allocator!**
+///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};

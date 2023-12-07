@@ -18,11 +18,12 @@ use cfg_if::cfg_if;
 use once_cell::sync::Lazy;
 
 use std::{
+  borrow::Cow,
   ffi::CStr,
   mem::{self, MaybeUninit},
   ops,
   os::raw::{c_char, c_void},
-  slice,
+  slice, str,
 };
 #[cfg(feature = "compile")]
 use std::{os::raw::c_uint, ptr};
@@ -368,7 +369,7 @@ impl Database {
   /// # })}
   /// ```
   #[inline]
-  pub fn serialize(&self) -> Result<SerializedDb, HyperscanRuntimeError> {
+  pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
     SerializedDb::serialize_db(self)
   }
 
@@ -388,10 +389,65 @@ impl ops::Drop for Database {
 unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
-#[derive(Debug, Clone)]
-pub struct DbInfo(pub String);
+#[derive(Debug)]
+pub struct MiscAllocation {
+  data: *mut u8,
+  len: usize,
+}
+
+unsafe impl Send for MiscAllocation {}
+unsafe impl Sync for MiscAllocation {}
+
+impl MiscAllocation {
+  #[inline(always)]
+  pub const fn as_ptr(&self) -> *mut u8 { self.data }
+
+  #[inline(always)]
+  pub const fn len(&self) -> usize { self.len }
+
+  #[inline(always)]
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline(always)]
+  pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
+
+  #[inline(always)]
+  pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    unsafe { slice::from_raw_parts_mut(self.data, self.len) }
+  }
+
+  pub unsafe fn free(&mut self) {
+    cfg_if! {
+      if #[cfg(feature = "static")] {
+        alloc::misc_free_func(self.data as *mut c_void);
+      } else {
+        libc::free(self.data as *mut c_void);
+      }
+    }
+  }
+}
+
+impl ops::Drop for MiscAllocation {
+  fn drop(&mut self) {
+    unsafe {
+      self.free();
+    }
+  }
+}
+
+#[derive(Debug)]
+pub struct DbInfo(pub MiscAllocation);
 
 impl DbInfo {
+  pub fn as_str(&self) -> &str {
+    unsafe { str::from_utf8_unchecked(&self.0.as_slice()[..(self.0.len() - 1)]) }
+  }
+
+  pub fn as_mut_str(&mut self) -> &mut str {
+    let without_null = ..(self.0.len() - 1);
+    unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
+  }
+
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*};
@@ -399,7 +455,7 @@ impl DbInfo {
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
   /// let info = DbInfo::extract_db_info(&db)?;
-  /// assert_eq!(&info.0, "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  /// assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
   /// # Ok(())
   /// # }
   /// ```
@@ -409,54 +465,69 @@ impl DbInfo {
       hs::hs_database_info(db.as_ref_native(), info.as_mut_ptr())
     })?;
     let info = unsafe { info.assume_init() };
-    let ret = unsafe { CStr::from_ptr(info) }
-      .to_string_lossy()
-      /* FIXME: avoid copying! */
-      .to_string();
-    unsafe {
-      cfg_if! {
-        if #[cfg(feature = "static")] {
-          alloc::misc_free_func(info as *mut c_void);
-        } else {
-          libc::free(info as *mut c_void);
-        }
-      }
-    }
+    let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
+    assert!(len > 0);
+
+    let ret = MiscAllocation {
+      data: unsafe { mem::transmute(info) },
+      len,
+    };
+
     Ok(Self(ret))
   }
 }
 
-pub struct SerializedDb(Box<[u8]>);
+#[derive(Debug)]
+pub enum DbAllocation<'a> {
+  Misc(MiscAllocation),
+  Rust(Cow<'a, [u8]>),
+}
 
-impl SerializedDb {
-  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
-    let mut serialized: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    let mut length: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_serialize_database(
-        db.as_ref_native(),
-        serialized.as_mut_ptr(),
-        length.as_mut_ptr(),
-      )
-    })?;
-    let serialized = unsafe { serialized.assume_init() };
-    let length = unsafe { length.assume_init() };
-
-    let data: &mut [u8] = unsafe { slice::from_raw_parts_mut(mem::transmute(serialized), length) };
-    /* FIXME: avoid copying! */
-    let ret: Box<[u8]> = data.to_vec().into_boxed_slice();
-    unsafe {
-      cfg_if! {
-        if #[cfg(feature = "static")] {
-          alloc::misc_free_func(serialized as *mut c_void);
-        } else {
-          libc::free(serialized as *mut c_void);
-        }
-      }
+impl<'a> DbAllocation<'a> {
+  #[inline(always)]
+  pub fn as_ptr(&self) -> *const u8 {
+    match self {
+      Self::Misc(misc) => misc.as_ptr(),
+      Self::Rust(ref cow) => cow.as_ptr(),
     }
-    Ok(Self(ret))
   }
 
+  #[inline(always)]
+  pub fn len(&self) -> usize {
+    match self {
+      Self::Misc(misc) => misc.len(),
+      Self::Rust(ref cow) => cow.len(),
+    }
+  }
+
+  #[inline(always)]
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  #[inline(always)]
+  pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct SerializedDb<'a>(pub DbAllocation<'a>);
+
+impl SerializedDb<'static> {
+  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
+    let mut data: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    let mut len: MaybeUninit<usize> = MaybeUninit::uninit();
+
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_serialize_database(db.as_ref_native(), data.as_mut_ptr(), len.as_mut_ptr())
+    })?;
+
+    let data: *mut u8 = unsafe { mem::transmute(data.assume_init()) };
+    let len = unsafe { len.assume_init() };
+
+    Ok(Self(DbAllocation::Misc(MiscAllocation { data, len })))
+  }
+}
+
+impl<'a> SerializedDb<'a> {
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*};
@@ -464,7 +535,7 @@ impl SerializedDb {
   /// let expr: Expression = "a+".parse()?;
   /// let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
   /// let info = serialized_db.extract_db_info()?;
-  /// assert_eq!(&info.0, "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  /// assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
   /// # Ok(())
   /// # }
   /// ```
@@ -474,30 +545,25 @@ impl SerializedDb {
       hs::hs_serialized_database_info(self.as_ptr(), self.len(), info.as_mut_ptr())
     })?;
     let info = unsafe { info.assume_init() };
-    let ret = unsafe { CStr::from_ptr(info) }
-      .to_string_lossy()
-      /* FIXME: avoid copying! */
-      .to_string();
-    unsafe {
-      cfg_if! {
-        if #[cfg(feature = "static")] {
-          alloc::misc_free_func(info as *mut c_void);
-        } else {
-          libc::free(info as *mut c_void);
-        }
-      }
-    }
+    let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
+    assert!(len > 0);
+
+    let ret = MiscAllocation {
+      data: unsafe { mem::transmute(info) },
+      len,
+    };
+
     Ok(DbInfo(ret))
   }
 
   #[inline]
-  const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
+  fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
   #[inline]
-  pub const fn len(&self) -> usize { self.0.len() }
+  pub fn len(&self) -> usize { self.0.len() }
 
   #[inline]
-  pub const fn is_empty(&self) -> bool { self.0.is_empty() }
+  pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
   pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();

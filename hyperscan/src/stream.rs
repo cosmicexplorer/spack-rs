@@ -161,6 +161,9 @@ unsafe extern "C" fn match_slice_stream(
   result.into_native()
 }
 
+/* TODO: expose hs::hs_stream like we do for Database and Scratch! We don't
+ * currently do that but it's very easy to do once we have a use case for
+ * separating LiveStream, StreamSink, and Streamer. */
 #[derive(Debug)]
 #[repr(transparent)]
 pub(crate) struct LiveStream(*mut hs::hs_stream);
