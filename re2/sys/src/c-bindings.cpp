@@ -36,15 +36,12 @@ StringMut StringWrapper::as_mut_view() {
 }
 
 void NamedCapturingGroups::deref(NamedGroup *out) const {
-  assert(!completed());
-
   out->name_ = absl::string_view(it_->second);
   assert(it_->first > 0);
   out->index_ = it_->first;
 }
 
 void NamedCapturingGroups::advance() {
-  assert(!completed());
   ++it_;
 }
 

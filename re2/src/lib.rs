@@ -41,6 +41,7 @@ unsafe fn array_assume_init<T: Sized, const N: usize>(x: [MaybeUninit<T>; N]) ->
   ptr::read(y)
 }
 
+#[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct NamedGroup<'a> {
   inner: re2_c::NamedGroup,
@@ -72,14 +73,14 @@ impl<'a> fmt::Debug for NamedGroup<'a> {
 }
 
 #[repr(transparent)]
-pub struct NamedCapturingGroups<'a> {
+struct NamedCapturingGroups<'a> {
   inner: re2_c::NamedCapturingGroups,
   _ph: PhantomData<&'a u8>,
 }
 
 impl<'a> NamedCapturingGroups<'a> {
   #[inline]
-  pub(crate) const unsafe fn from_native(inner: re2_c::NamedCapturingGroups) -> Self {
+  const unsafe fn from_native(inner: re2_c::NamedCapturingGroups) -> Self {
     Self {
       inner,
       _ph: PhantomData,
@@ -119,6 +120,87 @@ impl<'a> Iterator for NamedCapturingGroups<'a> {
     Some(ret)
   }
 }
+
+struct NamedAndNumberedGroups<'a> {
+  at_start: bool,
+  total_num_captures: usize,
+  groups_iter: Option<NamedCapturingGroups<'a>>,
+  next_named_group: Option<NamedGroup<'a>>,
+  cur_index: usize,
+}
+
+impl<'a> NamedAndNumberedGroups<'a> {
+  const fn remaining(&self) -> usize {
+    if self.at_start {
+      self.total_num_captures + 1
+    } else {
+      self.total_num_captures - self.cur_index + 1
+    }
+  }
+}
+
+impl<'a> Iterator for NamedAndNumberedGroups<'a> {
+  type Item = Option<&'a str>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    let Self {
+      ref mut at_start,
+      ref total_num_captures,
+      ref mut groups_iter,
+      ref mut next_named_group,
+      ref mut cur_index,
+    } = self;
+
+    /* Return 0th submatch (for whole pattern). */
+    if *at_start {
+      *at_start = false;
+      *cur_index = 1;
+      return Some(None);
+    }
+
+    if *cur_index > *total_num_captures {
+      return None;
+    }
+
+    if next_named_group.is_none() {
+      let reset_groups_iter = if let Some(ref mut g) = groups_iter {
+        if g.completed() {
+          true
+        } else {
+          *next_named_group = Some(g.deref());
+          g.advance();
+          false
+        }
+      } else {
+        false
+      };
+      if reset_groups_iter {
+        *groups_iter = None;
+      }
+    }
+    let ret = if let Some(named_group) = next_named_group {
+      if *cur_index < *named_group.index() {
+        None
+      } else {
+        debug_assert_eq!(cur_index, named_group.index());
+        Some(named_group.name().as_str())
+      }
+    } else {
+      None
+    };
+    if ret.is_some() {
+      *next_named_group = None;
+    }
+
+    *cur_index += 1;
+
+    Some(ret)
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) { (self.remaining(), Some(self.remaining())) }
+}
+
+impl<'a> ExactSizeIterator for NamedAndNumberedGroups<'a> {}
 
 #[repr(transparent)]
 pub struct RE2(re2_c::RE2Wrapper);
@@ -255,8 +337,33 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn named_groups(&self) -> impl Iterator<Item=NamedGroup<'_>>+'_ {
+  pub fn named_groups(&self) -> impl Iterator<Item=NamedGroup<'_>>+'_ { self.make_named_groups() }
+
+  fn make_named_groups(&self) -> NamedCapturingGroups<'_> {
     unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
+  /// assert_eq!(5, r.num_captures());
+  ///
+  /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups().enumerate().collect();
+  /// assert_eq!(
+  ///   &indexed,
+  ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)]
+  /// );
+  /// # Ok(())
+  /// # }
+  #[inline]
+  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+'_ {
+    NamedAndNumberedGroups {
+      at_start: true,
+      total_num_captures: self.num_captures(),
+      groups_iter: Some(self.make_named_groups()),
+      next_named_group: None,
+      cur_index: 0,
+    }
   }
 
   #[inline]
