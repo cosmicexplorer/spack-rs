@@ -25,6 +25,7 @@ cfg-if                  = "1"
 displaydoc.workspace    = true
 futures-core.workspace  = true
 futures-util.workspace  = true
+indexmap.workspace      = true
 libc.workspace          = true
 num_enum.workspace      = true
 once_cell.workspace     = true

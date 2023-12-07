@@ -924,6 +924,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "hyperscan-async-sys",
+ "indexmap 1.9.3",
  "libc",
  "num_enum",
  "once_cell",
