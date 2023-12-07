@@ -130,6 +130,7 @@ impl From<re2::RE2_Options> for Options {
       word_boundary_,
       one_line_,
     } = x;
+    assert!(max_mem_ >= 0);
     Self {
       max_mem: max_mem_ as u32,
       encoding: encoding_.try_into().unwrap(),
@@ -154,8 +155,9 @@ impl From<CannedOptions> for Options {
 
 impl Default for Options {
   fn default() -> Self {
+    static_assertions::const_assert!(re2::RE2_Options_kDefaultMaxMem >= 0);
     Self {
-      max_mem: 8 << 20,
+      max_mem: re2::RE2_Options_kDefaultMaxMem as u32,
       encoding: Encoding::Utf8,
       posix_syntax: false,
       longest_match: false,
