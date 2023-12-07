@@ -36,7 +36,7 @@ name                    = "spack"
 
 [workspace.dependencies]
 hyperscan-async         = { path = "hyperscan" }
-hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.3" }
+hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.4" }
 re2                     = { path = "re2" }
 re2-sys                 = { path = "re2/sys", version = "0.0.2" }
 spack                   = { path = ".", version = "0.0.3", package = "spack-rs" }
