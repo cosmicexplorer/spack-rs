@@ -558,6 +558,32 @@ impl RE2 {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view(
   ///   "all the king's horses and all the king's men".into());
+  /// assert_eq!(2, r.replace_n(&mut s, "duh", 3));
+  /// assert_eq!(
+  ///   s.as_view().as_str(),
+  ///   "all duh king's horses and all duh king's men",
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn replace_n(&self, text: &mut StringWrapper, rewrite: &str, limit: usize) -> usize {
+    if limit == 0 {
+      self.global_replace(text, rewrite)
+    } else {
+      let mut num_replacements_made: usize = 0;
+      while self.replace(text, rewrite) {
+        num_replacements_made += 1;
+      }
+      num_replacements_made
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view(
+  ///   "all the king's horses and all the king's men".into());
   /// assert_eq!(2, r.global_replace(&mut s, "duh"));
   /// assert_eq!(
   ///   s.as_view().as_str(),
