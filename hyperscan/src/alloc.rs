@@ -32,7 +32,7 @@ unsafe impl Sync for LayoutTracker {}
 impl ops::Drop for LayoutTracker {
   fn drop(&mut self) {
     if !self.layouts.get_mut().is_empty() {
-      unreachable!("can't drop LayoutTracker with pending allocations!");
+      unreachable!("can't drop LayoutTracker with pending allocations as this would leak memory");
     }
   }
 }
@@ -47,8 +47,13 @@ impl LayoutTracker {
 
   pub fn allocator(&self) -> Arc<dyn GlobalAlloc> { Arc::clone(&self.allocator) }
 
-  pub fn current_allocations(&mut self) -> Vec<NonNull<u8>> {
-    self.layouts.get_mut().keys().cloned().collect()
+  pub fn current_allocations(&mut self) -> Vec<(NonNull<u8>, Layout)> {
+    self
+      .layouts
+      .get_mut()
+      .iter()
+      .map(|(x, y)| (*x, *y))
+      .collect()
   }
 }
 
@@ -113,17 +118,15 @@ macro_rules! allocator {
 
 allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 
-/// **NB: can also use
-/// e.g. [`Database::deserialize_db_at()`](crate::database::Database::deserialize_db_at) to reuse
-/// allocated databases from a prior allocator!**
-///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
 /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
 /// use futures_util::TryStreamExt;
 /// use std::{alloc::System, mem::ManuallyDrop, sync::Arc};
 ///
+/// // Set the process-global allocator to use for Database instances:
 /// let tracker = LayoutTracker::new(Arc::new(System));
+/// // There was no custom allocator registered yet.
 /// assert!(set_db_allocator(tracker).unwrap().is_none());
 ///
 /// let expr: Expression = "asdf".parse()?;
@@ -133,26 +136,42 @@ allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 ///
 /// // Change the allocator to a fresh LayoutTracker:
 /// let mut tracker = set_db_allocator(LayoutTracker::new(Arc::new(System))).unwrap().unwrap();
-/// // Get the extant allocations:
+/// // Get the extant allocations from the old LayoutTracker:
 /// let allocs = tracker.current_allocations();
 /// // Verify that only the single known db was allocated:
 /// assert_eq!(1, allocs.len());
+/// let (p, layout) = allocs[0];
 /// let db_ptr: *mut NativeDb = db.as_mut_native();
-/// assert_eq!(allocs[0].as_ptr() as *mut NativeDb, db_ptr);
+/// assert_eq!(p.as_ptr() as *mut NativeDb, db_ptr);
 ///
 /// // Despite having reset the allocator, our previous db is still valid and can be used for
 /// // matching:
 /// let mut scratch = db.allocate_scratch()?;
-/// let matches: Vec<&str> = scratch.scan(&db, "asdfasdf".into(), |_| MatchResult::Continue)
+/// let matches: Vec<&str> = scratch.scan(&db, "asdf asdf".into(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(m.source.as_str()) })
 ///   .try_collect()
 ///   .await?;
 /// assert_eq!(&matches, &["asdf", "asdf"]);
 ///
+/// // We can deserialize something from somewhere else into the db handle:
+/// let expr: Literal = "hello".parse()?;
+/// let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
+/// // Ensure the allocated database is large enough to contain the deserialized one:
+/// assert!(layout.size() >= serialized_db.deserialized_size()?);
+/// // NB: overwrite the old database!
+/// unsafe { serialized_db.deserialize_db_at(db.as_mut_native())?; }
+///
+/// // Reuse the same database object now:
+/// let mut scratch = db.allocate_scratch()?;
+/// let matches: Vec<&str> = scratch.scan(&db, "hello hello".into(), |_| MatchResult::Continue)
+///   .and_then(|m| async move { Ok(m.source.as_str()) })
+///   .try_collect()
+///   .await?;
+/// assert_eq!(&matches, &["hello", "hello"]);
+///
 /// // Need to deallocate the db by hand in order to drop the original LayoutTracker
 /// // without panicking:
-/// tracker.deallocate(allocs[0]);
-///
+/// tracker.deallocate(p);
 /// // NB: `db` is now INVALID and points to FREED MEMORY!!!
 /// # Ok(())
 /// # })}
