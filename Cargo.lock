@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "hyperscan-async"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "async-stream",
  "cfg-if",
@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "hyperscan-async-sys"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "bindgen",
  "eyre",
