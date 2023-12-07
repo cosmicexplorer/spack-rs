@@ -488,7 +488,7 @@ impl<'a> DbAllocation<'a> {
   pub fn as_ptr(&self) -> *const u8 {
     match self {
       Self::Misc(misc) => misc.as_ptr(),
-      Self::Rust(ref cow) => cow.as_ptr(),
+      Self::Rust(cow) => cow.as_ptr(),
     }
   }
 
@@ -496,7 +496,7 @@ impl<'a> DbAllocation<'a> {
   pub fn len(&self) -> usize {
     match self {
       Self::Misc(misc) => misc.len(),
-      Self::Rust(ref cow) => cow.len(),
+      Self::Rust(cow) => cow.len(),
     }
   }
 
