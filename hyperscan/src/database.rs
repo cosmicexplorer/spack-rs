@@ -60,11 +60,11 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
-  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK)?;
+  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -83,9 +83,9 @@ impl Database {
     expression: &Expression,
     flags: Flags,
     mode: Mode,
+    platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
     let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
-    let platform = Platform::get();
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -107,11 +107,11 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
-  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK)?;
+  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -130,9 +130,9 @@ impl Database {
     literal: &Literal,
     flags: Flags,
     mode: Mode,
+    platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
     let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
-    let platform = Platform::get();
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -155,7 +155,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -169,7 +169,7 @@ impl Database {
   ///   .with_ids([ExprId(1), ExprId(2)])
   ///   .with_exts([None, Some(&ext)]);
   ///
-  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK)?;
+  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -194,9 +194,9 @@ impl Database {
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
+    platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
     mode.validate_db_type()?;
-    let platform = Platform::get();
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -234,7 +234,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
@@ -243,7 +243,7 @@ impl Database {
   ///   .with_flags([Flags::default(), Flags::default()])
   ///   .with_ids([ExprId(2), ExprId(1)]);
   ///
-  /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK)?;
+  /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -272,9 +272,9 @@ impl Database {
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
+    platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
     mode.validate_db_type()?;
-    let platform = Platform::get();
 
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -603,10 +603,10 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, state::*};
     ///
     /// let expr: ChimeraExpression = "(he)ll".parse()?;
-    /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS, Platform::get())?;
     /// # Ok(())
     /// # })}
     /// ```
@@ -614,9 +614,8 @@ pub mod chimera {
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
       mode: ChimeraMode,
+      platform: &Platform,
     ) -> Result<Self, ChimeraCompileError> {
-      let platform = Platform::get();
-
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
       ChimeraRuntimeError::copy_from_native_compile_error(
@@ -637,7 +636,7 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
+    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*, state::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
@@ -646,7 +645,7 @@ pub mod chimera {
     ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
     ///   .with_ids([ExprId(1), ExprId(2)])
     ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
-    /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS)?;
+    /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS, Platform::get())?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
@@ -661,9 +660,8 @@ pub mod chimera {
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
+      platform: &Platform,
     ) -> Result<Self, ChimeraCompileError> {
-      let platform = Platform::get();
-
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
       ChimeraRuntimeError::copy_from_native_compile_error(

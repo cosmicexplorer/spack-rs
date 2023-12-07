@@ -8,6 +8,7 @@ use crate::{
   error::{HyperscanCompileError, HyperscanRuntimeError},
   flags::{ExtFlags, Flags, Mode},
   hs,
+  state::Platform,
 };
 
 use displaydoc::Display;
@@ -113,7 +114,7 @@ impl Expression {
   }
 
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile(self, flags, mode)
+    Database::compile(self, flags, mode, Platform::get())
   }
 }
 
@@ -149,7 +150,7 @@ impl Literal {
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
 
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_literal(self, flags, mode)
+    Database::compile_literal(self, flags, mode, Platform::get())
   }
 }
 
@@ -211,7 +212,7 @@ impl<'a> ExpressionSet<'a> {
   }
 
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_multi(&self, mode)
+    Database::compile_multi(&self, mode, Platform::get())
   }
 
   #[inline]
@@ -546,7 +547,7 @@ impl<'a> LiteralSet<'a> {
   }
 
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_multi_literal(&self, mode)
+    Database::compile_multi_literal(&self, mode, Platform::get())
   }
 
   #[inline]
@@ -585,6 +586,7 @@ pub mod chimera {
     database::chimera::ChimeraDb,
     error::chimera::ChimeraCompileError,
     flags::chimera::{ChimeraFlags, ChimeraMode},
+    state::Platform,
   };
 
   use std::{
@@ -626,7 +628,7 @@ pub mod chimera {
       flags: ChimeraFlags,
       mode: ChimeraMode,
     ) -> Result<ChimeraDb, ChimeraCompileError> {
-      ChimeraDb::compile(self, flags, mode)
+      ChimeraDb::compile(self, flags, mode, Platform::get())
     }
   }
 
@@ -686,7 +688,7 @@ pub mod chimera {
     }
 
     pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
-      ChimeraDb::compile_multi(&self, mode)
+      ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
 
     #[inline]
