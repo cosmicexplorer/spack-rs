@@ -20,7 +20,7 @@ jobs:
           # - -p spack-rs
           # - -p hyperscan-async
           # This fails because of feature selection???
-          # - -p re2
+          - -p re2
     runs-on: ubuntu-latest
 
     steps:
@@ -39,17 +39,9 @@ jobs:
       with:
         key: v1
 
-    - id: cache-spack
-      name: cache spack
-      uses: actions/cache@v3
-      env:
-        cache-name: cache-spack-dir-docs-${{ matrix.args }}
-      with:
-        path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v10
-
     - name: check docs
       env:
+        DOCS_RS: y
         RUSTDOCFLAGS: --cfg docsrs
       run: cargo doc ${{ matrix.args }} --all-features -vv
 

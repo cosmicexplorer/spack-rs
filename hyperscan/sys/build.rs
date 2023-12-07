@@ -3,10 +3,7 @@
 
 //! ???
 
-use spack::{
-  metadata_spec::spec,
-  utils::declarative::{bindings, resolve},
-};
+use spack::utils::declarative::{bindings, resolve};
 
 use bindgen;
 use tokio::fs;
@@ -18,8 +15,10 @@ async fn main() -> eyre::Result<()> {
   /* let outfile = PathBuf::from("src").join("bindings.rs"); */
   let outfile = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
 
-  if let Ok(_) = env::var("DOCS_RS") {
-    fs::write(outfile, b"").await?;
+  if env::var("DOCS_RS").is_ok() {
+    let stub = fs::read("src/hs_stub.rs").await?;
+    fs::write(outfile, stub).await?;
+    println!("cargo:joined_rpath=");
     return Ok(());
   }
 
