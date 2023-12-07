@@ -5,27 +5,27 @@
 
 #[cfg(feature = "static")]
 use crate::alloc;
+use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 #[cfg(feature = "compile")]
 use crate::{
-  error::HyperscanCompileError,
+  error::{HyperscanCompileError, HyperscanFlagsError},
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
-};
-use crate::{
-  error::{HyperscanFlagsError, HyperscanRuntimeError},
-  flags::{Flags, Mode},
-  hs,
-  state::{Platform, Scratch},
+  flags::{CpuFeatures, Flags, Mode, TuneFamily},
 };
 
 use cfg_if::cfg_if;
+#[cfg(feature = "compile")]
+use once_cell::sync::Lazy;
 
 use std::{
   ffi::CStr,
   mem::{self, MaybeUninit},
   ops,
-  os::raw::{c_char, c_uint, c_void},
-  ptr, slice,
+  os::raw::{c_char, c_void},
+  slice,
 };
+#[cfg(feature = "compile")]
+use std::{os::raw::c_uint, ptr};
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -49,6 +49,7 @@ impl Database {
     Ok(scratch)
   }
 
+  #[cfg(feature = "compile")]
   fn validate_flags_and_mode(
     flags: Flags,
     mode: Mode,
@@ -60,7 +61,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
@@ -107,7 +108,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
@@ -155,7 +156,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -234,7 +235,7 @@ impl Database {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}, state::*};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
@@ -563,15 +564,56 @@ impl SerializedDb {
   }
 }
 
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct Platform(hs::hs_platform_info);
+
+#[cfg(feature = "compile")]
+static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
+
+#[cfg(feature = "compile")]
+impl Platform {
+  #[inline]
+  pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
+
+  #[inline]
+  pub fn set_tune(&mut self, tune: TuneFamily) { self.0.tune = tune.into_native(); }
+
+  #[inline]
+  pub fn cpu_features(&self) -> CpuFeatures { CpuFeatures::from_native(self.0.cpu_features) }
+
+  #[inline]
+  pub fn set_cpu_features(&mut self, cpu_features: CpuFeatures) {
+    self.0.cpu_features = cpu_features.into_native();
+  }
+
+  #[inline]
+  fn populate() -> Result<Self, HyperscanRuntimeError> {
+    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
+    Ok(unsafe { Self(s.assume_init()) })
+  }
+
+  #[inline]
+  pub fn get() -> &'static Self { &CACHED_PLATFORM }
+
+  #[inline]
+  pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
+}
+
+
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
+  use super::Platform;
   use crate::{
     error::chimera::{ChimeraCompileError, ChimeraRuntimeError},
     expression::chimera::{ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits},
     flags::chimera::{ChimeraFlags, ChimeraMode},
     hs,
-    state::{chimera::ChimeraScratch, Platform},
+    state::chimera::ChimeraScratch,
   };
 
   use cfg_if::cfg_if;
@@ -603,7 +645,7 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, state::*};
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::{*, chimera::*}};
     ///
     /// let expr: ChimeraExpression = "(he)ll".parse()?;
     /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS, Platform::get())?;
@@ -636,7 +678,7 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*, state::*};
+    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::{*, chimera::*}, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;

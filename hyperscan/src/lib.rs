@@ -21,6 +21,8 @@ pub mod error;
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 pub mod expression;
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 pub mod flags;
 pub mod matchers;
 pub mod state;

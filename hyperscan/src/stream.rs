@@ -836,19 +836,21 @@ impl CompressedStream {
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "compile"))]
 mod test {
   use super::*;
-  use crate::flags::{Flags, Mode};
+  use crate::{
+    expression::Expression,
+    flags::{Flags, Mode},
+  };
 
   use futures_util::StreamExt;
 
   use std::{mem, sync::Arc};
 
-  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn clone_scratch() -> Result<(), eyre::Report> {
-    let expr: crate::expression::Expression = "asdf$".parse()?;
+    let expr: Expression = "asdf$".parse()?;
     let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
 
     let scratch = Arc::new(db.allocate_scratch()?);
@@ -866,10 +868,9 @@ mod test {
     Ok(())
   }
 
-  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn compress() -> Result<(), eyre::Report> {
-    let expr: crate::expression::Expression = "a+".parse()?;
+    let expr: Expression = "a+".parse()?;
     let db = expr.compile(
       Flags::UTF8 | Flags::SOM_LEFTMOST,
       Mode::STREAM | Mode::SOM_HORIZON_LARGE,

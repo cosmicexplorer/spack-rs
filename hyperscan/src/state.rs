@@ -6,7 +6,6 @@
 use crate::{
   database::Database,
   error::HyperscanRuntimeError,
-  flags::{CpuFeatures, TuneFamily},
   hs,
   matchers::{
     contiguous_slice::{match_slice_ref, Match, SliceMatcher},
@@ -17,7 +16,6 @@ use crate::{
 
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use once_cell::sync::Lazy;
 use tokio::task;
 
 use std::{
@@ -25,41 +23,6 @@ use std::{
   pin::Pin,
   ptr::{self, NonNull},
 };
-
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct Platform(hs::hs_platform_info);
-
-static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
-
-impl Platform {
-  #[inline]
-  pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
-
-  #[inline]
-  pub fn set_tune(&mut self, tune: TuneFamily) { self.0.tune = tune.into_native(); }
-
-  #[inline]
-  pub fn cpu_features(&self) -> CpuFeatures { CpuFeatures::from_native(self.0.cpu_features) }
-
-  #[inline]
-  pub fn set_cpu_features(&mut self, cpu_features: CpuFeatures) {
-    self.0.cpu_features = cpu_features.into_native();
-  }
-
-  #[inline]
-  fn populate() -> Result<Self, HyperscanRuntimeError> {
-    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
-    Ok(unsafe { Self(s.assume_init()) })
-  }
-
-  #[inline]
-  pub fn get() -> &'static Self { &CACHED_PLATFORM }
-
-  #[inline]
-  pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
-}
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -364,9 +327,10 @@ impl ops::Drop for Scratch {
 unsafe impl Send for Scratch {}
 unsafe impl Sync for Scratch {}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "compile"))]
 mod test {
   use crate::{
+    expression::Expression,
     flags::{Flags, Mode},
     matchers::MatchResult,
   };
@@ -375,10 +339,9 @@ mod test {
 
   use std::{mem::ManuallyDrop, sync::Arc};
 
-  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn try_clone_still_valid() -> Result<(), eyre::Report> {
-    let a_expr: crate::expression::Expression = "asdf$".parse()?;
+    let a_expr: Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 
     /* Allocate a new scratch. */
@@ -406,10 +369,9 @@ mod test {
     Ok(())
   }
 
-  #[cfg(feature = "compile")]
   #[tokio::test]
   async fn make_mut() -> Result<(), eyre::Report> {
-    let a_expr: crate::expression::Expression = "asdf$".parse()?;
+    let a_expr: Expression = "asdf$".parse()?;
     let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
 
     /* Allocate a new scratch into an Arc. */

@@ -3,11 +3,14 @@
 
 //! ???
 
-use crate::{hs, matchers::ExpressionIndex};
+use crate::hs;
+#[cfg(feature = "compile")]
+use crate::matchers::ExpressionIndex;
 
 use displaydoc::Display;
 use thiserror::Error;
 
+#[cfg(feature = "compile")]
 use std::{
   ffi::{CStr, NulError},
   os::raw::c_uint,

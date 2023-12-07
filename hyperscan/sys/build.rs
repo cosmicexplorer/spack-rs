@@ -48,16 +48,19 @@ async fn main() -> eyre::Result<()> {
      * don't compile. */
     .generate_comments(false)
     .fit_macro_constants(true)
-    .header("src/hs.h")
-    .raw_line("#[allow(unused, non_camel_case_types, improper_ctypes, clippy::all)]");
-  bindings = bindings.allowlist_item("hs.*");
-  bindings = bindings.allowlist_item("HS.*");
-  bindings = bindings.allowlist_item("ch.*");
-  bindings = bindings.allowlist_item("CH.*");
+    .header("src/hs.h");
   for p in prefixes.into_iter() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
   }
+
+  bindings = bindings.allowlist_item("hs.*");
+  bindings = bindings.allowlist_item("HS.*");
+  if !cfg!(feature = "compile") {
+    bindings = bindings.clang_arg("-D__HS_RUNTIME_ONLY__");
+  }
   if cfg!(feature = "chimera") {
+    bindings = bindings.allowlist_item("ch.*");
+    bindings = bindings.allowlist_item("CH.*");
     bindings = bindings.clang_arg("-D__INCLUDE_CHIMERA__");
   }
   bindings.generate()?.write_to_file(outfile)?;

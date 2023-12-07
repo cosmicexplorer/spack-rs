@@ -4,11 +4,10 @@
 //! ???
 
 use crate::{
-  database::Database,
+  database::{Database, Platform},
   error::{HyperscanCompileError, HyperscanRuntimeError},
   flags::{ExtFlags, Flags, Mode},
   hs,
-  state::Platform,
 };
 
 use displaydoc::Display;
@@ -583,10 +582,9 @@ impl<'a> LiteralSet<'a> {
 pub mod chimera {
   use super::ExprId;
   use crate::{
-    database::chimera::ChimeraDb,
+    database::{chimera::ChimeraDb, Platform},
     error::chimera::ChimeraCompileError,
     flags::chimera::{ChimeraFlags, ChimeraMode},
-    state::Platform,
   };
 
   use std::{
