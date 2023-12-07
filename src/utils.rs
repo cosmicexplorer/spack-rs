@@ -176,10 +176,7 @@ pub mod prefix {
   use thiserror::Error;
   use walkdir;
 
-  use std::{
-    env,
-    path::{Path, PathBuf},
-  };
+  use std::path::{Path, PathBuf};
 
   #[derive(Debug, Display, Error)]
   pub enum PrefixTraversalError {

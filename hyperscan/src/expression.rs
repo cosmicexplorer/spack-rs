@@ -22,8 +22,8 @@ use std::{
 };
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
-/// use hyperscan_async::{expression::*, flags::Flags};
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// use hyperscan::{expression::*, flags::Flags};
 ///
 /// let expr: Expression = "(he)llo".parse()?;
 /// let info = expr.info(Flags::default())?;

@@ -59,8 +59,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
@@ -106,8 +106,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
@@ -154,8 +154,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -233,8 +233,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
@@ -298,8 +298,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
-  /// use hyperscan_async::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -322,8 +322,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
-  /// use hyperscan_async::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
@@ -349,8 +349,8 @@ impl Database {
   pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -392,8 +392,8 @@ pub struct DbInfo(pub String);
 
 impl DbInfo {
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
-  /// use hyperscan_async::{expression::*, flags::*, database::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, database::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -457,8 +457,8 @@ impl SerializedDb {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> {
-  /// use hyperscan_async::{expression::*, flags::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*};
   ///
   /// let expr: Expression = "a+".parse()?;
   /// let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
@@ -526,8 +526,8 @@ impl SerializedDb {
   /// [`Self::deserialized_size()`] in size!**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
   /// use futures_util::TryStreamExt;
   /// use std::mem;
   ///
@@ -602,8 +602,8 @@ pub mod chimera {
     pub(crate) fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
     ///
     /// let expr: ChimeraExpression = "(he)ll".parse()?;
     /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
@@ -636,8 +636,8 @@ pub mod chimera {
     }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
@@ -739,8 +739,8 @@ pub mod chimera {
 
   impl ChimeraDbInfo {
     ///```
-    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
-    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
     /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;

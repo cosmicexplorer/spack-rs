@@ -195,12 +195,12 @@ pub fn set_stream_allocator(
 }
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-/// use hyperscan_async::{expression::*, flags::*, matchers::*};
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, flags::*, matchers::*};
 /// use futures_util::TryStreamExt;
 /// use std::{alloc::System, sync::Arc};
 ///
-/// hyperscan_async::alloc::set_allocator(Arc::new(System))?;
+/// hyperscan::alloc::set_allocator(Arc::new(System))?;
 ///
 /// let expr: Expression = "(he)ll".parse()?;
 /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -341,12 +341,12 @@ pub mod chimera {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
   /// use futures_util::TryStreamExt;
   /// use std::{alloc::System, sync::Arc};
   ///
-  /// hyperscan_async::alloc::chimera::set_chimera_allocator(Arc::new(System))?;
+  /// hyperscan::alloc::chimera::set_chimera_allocator(Arc::new(System))?;
   ///
   /// let expr: ChimeraExpression = "(he)ll".parse()?;
   /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;

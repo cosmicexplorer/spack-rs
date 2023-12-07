@@ -918,22 +918,31 @@ name = "hyperscan-async"
 version = "0.0.0"
 dependencies = [
  "async-stream",
- "bindgen",
  "cfg-if",
  "displaydoc",
  "eyre",
  "futures-core",
  "futures-util",
+ "hyperscan-async-sys",
  "libc",
  "num_enum",
  "once_cell",
  "parking_lot",
- "spack-rs",
  "static_assertions",
  "thiserror",
  "tokio",
  "tokio-stream",
  "tokio-test",
+]
+
+[[package]]
+name = "hyperscan-async-sys"
+version = "0.0.0"
+dependencies = [
+ "bindgen",
+ "eyre",
+ "spack-rs",
+ "tokio",
 ]
 
 [[package]]

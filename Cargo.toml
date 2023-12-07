@@ -4,6 +4,7 @@ members                 = [
     "re2",
     "re2/sys",
     "hyperscan",
+    "hyperscan/sys",
     "super-process",
 ]
 default-members         = [
@@ -11,6 +12,7 @@ default-members         = [
     "re2",
     "re2/sys",
     "hyperscan",
+    "hyperscan/sys",
     "super-process",
 ]
 resolver                = "2"
@@ -33,7 +35,8 @@ authors.workspace       = true
 name                    = "spack"
 
 [workspace.dependencies]
-hyperscan-async         = { path = "hyperscan", package = "hyperscan" }
+hyperscan-async         = { path = "hyperscan" }
+hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.0" }
 re2                     = { path = "re2" }
 re2-sys                 = { path = "re2/sys", version = "0.0.0" }
 spack                   = { path = ".", version = "0.0.1", package = "spack-rs" }

@@ -11,10 +11,7 @@
 /* Generate docs.rs info for feature switches. */
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-mod bindings {
-  include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
-pub(crate) use bindings::root as hs;
+pub(crate) use hyperscan_async_sys::hs;
 
 #[cfg(feature = "static")]
 #[cfg_attr(docsrs, doc(cfg(feature = "static")))]
@@ -30,17 +27,19 @@ pub mod state;
 pub mod stream;
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanRuntimeError> {
-/// hyperscan_async::check_valid_platform()?;
+/// # fn main() -> Result<(), hyperscan::error::HyperscanRuntimeError> {
+/// hyperscan::check_valid_platform()?;
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(feature = "compile")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 pub fn check_valid_platform() -> Result<(), error::HyperscanRuntimeError> {
   error::HyperscanRuntimeError::from_native(unsafe { hs::hs_valid_platform() })
 }
 
 ///```
-/// let v = hyperscan_async::hyperscan_version().to_str().unwrap();
+/// let v = hyperscan::hyperscan_version().to_str().unwrap();
 /// assert!(v.starts_with("5.4.2 2023"));
 /// ```
 pub fn hyperscan_version() -> &'static std::ffi::CStr {
@@ -48,7 +47,7 @@ pub fn hyperscan_version() -> &'static std::ffi::CStr {
 }
 
 ///```
-/// let v = hyperscan_async::chimera_version().to_str().unwrap();
+/// let v = hyperscan::chimera_version().to_str().unwrap();
 /// assert!(v.starts_with("5.4.2 2023"));
 /// ```
 #[cfg(feature = "chimera")]

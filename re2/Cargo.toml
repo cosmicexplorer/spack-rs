@@ -8,7 +8,7 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = []
+default                 = ["dynamic"]
 dynamic                 = ["re2-sys/dynamic"]
 static                  = ["re2-sys/static"]
 

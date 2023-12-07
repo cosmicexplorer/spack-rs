@@ -70,8 +70,8 @@ impl Scratch {
   pub const fn new() -> Self { Self(None) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::*, state::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::*, state::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -154,8 +154,8 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
@@ -229,8 +229,8 @@ impl Scratch {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_plus: Expression = "a+".parse()?;
@@ -490,9 +490,9 @@ pub mod chimera {
     }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan_async::error::chimera::ChimeraError> {
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
-    /// use hyperscan_async::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;

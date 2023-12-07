@@ -29,8 +29,8 @@ use std::{
 };
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-/// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*};
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*};
 /// use futures_util::StreamExt;
 ///
 /// let expr: Expression = r"\b\w+\b".parse()?;
@@ -439,8 +439,8 @@ impl AsyncWrite for StreamSink {
 }
 
 ///```
-/// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-/// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*, error::*};
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+/// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
 /// use futures_util::StreamExt;
 /// use tokio::io::AsyncWriteExt;
 ///
@@ -540,8 +540,8 @@ impl Streamer {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, stream::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   ///
   /// let expr: Expression = "a+".parse()?;
@@ -577,8 +577,8 @@ impl Streamer {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, matchers::*, flags::*, stream::*, error::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*, error::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
   ///
@@ -625,8 +625,8 @@ impl Streamer {
   /// **TODO: docs**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, stream::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
   ///
@@ -662,8 +662,8 @@ impl Streamer {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan_async::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan_async::{expression::*, flags::*, stream::*};
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// use hyperscan::{expression::*, flags::*, stream::*};
   /// use futures_util::StreamExt;
   /// use tokio::io::AsyncWriteExt;
   /// use std::ops;

@@ -1,0 +1,50 @@
+[package]
+name                    = "hyperscan-async-sys"
+description             = "Bindings to the hyperscan library via spack."
+version                 = "0.0.0"
+edition.workspace       = true
+license                 = "BSD-3-Clause"
+repository.workspace    = true
+authors.workspace       = true
+links                   = "hyperscan"
+
+[features]
+default                 = []
+static                  = []
+compile                 = []
+dynamic                 = []
+chimera                 = []
+
+[package.metadata.spack.envs.hyperscan-static-with-compile]
+spec                    = "hyperscan@v5.4.2+static~chimera"
+deps                    = { hyperscan = { type = "static", lib_names = ["hs"] } }
+features                = { needed = ["static", "compile"], conflicting = ["chimera"] }
+
+[package.metadata.spack.envs.hyperscan-dynamic-with-compile]
+spec                    = "hyperscan@v5.4.2+shared~chimera"
+deps                    = { hyperscan = { type = "dynamic", lib_names = ["hs"] } }
+features                = { needed = ["dynamic", "compile"], conflicting = ["chimera"] }
+
+[package.metadata.spack.envs.hyperscan-static-runtime-only]
+spec                    = "hyperscan@v5.4.2+static~chimera"
+deps                    = { hyperscan = { type = "static", lib_names = ["hs_runtime"] } }
+features                = { needed = ["static"], conflicting = ["compile", "chimera"] }
+
+[package.metadata.spack.envs.hyperscan-dynamic-runtime-only]
+spec                    = "hyperscan@v5.4.2+shared~chimera"
+deps                    = { hyperscan = { type = "dynamic", lib_names = ["hs_runtime"] } }
+features                = { needed = ["dynamic"], conflicting = ["compile", "chimera"] }
+
+[package.metadata.spack.envs.hyperscan-static-chimera]
+spec                    = "hyperscan@v5.4.2+chimera+static"
+features                = { needed = ["chimera"] }
+
+[package.metadata.spack.envs.hyperscan-static-chimera.deps]
+hyperscan               = { type = "static", lib_names = ["hs", "chimera"] }
+pcre                    = { type = "static", lib_names = ["pcre"] }
+
+[build-dependencies]
+bindgen.workspace       = true
+eyre.workspace          = true
+spack.workspace         = true
+tokio                   = { workspace = true, features = ["rt-multi-thread", "macros", "fs"] }
