@@ -8,120 +8,13 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["dynamic"]
-dynamic                 = []
-static                  = []
-
-[package.metadata.spack.envs.re2-dynamic]
-spec                    = "re2@2023-11-01+shared+pic ^ abseil-cpp+shared cxxstd=20"
-features                = { needed = ["dynamic"], conflicting = ["static"] }
-
-[package.metadata.spack.envs.re2-dynamic.deps.re2]
-type                    = "dynamic"
-lib_names               = ["re2"]
-
-[package.metadata.spack.envs.re2-dynamic.deps.abseil-cpp]
-type                    = "dynamic"
-lib_names               = [
-  "absl_hash",
-  "absl_low_level_hash",
-  "absl_raw_hash_set",
-  "absl_spinlock_wait",
-  "absl_str_format_internal",
-  "absl_strings",
-  "absl_strings_internal",
-  "absl_synchronization",
-]
-
-[package.metadata.spack.envs.re2-static]
-spec                    = "re2@2023-11-01~shared ^ abseil-cpp~shared cxxstd=20"
-features                = { needed = ["static"], conflicting = ["dynamic"] }
-
-[package.metadata.spack.envs.re2-static.deps.re2]
-type                    = "static"
-lib_names               = ["re2"]
-
-# TODO: figure out if there is a smaller subset of these that work!
-[package.metadata.spack.envs.re2-static.deps.abseil-cpp]
-type                    = "static"
-lib_names               = [
-  "absl_base",
-  "absl_city",
-  "absl_debugging_internal",
-  "absl_demangle_internal",
-  "absl_die_if_null",
-  "absl_examine_stack",
-  "absl_exponential_biased",
-  "absl_failure_signal_handler",
-  "absl_flags",
-  "absl_flags_commandlineflag",
-  "absl_flags_commandlineflag_internal",
-  "absl_flags_config",
-  "absl_flags_internal",
-  "absl_flags_marshalling",
-  "absl_flags_parse",
-  "absl_flags_private_handle_accessor",
-  "absl_flags_program_name",
-  "absl_flags_reflection",
-  "absl_flags_usage",
-  "absl_flags_usage_internal",
-  "absl_graphcycles_internal",
-  "absl_hash",
-  "absl_hashtablez_sampler",
-  "absl_int128",
-  "absl_leak_check",
-  "absl_log_entry",
-  "absl_log_flags",
-  "absl_log_globals",
-  "absl_log_initialize",
-  "absl_log_internal_check_op",
-  "absl_log_internal_conditions",
-  "absl_log_internal_format",
-  "absl_log_internal_globals",
-  "absl_log_internal_log_sink_set",
-  "absl_log_internal_message",
-  "absl_log_internal_nullguard",
-  "absl_log_internal_proto",
-  "absl_log_severity",
-  "absl_log_sink",
-  "absl_low_level_hash",
-  "absl_malloc_internal",
-  "absl_periodic_sampler",
-  "absl_random_distributions",
-  "absl_random_internal_distribution_test_util",
-  "absl_random_internal_platform",
-  "absl_random_internal_pool_urbg",
-  "absl_random_internal_randen",
-  "absl_random_internal_randen_hwaes",
-  "absl_random_internal_randen_hwaes_impl",
-  "absl_random_internal_randen_slow",
-  "absl_random_internal_seed_material",
-  "absl_random_seed_gen_exception",
-  "absl_random_seed_sequences",
-  "absl_raw_hash_set",
-  "absl_raw_logging_internal",
-  "absl_scoped_set_env",
-  "absl_spinlock_wait",
-  "absl_stacktrace",
-  "absl_strerror",
-  "absl_str_format_internal",
-  "absl_strings",
-  "absl_strings_internal",
-  "absl_symbolize",
-  "absl_synchronization",
-  "absl_throw_delegate",
-  "absl_time",
-  "absl_time_zone",
-]
-
-[build-dependencies]
-cc                      = "1.0.83"
-bindgen.workspace       = true
-eyre.workspace          = true
-spack.workspace         = true
-tokio                   = { workspace = true, features = ["rt-multi-thread", "macros"] }
+default                 = []
+dynamic                 = ["re2-sys/dynamic"]
+static                  = ["re2-sys/static"]
 
 [dependencies]
+re2-sys.workspace       = true
+
 displaydoc.workspace    = true
 num_enum.workspace      = true
 static_assertions.workspace = true

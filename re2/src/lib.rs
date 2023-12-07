@@ -9,6 +9,8 @@
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 
+pub(crate) use re2_sys::{re2, re2_c};
+
 pub mod error;
 use error::{CompileError, RE2ErrorCode, RewriteError};
 
@@ -19,12 +21,6 @@ pub mod string;
 use string::{StringView, StringWrapper};
 
 pub mod set;
-
-#[allow(unused, improper_ctypes, clippy::all)]
-mod bindings {
-  include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
-pub(crate) use bindings::root::{re2, re2_c_bindings as re2_c};
 
 use std::{
   cmp, fmt, hash,

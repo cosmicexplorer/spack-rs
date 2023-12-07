@@ -170,12 +170,16 @@ pub mod prefix {
   use futures_core::stream::Stream;
   use futures_util::{pin_mut, stream::TryStreamExt};
   use indexmap::{IndexMap, IndexSet};
+  use itertools::Itertools;
   use once_cell::sync::Lazy;
   use regex::Regex;
   use thiserror::Error;
   use walkdir;
 
-  use std::path::{Path, PathBuf};
+  use std::{
+    env,
+    path::{Path, PathBuf},
+  };
 
   #[derive(Debug, Display, Error)]
   pub enum PrefixTraversalError {
@@ -403,9 +407,14 @@ pub mod prefix {
       }
 
       if rpath_behavior == RpathBehavior::SetRpathForContainingDirs {
-        for dir in containing_dirs.into_iter() {
+        for dir in containing_dirs.iter() {
           println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
         }
+        let joined_rpath: String = containing_dirs
+          .into_iter()
+          .map(|p| format!("{}", p.display()))
+          .join(":");
+        println!("cargo:joined_rpath={}", joined_rpath);
       }
     }
   }

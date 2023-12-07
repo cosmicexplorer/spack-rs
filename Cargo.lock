@@ -1421,14 +1421,21 @@ dependencies = [
 name = "re2"
 version = "0.0.0"
 dependencies = [
- "bindgen",
- "cc",
  "displaydoc",
- "eyre",
  "num_enum",
- "spack-rs",
+ "re2-sys",
  "static_assertions",
  "thiserror",
+]
+
+[[package]]
+name = "re2-sys"
+version = "0.0.0"
+dependencies = [
+ "bindgen",
+ "cc",
+ "eyre",
+ "spack-rs",
  "tokio",
 ]
 
@@ -1769,6 +1776,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "indexmap 1.9.3",
+ "itertools",
  "once_cell",
  "parking_lot",
  "regex",
