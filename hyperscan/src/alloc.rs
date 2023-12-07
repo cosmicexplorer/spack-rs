@@ -5,7 +5,7 @@ use crate::{error::HyperscanRuntimeError, hs};
 
 use libc;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use std::{
   alloc::{GlobalAlloc, Layout},
@@ -18,15 +18,15 @@ use std::{
 
 struct LayoutTracker {
   allocator: Arc<dyn GlobalAlloc>,
-  layouts: HashMap<NonNull<u8>, Layout>,
+  layouts: Mutex<HashMap<NonNull<u8>, Layout>>,
 }
 
-/* NB: NonNull<u8> being non-Send disqualifies this as a default impl! */
 unsafe impl Send for LayoutTracker {}
+unsafe impl Sync for LayoutTracker {}
 
 impl ops::Drop for LayoutTracker {
   fn drop(&mut self) {
-    if !self.layouts.is_empty() {
+    if !self.layouts.lock().is_empty() {
       unreachable!("can't drop LayoutTracker with pending allocations!");
     }
   }
@@ -36,32 +36,31 @@ impl LayoutTracker {
   pub fn new(allocator: Arc<impl GlobalAlloc+'static>) -> Self {
     Self {
       allocator,
-      layouts: HashMap::new(),
+      layouts: Mutex::new(HashMap::new()),
     }
   }
 
-  pub fn allocate(&mut self, size: usize) -> Option<NonNull<u8>> {
+  pub fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
+    /* Allocate everything with 8-byte alignment. */
     let layout = Layout::from_size_align(size, 8).unwrap();
-    let ret = NonNull::new(unsafe { self.allocator.alloc(layout) });
-    if let Some(ret) = ret {
-      assert!(self.layouts.insert(ret, layout).is_none());
-    }
-    ret
+    let ret = NonNull::new(unsafe { self.allocator.alloc(layout) })?;
+    assert!(self.layouts.lock().insert(ret, layout).is_none());
+    Some(ret)
   }
 
-  pub fn deallocate(&mut self, ptr: NonNull<u8>) {
-    let layout = self.layouts.remove(&ptr).unwrap();
+  pub fn deallocate(&self, ptr: NonNull<u8>) {
+    let layout = self.layouts.lock().remove(&ptr).unwrap();
     unsafe {
       self.allocator.dealloc(ptr.as_ptr(), layout);
     }
   }
 }
 
-static DB_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(None)));
+static DB_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+  Lazy::new(|| Arc::new(RwLock::new(None)));
 
 unsafe extern "C" fn db_alloc_func(size: usize) -> *mut c_void {
-  match DB_ALLOCATOR.lock().as_mut() {
+  match DB_ALLOCATOR.read().as_ref() {
     Some(allocator) => allocator
       .allocate(size)
       .map(|p| mem::transmute(p.as_ptr()))
@@ -71,7 +70,7 @@ unsafe extern "C" fn db_alloc_func(size: usize) -> *mut c_void {
 }
 
 unsafe extern "C" fn db_free_func(p: *mut c_void) {
-  match DB_ALLOCATOR.lock().as_mut() {
+  match DB_ALLOCATOR.read().as_ref() {
     Some(allocator) => {
       if let Some(p) = NonNull::new(p as *mut u8) {
         allocator.deallocate(p);
@@ -85,18 +84,18 @@ pub fn set_db_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
 ) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
-  let _ = DB_ALLOCATOR.lock().insert(tracker);
+  let _ = DB_ALLOCATOR.write().insert(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_database_allocator(Some(db_alloc_func), Some(db_free_func))
   })
 }
 
-static MISC_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(None)));
+static MISC_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+  Lazy::new(|| Arc::new(RwLock::new(None)));
 
 
 unsafe extern "C" fn misc_alloc_func(size: usize) -> *mut c_void {
-  match MISC_ALLOCATOR.lock().as_mut() {
+  match MISC_ALLOCATOR.read().as_ref() {
     Some(allocator) => allocator
       .allocate(size)
       .map(|p| mem::transmute(p.as_ptr()))
@@ -106,7 +105,7 @@ unsafe extern "C" fn misc_alloc_func(size: usize) -> *mut c_void {
 }
 
 pub(crate) unsafe extern "C" fn misc_free_func(p: *mut c_void) {
-  match MISC_ALLOCATOR.lock().as_mut() {
+  match MISC_ALLOCATOR.read().as_ref() {
     Some(allocator) => {
       if let Some(p) = NonNull::new(p as *mut u8) {
         allocator.deallocate(p);
@@ -120,17 +119,17 @@ pub fn set_misc_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
 ) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
-  let _ = MISC_ALLOCATOR.lock().insert(tracker);
+  let _ = MISC_ALLOCATOR.write().insert(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_misc_allocator(Some(misc_alloc_func), Some(misc_free_func))
   })
 }
 
-static SCRATCH_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(None)));
+static SCRATCH_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+  Lazy::new(|| Arc::new(RwLock::new(None)));
 
 unsafe extern "C" fn scratch_alloc_func(size: usize) -> *mut c_void {
-  match SCRATCH_ALLOCATOR.lock().as_mut() {
+  match SCRATCH_ALLOCATOR.read().as_ref() {
     Some(allocator) => allocator
       .allocate(size)
       .map(|p| mem::transmute(p.as_ptr()))
@@ -140,7 +139,7 @@ unsafe extern "C" fn scratch_alloc_func(size: usize) -> *mut c_void {
 }
 
 unsafe extern "C" fn scratch_free_func(p: *mut c_void) {
-  match SCRATCH_ALLOCATOR.lock().as_mut() {
+  match SCRATCH_ALLOCATOR.read().as_ref() {
     Some(allocator) => {
       if let Some(p) = NonNull::new(p as *mut u8) {
         allocator.deallocate(p);
@@ -154,17 +153,17 @@ pub fn set_scratch_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
 ) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
-  let _ = SCRATCH_ALLOCATOR.lock().insert(tracker);
+  let _ = SCRATCH_ALLOCATOR.write().insert(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_scratch_allocator(Some(scratch_alloc_func), Some(scratch_free_func))
   })
 }
 
-static STREAM_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(Mutex::new(None)));
+static STREAM_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+  Lazy::new(|| Arc::new(RwLock::new(None)));
 
 unsafe extern "C" fn stream_alloc_func(size: usize) -> *mut c_void {
-  match STREAM_ALLOCATOR.lock().as_mut() {
+  match STREAM_ALLOCATOR.read().as_ref() {
     Some(allocator) => allocator
       .allocate(size)
       .map(|p| mem::transmute(p.as_ptr()))
@@ -174,7 +173,7 @@ unsafe extern "C" fn stream_alloc_func(size: usize) -> *mut c_void {
 }
 
 unsafe extern "C" fn stream_free_func(p: *mut c_void) {
-  match STREAM_ALLOCATOR.lock().as_mut() {
+  match STREAM_ALLOCATOR.read().as_ref() {
     Some(allocator) => {
       if let Some(p) = NonNull::new(p as *mut u8) {
         allocator.deallocate(p);
@@ -188,7 +187,7 @@ pub fn set_stream_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
 ) -> Result<(), HyperscanRuntimeError> {
   let tracker = LayoutTracker::new(allocator);
-  let _ = STREAM_ALLOCATOR.lock().insert(tracker);
+  let _ = STREAM_ALLOCATOR.write().insert(tracker);
   HyperscanRuntimeError::from_native(unsafe {
     hs::hs_set_stream_allocator(Some(stream_alloc_func), Some(stream_free_func))
   })
@@ -232,13 +231,11 @@ pub mod chimera {
   use super::*;
   use crate::error::chimera::*;
 
-  /* FIXME: push the Mutex up into the LayoutTracker so the allocator itself
-   * can run without locking! */
-  static CHIMERA_DB_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+  static CHIMERA_DB_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
 
   unsafe extern "C" fn chimera_db_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_DB_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_DB_ALLOCATOR.read().as_ref() {
       Some(allocator) => allocator
         .allocate(size)
         .map(|p| mem::transmute(p.as_ptr()))
@@ -248,7 +245,7 @@ pub mod chimera {
   }
 
   unsafe extern "C" fn chimera_db_free_func(p: *mut c_void) {
-    match CHIMERA_DB_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_DB_ALLOCATOR.read().as_ref() {
       Some(allocator) => {
         if let Some(p) = NonNull::new(p as *mut u8) {
           allocator.deallocate(p);
@@ -262,18 +259,18 @@ pub mod chimera {
     allocator: Arc<impl GlobalAlloc+'static>,
   ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
-    let _ = CHIMERA_DB_ALLOCATOR.lock().insert(tracker);
+    let _ = CHIMERA_DB_ALLOCATOR.write().insert(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_database_allocator(Some(chimera_db_alloc_func), Some(chimera_db_free_func))
     })
   }
 
-  static CHIMERA_MISC_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+  static CHIMERA_MISC_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
 
 
   unsafe extern "C" fn chimera_misc_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_MISC_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_MISC_ALLOCATOR.read().as_ref() {
       Some(allocator) => allocator
         .allocate(size)
         .map(|p| mem::transmute(p.as_ptr()))
@@ -283,7 +280,7 @@ pub mod chimera {
   }
 
   pub(crate) unsafe extern "C" fn chimera_misc_free_func(p: *mut c_void) {
-    match CHIMERA_MISC_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_MISC_ALLOCATOR.read().as_ref() {
       Some(allocator) => {
         if let Some(p) = NonNull::new(p as *mut u8) {
           allocator.deallocate(p);
@@ -297,17 +294,17 @@ pub mod chimera {
     allocator: Arc<impl GlobalAlloc+'static>,
   ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
-    let _ = CHIMERA_MISC_ALLOCATOR.lock().insert(tracker);
+    let _ = CHIMERA_MISC_ALLOCATOR.write().insert(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_misc_allocator(Some(chimera_misc_alloc_func), Some(chimera_misc_free_func))
     })
   }
 
-  static CHIMERA_SCRATCH_ALLOCATOR: Lazy<Arc<Mutex<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+  static CHIMERA_SCRATCH_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
 
   unsafe extern "C" fn chimera_scratch_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_SCRATCH_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_SCRATCH_ALLOCATOR.read().as_ref() {
       Some(allocator) => allocator
         .allocate(size)
         .map(|p| mem::transmute(p.as_ptr()))
@@ -317,7 +314,7 @@ pub mod chimera {
   }
 
   unsafe extern "C" fn chimera_scratch_free_func(p: *mut c_void) {
-    match CHIMERA_SCRATCH_ALLOCATOR.lock().as_mut() {
+    match CHIMERA_SCRATCH_ALLOCATOR.read().as_ref() {
       Some(allocator) => {
         if let Some(p) = NonNull::new(p as *mut u8) {
           allocator.deallocate(p);
@@ -331,7 +328,7 @@ pub mod chimera {
     allocator: Arc<impl GlobalAlloc+'static>,
   ) -> Result<(), ChimeraRuntimeError> {
     let tracker = LayoutTracker::new(allocator);
-    let _ = CHIMERA_SCRATCH_ALLOCATOR.lock().insert(tracker);
+    let _ = CHIMERA_SCRATCH_ALLOCATOR.write().insert(tracker);
     ChimeraRuntimeError::from_native(unsafe {
       hs::ch_set_scratch_allocator(
         Some(chimera_scratch_alloc_func),
