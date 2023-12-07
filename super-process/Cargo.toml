@@ -4,7 +4,7 @@ description             = "An async process creation framework."
 authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 license                 = "Apache-2.0"
 repository              = "https://github.com/cosmicexplorer/super-process"
-version                 = "0.0.0"
+version                 = "0.0.1"
 edition                 = "2021"
 
 [dependencies]

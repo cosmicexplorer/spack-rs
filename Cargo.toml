@@ -40,7 +40,7 @@ hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.1" }
 re2                     = { path = "re2" }
 re2-sys                 = { path = "re2/sys", version = "0.0.1" }
 spack                   = { path = ".", version = "0.0.2", package = "spack-rs" }
-super-process           = { path = "super-process", version = "0.0.0" }
+super-process           = { path = "super-process", version = "0.0.1" }
 
 async-stream            = "0.3.3"
 async-trait             = "0.1.41"
