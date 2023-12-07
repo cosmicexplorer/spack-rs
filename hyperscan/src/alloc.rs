@@ -65,11 +65,11 @@ impl MallocLikeAllocator for LayoutTracker {
   }
 }
 
-static DB_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(RwLock::new(None)));
-
-unsafe extern "C" fn db_alloc_func(size: usize) -> *mut c_void {
-  match DB_ALLOCATOR.read().as_ref() {
+unsafe fn alloc_or_libc_fallback(
+  allocator: &RwLock<Option<LayoutTracker>>,
+  size: usize,
+) -> *mut c_void {
+  match allocator.read().as_ref() {
     Some(allocator) => allocator
       .allocate(size)
       .map(|p| mem::transmute(p.as_ptr()))
@@ -78,8 +78,8 @@ unsafe extern "C" fn db_alloc_func(size: usize) -> *mut c_void {
   }
 }
 
-unsafe extern "C" fn db_free_func(p: *mut c_void) {
-  match DB_ALLOCATOR.read().as_ref() {
+unsafe fn dealloc_or_libc_fallback(allocator: &RwLock<Option<LayoutTracker>>, p: *mut c_void) {
+  match allocator.read().as_ref() {
     Some(allocator) => {
       if let Some(p) = NonNull::new(p as *mut u8) {
         allocator.deallocate(p);
@@ -88,6 +88,23 @@ unsafe extern "C" fn db_free_func(p: *mut c_void) {
     None => libc::free(p),
   }
 }
+
+macro_rules! allocator {
+  ($lock_name:ident, $alloc_name:ident, $free_name:ident) => {
+    static $lock_name: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
+      Lazy::new(|| Arc::new(RwLock::new(None)));
+
+    pub(crate) unsafe extern "C" fn $alloc_name(size: usize) -> *mut c_void {
+      alloc_or_libc_fallback(&$lock_name, size)
+    }
+
+    pub(crate) unsafe extern "C" fn $free_name(p: *mut c_void) {
+      dealloc_or_libc_fallback(&$lock_name, p)
+    }
+  };
+}
+
+allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 
 pub fn set_db_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
@@ -99,30 +116,7 @@ pub fn set_db_allocator(
   })
 }
 
-static MISC_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(RwLock::new(None)));
-
-
-unsafe extern "C" fn misc_alloc_func(size: usize) -> *mut c_void {
-  match MISC_ALLOCATOR.read().as_ref() {
-    Some(allocator) => allocator
-      .allocate(size)
-      .map(|p| mem::transmute(p.as_ptr()))
-      .unwrap_or(ptr::null_mut()),
-    None => libc::malloc(size),
-  }
-}
-
-pub(crate) unsafe extern "C" fn misc_free_func(p: *mut c_void) {
-  match MISC_ALLOCATOR.read().as_ref() {
-    Some(allocator) => {
-      if let Some(p) = NonNull::new(p as *mut u8) {
-        allocator.deallocate(p);
-      }
-    },
-    None => libc::free(p),
-  }
-}
+allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 
 pub fn set_misc_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
@@ -134,29 +128,7 @@ pub fn set_misc_allocator(
   })
 }
 
-static SCRATCH_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(RwLock::new(None)));
-
-unsafe extern "C" fn scratch_alloc_func(size: usize) -> *mut c_void {
-  match SCRATCH_ALLOCATOR.read().as_ref() {
-    Some(allocator) => allocator
-      .allocate(size)
-      .map(|p| mem::transmute(p.as_ptr()))
-      .unwrap_or(ptr::null_mut()),
-    None => libc::malloc(size),
-  }
-}
-
-unsafe extern "C" fn scratch_free_func(p: *mut c_void) {
-  match SCRATCH_ALLOCATOR.read().as_ref() {
-    Some(allocator) => {
-      if let Some(p) = NonNull::new(p as *mut u8) {
-        allocator.deallocate(p);
-      }
-    },
-    None => libc::free(p),
-  }
-}
+allocator![SCRATCH_ALLOCATOR, scratch_alloc_func, scratch_free_func];
 
 pub fn set_scratch_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
@@ -168,29 +140,7 @@ pub fn set_scratch_allocator(
   })
 }
 
-static STREAM_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-  Lazy::new(|| Arc::new(RwLock::new(None)));
-
-unsafe extern "C" fn stream_alloc_func(size: usize) -> *mut c_void {
-  match STREAM_ALLOCATOR.read().as_ref() {
-    Some(allocator) => allocator
-      .allocate(size)
-      .map(|p| mem::transmute(p.as_ptr()))
-      .unwrap_or(ptr::null_mut()),
-    None => libc::malloc(size),
-  }
-}
-
-unsafe extern "C" fn stream_free_func(p: *mut c_void) {
-  match STREAM_ALLOCATOR.read().as_ref() {
-    Some(allocator) => {
-      if let Some(p) = NonNull::new(p as *mut u8) {
-        allocator.deallocate(p);
-      }
-    },
-    None => libc::free(p),
-  }
-}
+allocator![STREAM_ALLOCATOR, stream_alloc_func, stream_free_func];
 
 pub fn set_stream_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
@@ -240,29 +190,11 @@ pub mod chimera {
   use super::*;
   use crate::error::chimera::*;
 
-  static CHIMERA_DB_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
-
-  unsafe extern "C" fn chimera_db_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_DB_ALLOCATOR.read().as_ref() {
-      Some(allocator) => allocator
-        .allocate(size)
-        .map(|p| mem::transmute(p.as_ptr()))
-        .unwrap_or(ptr::null_mut()),
-      None => libc::malloc(size),
-    }
-  }
-
-  unsafe extern "C" fn chimera_db_free_func(p: *mut c_void) {
-    match CHIMERA_DB_ALLOCATOR.read().as_ref() {
-      Some(allocator) => {
-        if let Some(p) = NonNull::new(p as *mut u8) {
-          allocator.deallocate(p);
-        }
-      },
-      None => libc::free(p),
-    }
-  }
+  allocator![
+    CHIMERA_DB_ALLOCATOR,
+    chimera_db_alloc_func,
+    chimera_db_free_func
+  ];
 
   pub fn set_chimera_db_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
@@ -274,30 +206,11 @@ pub mod chimera {
     })
   }
 
-  static CHIMERA_MISC_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
-
-
-  unsafe extern "C" fn chimera_misc_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_MISC_ALLOCATOR.read().as_ref() {
-      Some(allocator) => allocator
-        .allocate(size)
-        .map(|p| mem::transmute(p.as_ptr()))
-        .unwrap_or(ptr::null_mut()),
-      None => libc::malloc(size),
-    }
-  }
-
-  pub(crate) unsafe extern "C" fn chimera_misc_free_func(p: *mut c_void) {
-    match CHIMERA_MISC_ALLOCATOR.read().as_ref() {
-      Some(allocator) => {
-        if let Some(p) = NonNull::new(p as *mut u8) {
-          allocator.deallocate(p);
-        }
-      },
-      None => libc::free(p),
-    }
-  }
+  allocator![
+    CHIMERA_MISC_ALLOCATOR,
+    chimera_misc_alloc_func,
+    chimera_misc_free_func
+  ];
 
   pub fn set_chimera_misc_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
@@ -309,29 +222,11 @@ pub mod chimera {
     })
   }
 
-  static CHIMERA_SCRATCH_ALLOCATOR: Lazy<Arc<RwLock<Option<LayoutTracker>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
-
-  unsafe extern "C" fn chimera_scratch_alloc_func(size: usize) -> *mut c_void {
-    match CHIMERA_SCRATCH_ALLOCATOR.read().as_ref() {
-      Some(allocator) => allocator
-        .allocate(size)
-        .map(|p| mem::transmute(p.as_ptr()))
-        .unwrap_or(ptr::null_mut()),
-      None => libc::malloc(size),
-    }
-  }
-
-  unsafe extern "C" fn chimera_scratch_free_func(p: *mut c_void) {
-    match CHIMERA_SCRATCH_ALLOCATOR.read().as_ref() {
-      Some(allocator) => {
-        if let Some(p) = NonNull::new(p as *mut u8) {
-          allocator.deallocate(p);
-        }
-      },
-      None => libc::free(p),
-    }
-  }
+  allocator![
+    CHIMERA_SCRATCH_ALLOCATOR,
+    chimera_scratch_alloc_func,
+    chimera_scratch_free_func
+  ];
 
   pub fn set_chimera_scratch_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
