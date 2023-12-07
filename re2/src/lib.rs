@@ -677,9 +677,9 @@ impl RE2 {
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a+(.)".parse()?;
   ///
-  /// let msg = "aardvarks all ailing: awesome";
-  /// let whole_matches: Vec<&str> = r.find_iter::<1>(msg).map(|[m]| m).collect();
-  /// let submatches: Vec<&str> = r.find_iter::<2>(msg).map(|[_, m]| m).collect();
+  /// let hay = "aardvarks all ailing: awesome";
+  /// let whole_matches: Vec<&str> = r.find_iter::<1>(hay).map(|[m]| m).collect();
+  /// let submatches: Vec<&str> = r.find_iter::<2>(hay).map(|[_, m]| m).collect();
   /// assert_eq!(&whole_matches, &["aar", "ar", "al", "ai", "aw"]);
   /// assert_eq!(&submatches, &["r", "r", "l", "i", "w"]);
   /// # Ok(())
@@ -687,11 +687,52 @@ impl RE2 {
   /// ```
   pub fn find_iter<'r, 'h: 'r, const N: usize>(
     &'r self,
-    text: &'h str,
+    hay: &'h str,
   ) -> impl Iterator<Item=[&'h str; N]>+'r {
     assert_ne!(N, 0);
     MatchIter {
-      remaining_input: text,
+      remaining_input: hay,
+      pattern: self,
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = r"[ \t]+".parse()?;
+  ///
+  /// let hay = "a b \t  c\td    e";
+  /// let fields: Vec<&str> = r.split(hay).collect();
+  /// assert_eq!(&fields, &["a", "b", "c", "d", "e"]);
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  /// Multiple contiguous matches yield empty slices:
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "X".parse()?;
+  ///
+  /// let hay = "XXXXaXXbXc";
+  /// let chunks: Vec<&str> = r.split(hay).collect();
+  /// assert_eq!(&chunks, &["", "", "", "", "a", "", "b", "c"]);
+  /// # Ok(())
+  /// }
+  /// ```
+  ///
+  /// Separators at start or end also yield empty slices:
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "0".parse()?;
+  ///
+  /// let hay = "010";
+  /// let chunks: Vec<&str> = r.split(hay).collect();
+  /// assert_eq!(&chunks, &["", "1", ""]);
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn split<'r, 'h: 'r>(&'r self, hay: &'h str) -> impl Iterator<Item=&'h str>+'r {
+    SplitIter {
+      remaining_input: Some(hay),
       pattern: self,
     }
   }
@@ -870,5 +911,39 @@ impl<'r, 'h, const N: usize> Iterator for MatchIter<'r, 'h, N> {
     }
     self.remaining_input = &self.remaining_input[consumed..];
     Some(matches)
+  }
+}
+
+struct SplitIter<'r, 'h> {
+  remaining_input: Option<&'h str>,
+  pattern: &'r RE2,
+}
+
+impl<'r, 'h> Iterator for SplitIter<'r, 'h> {
+  type Item = &'h str;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    let remaining = self.remaining_input?;
+    if let Some([m]) = self
+      .pattern
+      .match_routine(remaining, 0..remaining.len(), Anchor::Unanchored)
+    {
+      let m = m.as_bytes();
+      let prev_start = remaining.as_bytes().as_ptr();
+      let consumed = unsafe { m.as_ptr().offset_from(prev_start) };
+      debug_assert!(consumed >= 0);
+      let consumed = consumed as usize;
+      let ret = &remaining[..consumed];
+      let consumed_with_match = consumed + m.len();
+      /* Matched empty string; to avoid looping forever, return None. */
+      self.remaining_input = if consumed_with_match == 0 {
+        None
+      } else {
+        Some(&remaining[consumed_with_match..])
+      };
+      Some(ret)
+    } else {
+      mem::take(&mut self.remaining_input)
+    }
   }
 }
