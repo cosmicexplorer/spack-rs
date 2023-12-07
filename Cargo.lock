@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "hyperscan-async"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "async-stream",
  "cfg-if",
@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "hyperscan-async-sys"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bindgen",
  "eyre",
@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "re2"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "displaydoc",
  "num_enum",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "re2-sys"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bindgen",
  "cc",
@@ -1767,7 +1767,7 @@ dependencies = [
 
 [[package]]
 name = "spack-rs"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1814,7 +1814,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "super-process"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "async-process",
  "async-trait",
