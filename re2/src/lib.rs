@@ -670,6 +670,32 @@ impl RE2 {
     Some(unsafe { Self::convert_string_views(array_assume_init(submatches)) })
   }
 
+  /// **NB: if no input is consumed upon searching the regex, iteration will
+  /// end to avoid looping infinitely.**
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "a+(.)".parse()?;
+  ///
+  /// let msg = "aardvarks all ailing: awesome";
+  /// let whole_matches: Vec<&str> = r.find_iter::<1>(msg).map(|[m]| m).collect();
+  /// let submatches: Vec<&str> = r.find_iter::<2>(msg).map(|[_, m]| m).collect();
+  /// assert_eq!(&whole_matches, &["aar", "ar", "al", "ai", "aw"]);
+  /// assert_eq!(&submatches, &["r", "r", "l", "i", "w"]);
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn find_iter<'r, 'h: 'r, const N: usize>(
+    &'r self,
+    text: &'h str,
+  ) -> impl Iterator<Item=[&'h str; N]>+'r {
+    assert_ne!(N, 0);
+    MatchIter {
+      remaining_input: text,
+      pattern: self,
+    }
+  }
+
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
@@ -810,5 +836,39 @@ impl hash::Hash for RE2 {
   where H: hash::Hasher {
     self.pattern().hash(state);
     self.options().hash(state);
+  }
+}
+
+struct MatchIter<'r, 'h, const N: usize> {
+  remaining_input: &'h str,
+  pattern: &'r RE2,
+}
+
+impl<'r, 'h, const N: usize> Iterator for MatchIter<'r, 'h, N> {
+  type Item = [&'h str; N];
+
+  fn next(&mut self) -> Option<Self::Item> {
+    let matches = self.pattern.match_routine(
+      self.remaining_input,
+      0..self.remaining_input.len(),
+      Anchor::Unanchored,
+    )?;
+    let consumed = unsafe {
+      /* Group 0 has the entire match, and since we checked N > 0 elsewhere we know
+       * it exists. */
+      let full_match = matches.get_unchecked(0).as_bytes();
+      /* The remaining input should point past the end of the match. */
+      let new_start = full_match.as_ptr().add(full_match.len());
+      /* Calculate the distance from the previous start. */
+      let consumed = new_start.offset_from(self.remaining_input.as_bytes().as_ptr());
+      debug_assert!(consumed >= 0);
+      consumed as usize
+    };
+    /* Matched empty string; to avoid looping forever, return None. */
+    if consumed == 0 {
+      return None;
+    }
+    self.remaining_input = &self.remaining_input[consumed..];
+    Some(matches)
   }
 }
