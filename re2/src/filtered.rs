@@ -237,6 +237,22 @@ impl<'o> InnerRE2<'o> {
 /// // We get the same results as before:
 /// assert!(filter.all_matches("asdf asay asasas", &atoms, &mut matches));
 /// assert_eq!(matches.as_expression_slice(), &[y, z]);
+///
+/// // Similarly, we can see that the "asay" atom matches the corresponding regexp:
+/// let mut atoms = MatchedSetInfo::empty();
+/// atoms.set_len(1);
+/// atoms.as_mut_atom_slice()[0] = asay;
+/// filter.all_potentials(&atoms, &mut matches);
+/// assert_eq!(matches.as_expression_slice(), &[y]);
+///
+/// // If we expand the search to all atoms, we find all regexps as potential candidates:
+/// atoms.set_len(4);
+/// let ats = atoms.as_mut_atom_slice();
+/// ats[1] = a;
+/// ats[2] = s;
+/// ats[3] = asdf;
+/// filter.all_potentials(&atoms, &mut matches);
+/// assert_eq!(matches.as_expression_slice(), &[x, y, z]);
 /// # Ok(())
 /// # }
 /// ```
@@ -275,6 +291,14 @@ impl FilteredRE2 {
         atoms.as_ref_native(),
         matching_regexps.as_mut_native(),
       )
+    }
+  }
+
+  pub fn all_potentials(&self, atoms: &MatchedSetInfo, potential_regexps: &mut MatchedSetInfo) {
+    unsafe {
+      self
+        .0
+        .all_potentials(atoms.as_ref_native(), potential_regexps.as_mut_native())
     }
   }
 

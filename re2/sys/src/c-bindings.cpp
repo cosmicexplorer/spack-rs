@@ -379,4 +379,9 @@ bool FilteredRE2Wrapper::all_matches(StringView text,
                             matching_regexps->get_mutable());
 }
 
+void FilteredRE2Wrapper::all_potentials(
+    const MatchedSetInfo &atoms, MatchedSetInfo *potential_regexps) const {
+  inner_->AllPotentials(*atoms.get_mutable(), potential_regexps->get_mutable());
+}
+
 } /* namespace re2_c_bindings */

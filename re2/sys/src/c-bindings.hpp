@@ -206,7 +206,7 @@ public:
 
   void clear();
 
-  const StringWrapper* cdata() const noexcept;
+  const StringWrapper *cdata() const noexcept;
   StringWrapper *data() noexcept;
   size_t size() const noexcept;
 
@@ -239,7 +239,7 @@ public:
   re2::RE2::ErrorCode add(StringView pattern, const re2::RE2::Options &options,
                           int *id);
   size_t num_regexps() const noexcept;
-  const re2::RE2* get_re2(int regexpid) const;
+  const re2::RE2 *get_re2(int regexpid) const;
   void compile(StringSet *strings_to_match);
 
   int slow_first_match(StringView text) const;
@@ -247,6 +247,8 @@ public:
   int first_match(StringView text, const MatchedSetInfo &atoms) const;
   bool all_matches(StringView text, const MatchedSetInfo &atoms,
                    MatchedSetInfo *matching_regexps) const;
+  void all_potentials(const MatchedSetInfo &atoms,
+                      MatchedSetInfo *potential_regexps) const;
 
 private:
   re2::FilteredRE2 *inner_;
