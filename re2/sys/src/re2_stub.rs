@@ -56,5 +56,7 @@ pub mod root {
     pub struct SetWrapper;
     pub struct StringWrapper;
     pub struct NamedCapturingGroups;
+    pub struct StringSet;
+    pub struct FilteredRE2Wrapper;
   }
 }

@@ -94,6 +94,9 @@ pub struct ExpressionIndex(pub(crate) c_int);
 impl ExpressionIndex {
   #[inline]
   pub const fn as_index(self) -> u8 { self.0 as u8 }
+
+  #[inline]
+  pub const fn from_index(x: u8) -> Self { Self(x as c_int) }
 }
 
 impl From<ExpressionIndex> for u8 {
