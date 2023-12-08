@@ -349,6 +349,14 @@ re2::RE2::ErrorCode FilteredRE2Wrapper::add(StringView pattern,
   return inner_->Add(pattern.into_absl_view(), options, id);
 }
 
+size_t FilteredRE2Wrapper::num_regexps() const noexcept {
+  return inner_->NumRegexps();
+}
+
+const re2::RE2 *FilteredRE2Wrapper::get_re2(const int regexpid) const {
+  return &inner_->GetRE2(regexpid);
+}
+
 void FilteredRE2Wrapper::compile(StringSet *strings_to_match) {
   std::vector<std::string> args;
   inner_->Compile(&args);

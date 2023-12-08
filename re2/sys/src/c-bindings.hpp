@@ -238,6 +238,8 @@ public:
 
   re2::RE2::ErrorCode add(StringView pattern, const re2::RE2::Options &options,
                           int *id);
+  size_t num_regexps() const noexcept;
+  const re2::RE2* get_re2(int regexpid) const;
   void compile(StringSet *strings_to_match);
 
   int slow_first_match(StringView text) const;
