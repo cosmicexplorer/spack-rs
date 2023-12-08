@@ -30,11 +30,19 @@ impl MatchedSetInfo {
   }
 
   #[inline]
+  pub(crate) fn as_ref_native(&self) -> &re2_c::MatchedSetInfo { &self.0 }
+
+  #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
 
   #[inline]
   pub fn as_slice(&self) -> &[ExpressionIndex] {
     unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+  }
+
+  #[inline]
+  pub fn as_mut_slice(&mut self) -> &mut [ExpressionIndex] {
+    unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
   }
 
   #[inline]
@@ -44,6 +52,13 @@ impl MatchedSetInfo {
   pub fn reserve(&mut self, to: usize) {
     unsafe {
       self.0.reserve(to);
+    }
+  }
+
+  #[inline]
+  pub fn set_len(&mut self, to: usize) {
+    unsafe {
+      self.0.set_len(to);
     }
   }
 

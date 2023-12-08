@@ -37,6 +37,7 @@ async fn main() -> eyre::Result<()> {
 
   let prefixes = resolve::resolve_dependencies().await?;
 
+  println!("cargo:rerun-if-changed=src/c-bindings.cpp");
   let mut bindings = bindgen::Builder::default()
     .clang_args(&["-x", "c++"])
     .clang_arg("-std=c++20")

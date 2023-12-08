@@ -298,6 +298,8 @@ void MatchedSetInfo::clear_visible_elements() {
 
 void MatchedSetInfo::reserve(const size_t to) { get_mutable()->reserve(to); }
 
+void MatchedSetInfo::set_len(const size_t to) { get_mutable()->resize(to); }
+
 SetWrapper::SetWrapper(const re2::RE2::Options &options,
                        re2::RE2::Anchor anchor)
     : set_(new re2::RE2::Set(options, anchor)) {}
@@ -328,9 +330,7 @@ void StringSet::clear() {
   strings_ = nullptr;
 }
 
-StringWrapper *StringSet::data() noexcept {
-  return strings_->data();
-}
+StringWrapper *StringSet::data() noexcept { return strings_->data(); }
 
 size_t StringSet::size() const noexcept { return strings_->size(); }
 
@@ -358,6 +358,18 @@ void FilteredRE2Wrapper::compile(StringSet *strings_to_match) {
 
 int FilteredRE2Wrapper::slow_first_match(StringView text) const {
   return inner_->SlowFirstMatch(text.into_absl_view());
+}
+
+int FilteredRE2Wrapper::first_match(StringView text,
+                                    const MatchedSetInfo &atoms) const {
+  return inner_->FirstMatch(text.into_absl_view(), *atoms.get_mutable());
+}
+
+bool FilteredRE2Wrapper::all_matches(StringView text,
+                                     const MatchedSetInfo &atoms,
+                                     MatchedSetInfo *matching_regexps) const {
+  return inner_->AllMatches(text.into_absl_view(), *atoms.get_mutable(),
+                            matching_regexps->get_mutable());
 }
 
 } /* namespace re2_c_bindings */

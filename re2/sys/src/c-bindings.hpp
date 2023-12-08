@@ -161,6 +161,7 @@ public:
   size_t capacity() const noexcept;
   void clear_visible_elements();
   void reserve(size_t to);
+  void set_len(size_t to);
 
   std::vector<int> *get_mutable() const {
     if (!matches_) {
@@ -212,9 +213,9 @@ public:
   static void from_result(std::vector<std::string> &&strings, StringSet *out) {
     std::vector<StringWrapper> results(strings.size());
 
-    std::transform(std::make_move_iterator(strings.begin()),
-                   std::make_move_iterator(strings.end()), results.begin(),
-                   [](std::string &&s) { return StringWrapper(std::move(s)); });
+    for (size_t i = 0; i < strings.size(); ++i) {
+      *results[i].get_mutable() = std::move(strings[i]);
+    }
 
     out->strings_ = new std::vector<StringWrapper>(std::move(results));
   }
@@ -240,6 +241,10 @@ public:
   void compile(StringSet *strings_to_match);
 
   int slow_first_match(StringView text) const;
+
+  int first_match(StringView text, const MatchedSetInfo &atoms) const;
+  bool all_matches(StringView text, const MatchedSetInfo &atoms,
+                   MatchedSetInfo *matching_regexps) const;
 
 private:
   re2::FilteredRE2 *inner_;
