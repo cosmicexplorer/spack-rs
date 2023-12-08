@@ -5,6 +5,7 @@
 
 use crate::{
   error::{SetCompileError, SetErrorInfo, SetPatternError},
+  filtered::AtomIndex,
   options::{Anchor, Options},
   re2, re2_c,
   string::{StringView, StringWrapper},
@@ -36,12 +37,22 @@ impl MatchedSetInfo {
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
 
   #[inline]
-  pub fn as_slice(&self) -> &[ExpressionIndex] {
+  pub fn as_expression_slice(&self) -> &[ExpressionIndex] {
     unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
   }
 
   #[inline]
-  pub fn as_mut_slice(&mut self) -> &mut [ExpressionIndex] {
+  pub fn as_mut_expression_slice(&mut self) -> &mut [ExpressionIndex] {
+    unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
+  }
+
+  #[inline]
+  pub fn as_atom_slice(&self) -> &[AtomIndex] {
+    unsafe { slice::from_raw_parts(self.atom_data_pointer(), self.len()) }
+  }
+
+  #[inline]
+  pub fn as_mut_atom_slice(&self) -> &mut [AtomIndex] {
     unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
   }
 
@@ -72,11 +83,7 @@ impl MatchedSetInfo {
   unsafe fn data_pointer(&self) -> *const ExpressionIndex { mem::transmute(self.0.data()) }
 
   #[inline]
-  pub fn clear_visible_elements(&mut self) {
-    unsafe {
-      self.0.clear_visible_elements();
-    }
-  }
+  unsafe fn atom_data_pointer(&self) -> *const AtomIndex { mem::transmute(self.0.data()) }
 }
 
 impl ops::Drop for MatchedSetInfo {
@@ -180,13 +187,13 @@ impl Set {
   /// let mut m = MatchedSetInfo::empty();
   /// // a+ pattern matched:
   /// assert!(s.match_routine("asdf", &mut m));
-  /// assert_eq!(&[e1], m.as_slice());
+  /// assert_eq!(&[e1], m.as_expression_slice());
   /// // neither pattern matched:
   /// assert!(!s.match_routine("csdf", &mut m));
-  /// assert!(m.as_slice().is_empty());
+  /// assert!(m.as_expression_slice().is_empty());
   /// // b+ pattern matched:
   /// assert!(s.match_routine("bsdf", &mut m));
-  /// assert_eq!(&[e2], m.as_slice());
+  /// assert_eq!(&[e2], m.as_expression_slice());
   /// ```
   #[inline]
   pub fn match_routine(&self, text: &str, matches: &mut MatchedSetInfo) -> bool {
@@ -210,13 +217,13 @@ impl Set {
   /// let mut m = MatchedSetInfo::empty();
   /// // a+ pattern matched:
   /// assert!(s.match_routine_with_error("asdf", &mut m).unwrap());
-  /// assert_eq!(&[e1], m.as_slice());
+  /// assert_eq!(&[e1], m.as_expression_slice());
   /// // neither pattern matched:
   /// assert!(!s.match_routine_with_error("csdf", &mut m).unwrap());
-  /// assert!(m.as_slice().is_empty());
+  /// assert!(m.as_expression_slice().is_empty());
   /// // b+ pattern matched:
   /// assert!(s.match_routine_with_error("bsdf", &mut m).unwrap());
-  /// assert_eq!(&[e2], m.as_slice());
+  /// assert_eq!(&[e2], m.as_expression_slice());
   /// ```
   #[inline]
   pub fn match_routine_with_error(

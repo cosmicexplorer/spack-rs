@@ -16,6 +16,7 @@ static                  = ["re2-sys/static"]
 re2-sys.workspace       = true
 
 displaydoc.workspace    = true
+indexmap.workspace      = true
 num_enum.workspace      = true
 static_assertions.workspace = true
 thiserror.workspace     = true

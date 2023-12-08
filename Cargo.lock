@@ -1432,6 +1432,7 @@ name = "re2"
 version = "0.0.2"
 dependencies = [
  "displaydoc",
+ "indexmap 1.9.3",
  "num_enum",
  "re2-sys",
  "static_assertions",

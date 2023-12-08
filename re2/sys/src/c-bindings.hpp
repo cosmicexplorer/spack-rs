@@ -159,7 +159,6 @@ public:
   const int *data() const noexcept;
   size_t size() const noexcept;
   size_t capacity() const noexcept;
-  void clear_visible_elements();
   void reserve(size_t to);
   void set_len(size_t to);
 
@@ -207,6 +206,7 @@ public:
 
   void clear();
 
+  const StringWrapper* cdata() const noexcept;
   StringWrapper *data() noexcept;
   size_t size() const noexcept;
 

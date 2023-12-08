@@ -291,11 +291,6 @@ size_t MatchedSetInfo::capacity() const noexcept {
   return get_mutable()->capacity();
 }
 
-void MatchedSetInfo::clear_visible_elements() {
-  /* Avoids reallocating anything, but also resets size to 0. */
-  get_mutable()->clear();
-}
-
 void MatchedSetInfo::reserve(const size_t to) { get_mutable()->reserve(to); }
 
 void MatchedSetInfo::set_len(const size_t to) { get_mutable()->resize(to); }
@@ -328,6 +323,10 @@ bool SetWrapper::match_routine_with_error(
 void StringSet::clear() {
   delete strings_;
   strings_ = nullptr;
+}
+
+const StringWrapper *StringSet::cdata() const noexcept {
+  return strings_->data();
 }
 
 StringWrapper *StringSet::data() noexcept { return strings_->data(); }
