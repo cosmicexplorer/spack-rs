@@ -2,10 +2,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 use crate::{
-  error::RE2ErrorCode,
-  options::Options,
+  error::{RE2ErrorCode, SetError},
+  options::{Anchor, Options},
   re2, re2_c,
-  set::{ExpressionIndex, MatchedSetInfo},
+  set::{ExpressionIndex, MatchedSetInfo, Set, SetBuilder},
   string::{StringView, StringWrapper},
   RE2,
 };
@@ -21,13 +21,13 @@ pub struct AtomIndex(pub(crate) c_int);
 
 impl AtomIndex {
   #[inline]
-  pub const fn as_index(self) -> u8 { self.0 as u8 }
+  pub const fn as_index(self) -> u16 { self.0 as u16 }
 
   #[inline]
-  pub const fn from_index(x: u8) -> Self { Self(x as c_int) }
+  pub const fn from_index(x: u16) -> Self { Self(x as c_int) }
 }
 
-impl From<AtomIndex> for u8 {
+impl From<AtomIndex> for u16 {
   fn from(x: AtomIndex) -> Self { x.as_index() }
 }
 
@@ -43,7 +43,7 @@ impl AtomSet {
 
   fn as_mut_ptr(&mut self) -> *mut re2_c::StringWrapper { unsafe { self.0.data() } }
 
-  fn len(&self) -> usize { unsafe { self.0.size() } }
+  pub fn len(&self) -> usize { unsafe { self.0.size() } }
 
   pub fn as_slice(&self) -> &[StringWrapper] {
     unsafe { mem::transmute(slice::from_raw_parts(self.as_ptr(), self.len())) }
@@ -59,6 +59,16 @@ impl AtomSet {
       .iter()
       .enumerate()
       .map(|(i, sw)| (AtomIndex(i as c_int), sw.as_view().as_str()))
+  }
+
+  pub fn index_by<'a>(
+    &'a self,
+    m: &'a MatchedSetInfo,
+  ) -> impl Iterator<Item=&'a StringWrapper>+ExactSizeIterator+'a {
+    let s = self.as_slice();
+    m.as_atom_slice()
+      .iter()
+      .map(move |i| &s[i.as_index() as usize])
   }
 }
 
@@ -197,7 +207,6 @@ impl<'o> InnerRE2<'o> {
 ///
 /// let (filter, atom_set) = builder.compile();
 /// let patterns: Vec<_> = filter.inner_regexps()
-///   .into_iter()
 ///   .map(|r| r.as_re2_ref().pattern().as_str())
 ///   .collect();
 /// assert_eq!(&patterns, &["asdf", "asay", "as+"]);
@@ -294,12 +303,17 @@ impl FilteredRE2 {
     }
   }
 
-  pub fn all_potentials(&self, atoms: &MatchedSetInfo, potential_regexps: &mut MatchedSetInfo) {
+  pub fn all_potentials(
+    &self,
+    atoms: &MatchedSetInfo,
+    potential_regexps: &mut MatchedSetInfo,
+  ) -> bool {
     unsafe {
       self
         .0
-        .all_potentials(atoms.as_ref_native(), potential_regexps.as_mut_native())
+        .all_potentials(atoms.as_ref_native(), potential_regexps.as_mut_native());
     }
+    !potential_regexps.is_empty()
   }
 
   #[inline]
@@ -313,8 +327,17 @@ impl FilteredRE2 {
     }))
   }
 
-  pub fn inner_regexps<'o>(&'o self) -> Vec<InnerRE2<'o>> {
-    (0..self.num_regexps()).map(|i| self.get_re2(i)).collect()
+  pub fn inner_regexps<'o>(&'o self) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
+    (0..self.num_regexps()).map(|i| self.get_re2(i))
+  }
+
+  pub fn index_by<'o>(
+    &'o self,
+    m: &'o MatchedSetInfo,
+  ) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
+    m.as_expression_slice()
+      .iter()
+      .map(|i| self.get_re2(i.as_index() as usize))
   }
 }
 
@@ -323,5 +346,98 @@ impl ops::Drop for FilteredRE2 {
     unsafe {
       self.0.clear();
     }
+  }
+}
+
+///```
+/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// use re2::{filtered::*, options::*, set::*};
+///
+/// let mut builder = FilteredRE2Builder::with_min_atom_length(1);
+/// let x = builder.add("asdf", Options::default())?;
+/// let y = builder.add("asay", Options::default())?;
+/// let z = builder.add("as+", Options::default())?;
+/// let filter = Filter::compile(builder)?;
+///
+/// let mut atoms = MatchedSetInfo::empty();
+/// let mut matches = MatchedSetInfo::empty();
+/// assert!(filter.all_matches("asdf asay asinine", &mut atoms, &mut matches));
+/// assert_eq!(matches.as_expression_slice(), &[x, y, z]);
+///
+/// let matched_atoms: Vec<&str> = filter.get_atoms(&atoms).collect();
+/// assert_eq!(&matched_atoms, &["a", "s", "asdf", "asay"]);
+/// let matched_regexps: Vec<&str> = filter.get_matches(&matches)
+///   .map(|r| r.as_re2_ref().pattern().as_str())
+///   .collect();
+/// assert_eq!(&matched_regexps, &["asdf", "asay", "as+"]);
+///
+/// assert!(filter.potential_matches("asdf asay asinine", &mut atoms, &mut matches));
+/// assert_eq!(matches.as_expression_slice(), &[x, y, z]);
+/// # Ok(())
+/// # }
+/// ```
+pub struct Filter {
+  filter: FilteredRE2,
+  atom_set: AtomSet,
+  set: Set,
+}
+
+impl Filter {
+  pub fn compile(builder: FilteredRE2Builder) -> Result<Self, SetError> {
+    let (filter, atom_set) = builder.compile();
+
+    let mut options = Options::default();
+    options.literal = true;
+    options.case_sensitive = false;
+    let mut set_builder = SetBuilder::new(options, Anchor::Unanchored);
+    for (i, atom) in atom_set.indexed_atoms() {
+      let j = set_builder.add(atom)?;
+      /* Ensure our atom indices are aligned with the set match indices so we can
+       * convert a MatchedSetInfo from one into the other: */
+      assert_eq!(i.as_index(), j.as_index());
+    }
+
+    let set = set_builder.compile()?;
+
+    Ok(Self {
+      filter,
+      atom_set,
+      set,
+    })
+  }
+
+  pub fn all_matches(
+    &self,
+    text: &str,
+    atoms: &mut MatchedSetInfo,
+    matches: &mut MatchedSetInfo,
+  ) -> bool {
+    self.set.match_routine(text, atoms) && self.filter.all_matches(text, atoms, matches)
+  }
+
+  pub fn potential_matches(
+    &self,
+    text: &str,
+    atoms: &mut MatchedSetInfo,
+    matches: &mut MatchedSetInfo,
+  ) -> bool {
+    self.set.match_routine(text, atoms) && self.filter.all_potentials(atoms, matches)
+  }
+
+  pub fn get_atoms<'a>(
+    &'a self,
+    atoms: &'a MatchedSetInfo,
+  ) -> impl Iterator<Item=&'a str>+ExactSizeIterator {
+    self
+      .atom_set
+      .index_by(atoms)
+      .map(|sw| sw.as_view().as_str())
+  }
+
+  pub fn get_matches<'a>(
+    &'a self,
+    matches: &'a MatchedSetInfo,
+  ) -> impl Iterator<Item=InnerRE2<'a>>+ExactSizeIterator {
+    self.filter.index_by(matches)
   }
 }

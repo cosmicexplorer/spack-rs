@@ -89,6 +89,16 @@ pub struct RewriteError {
   pub message: String,
 }
 
+#[derive(Debug, Display, Error)]
+pub enum SetError {
+  /// error in set building: {0}
+  Compile(#[from] SetErrorInfo),
+  /// error in set pattern: {0}
+  Pattern(#[from] SetPatternError),
+  /// error compiling set: {0}
+  SetCompile(#[from] SetCompileError),
+}
+
 #[derive(
   Debug,
   Display,
@@ -166,10 +176,6 @@ pub enum RE2Error {
   Compile(#[from] CompileError),
   /// error rewriting string: {0}
   Rewrite(#[from] RewriteError),
-  /// error in set compilation: {0}
-  Set(#[from] SetErrorInfo),
-  /// error in set pattern: {0}
-  SetPattern(#[from] SetPatternError),
-  /// error compiling set: {0}
-  SetCompile(#[from] SetCompileError),
+  /// set error: {0}
+  Set(#[from] SetError),
 }

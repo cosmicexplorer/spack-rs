@@ -358,7 +358,7 @@ impl RE2 {
   /// # Ok(())
   /// # }
   #[inline]
-  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+'_ {
+  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+ExactSizeIterator {
     NamedAndNumberedGroups {
       at_start: true,
       total_num_captures: self.num_captures(),
