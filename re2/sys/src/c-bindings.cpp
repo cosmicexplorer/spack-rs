@@ -41,9 +41,7 @@ void NamedCapturingGroups::deref(NamedGroup *out) const {
   out->index_ = it_->first;
 }
 
-void NamedCapturingGroups::advance() {
-  ++it_;
-}
+void NamedCapturingGroups::advance() { ++it_; }
 
 bool NamedCapturingGroups::completed() const noexcept {
   return it_ == named_groups_.cend();
@@ -323,6 +321,43 @@ bool SetWrapper::match_routine_with_error(
     const StringView text, MatchedSetInfo *v,
     re2::RE2::Set::ErrorInfo *error_info) const {
   return set_->Match(text.into_absl_view(), v->get_mutable(), error_info);
+}
+
+void StringSet::clear() {
+  delete strings_;
+  strings_ = nullptr;
+}
+
+StringWrapper *StringSet::data() noexcept {
+  return strings_->data();
+}
+
+size_t StringSet::size() const noexcept { return strings_->size(); }
+
+FilteredRE2Wrapper::FilteredRE2Wrapper() : inner_(new re2::FilteredRE2()) {}
+
+FilteredRE2Wrapper::FilteredRE2Wrapper(int min_atom_len)
+    : inner_(new re2::FilteredRE2(min_atom_len)) {}
+
+void FilteredRE2Wrapper::clear() {
+  delete inner_;
+  inner_ = nullptr;
+}
+
+re2::RE2::ErrorCode FilteredRE2Wrapper::add(StringView pattern,
+                                            const re2::RE2::Options &options,
+                                            int *id) {
+  return inner_->Add(pattern.into_absl_view(), options, id);
+}
+
+void FilteredRE2Wrapper::compile(StringSet *strings_to_match) {
+  std::vector<std::string> args;
+  inner_->Compile(&args);
+  StringSet::from_result(std::move(args), strings_to_match);
+}
+
+int FilteredRE2Wrapper::slow_first_match(StringView text) const {
+  return inner_->SlowFirstMatch(text.into_absl_view());
 }
 
 } /* namespace re2_c_bindings */

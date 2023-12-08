@@ -4,6 +4,7 @@
 #ifndef __RE2_C_BINDINGS_H__
 #define __RE2_C_BINDINGS_H__
 
+#include "re2/filtered_re2.h"
 #include "re2/re2.h"
 #include "re2/set.h"
 
@@ -39,6 +40,7 @@ struct StringMut {
 class StringWrapper {
 public:
   StringWrapper() : inner_(nullptr) {}
+  StringWrapper(std::string &&rhs) : inner_(new std::string(rhs)) {}
   StringWrapper(StringView s);
 
   ~StringWrapper() { clear(); }
@@ -46,6 +48,7 @@ public:
   StringWrapper(StringWrapper &&rhs) : inner_(rhs.inner_) {}
   StringWrapper(const StringWrapper &) = delete;
   StringWrapper &operator=(const StringWrapper &) = delete;
+  StringWrapper &operator=(StringWrapper &&) = default;
 
   void clear();
   void resize(size_t len);
@@ -53,7 +56,7 @@ public:
   StringView as_view() const;
   StringMut as_mut_view();
 
-  std::string *get_mutable() {
+  std::string *get_mutable() const {
     if (!inner_) {
       inner_ = new std::string();
     }
@@ -61,7 +64,7 @@ public:
   }
 
 private:
-  std::string *inner_;
+  mutable std::string *inner_;
 };
 
 struct NamedGroup {
@@ -97,11 +100,6 @@ public:
   RE2Wrapper(RE2Wrapper &&rhs) : re_(rhs.re_) {}
   RE2Wrapper(const RE2Wrapper &) = delete;
   RE2Wrapper &operator=(const RE2Wrapper &) = delete;
-  RE2Wrapper &operator=(RE2Wrapper &&rhs) {
-    clear();
-    re_ = rhs.re_;
-    return *this;
-  }
 
   void clear();
 
@@ -195,6 +193,56 @@ public:
 
 private:
   re2::RE2::Set *set_;
+};
+
+class StringSet {
+public:
+  StringSet() : strings_(nullptr) {}
+  ~StringSet() { clear(); }
+
+  StringSet(StringSet &&rhs) : strings_(rhs.strings_) {}
+  StringSet(const StringSet &) = delete;
+  StringSet &operator=(const StringSet &) = delete;
+
+  void clear();
+
+  StringWrapper *data() noexcept;
+  size_t size() const noexcept;
+
+  static void from_result(std::vector<std::string> &&strings, StringSet *out) {
+    std::vector<StringWrapper> results(strings.size());
+
+    std::transform(std::make_move_iterator(strings.begin()),
+                   std::make_move_iterator(strings.end()), results.begin(),
+                   [](std::string &&s) { return StringWrapper(std::move(s)); });
+
+    out->strings_ = new std::vector<StringWrapper>(std::move(results));
+  }
+
+private:
+  std::vector<StringWrapper> *strings_;
+};
+
+class FilteredRE2Wrapper {
+public:
+  FilteredRE2Wrapper();
+  explicit FilteredRE2Wrapper(int min_atom_len);
+  ~FilteredRE2Wrapper() { clear(); }
+
+  FilteredRE2Wrapper(FilteredRE2Wrapper &&rhs) : inner_(rhs.inner_) {}
+  FilteredRE2Wrapper(const RE2Wrapper &) = delete;
+  FilteredRE2Wrapper &operator=(const FilteredRE2Wrapper &) = delete;
+
+  void clear();
+
+  re2::RE2::ErrorCode add(StringView pattern, const re2::RE2::Options &options,
+                          int *id);
+  void compile(StringSet *strings_to_match);
+
+  int slow_first_match(StringView text) const;
+
+private:
+  re2::FilteredRE2 *inner_;
 };
 
 } /* namespace re2_c_bindings */

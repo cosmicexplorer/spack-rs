@@ -22,6 +22,8 @@ use string::{StringView, StringWrapper};
 
 pub mod set;
 
+pub mod filtered;
+
 use std::{
   cmp, fmt, hash,
   marker::PhantomData,
