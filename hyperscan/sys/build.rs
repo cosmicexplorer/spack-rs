@@ -48,6 +48,7 @@ async fn main() -> eyre::Result<()> {
      * don't compile. */
     .generate_comments(false)
     .fit_macro_constants(true)
+    .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
     .header("src/hs.h");
   for p in prefixes.into_iter() {
     bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));

@@ -44,6 +44,7 @@ async fn main() -> eyre::Result<()> {
     .opaque_type("std::.*")
     .generate_comments(true)
     .fit_macro_constants(true)
+    .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
     .header("src/c-bindings.hpp");
   bindings = bindings.allowlist_item("re2::.*");
   bindings = bindings.allowlist_item("re2_c_bindings::.*");
@@ -52,7 +53,6 @@ async fn main() -> eyre::Result<()> {
   }
   bindings.generate()?.write_to_file(&outfile)?;
 
-  println!("cargo:rerun-if-changed=src/c-bindings.cpp");
   task::spawn_blocking(|| {
     cc::Build::new()
       .cpp(true)
