@@ -144,23 +144,24 @@ impl<'a> StringMut<'a> {
       data_: ptr::null_mut(),
       len_: 0,
     };
-    unsafe { Self::from_native(inner) }
+    Self::from_native(inner)
   }
 
   /* NB: This can't be const because it references &mut data! */
-  pub(crate) unsafe fn from_native(inner: re2_c::StringMut) -> Self {
+  pub(crate) fn from_native(inner: re2_c::StringMut) -> Self {
     Self {
       inner,
       _ph: PhantomData,
     }
   }
 
+  /* NB: This can't be const because it references &mut data! */
   pub fn from_mut_slice(b: &'a mut [u8]) -> Self {
     let inner = re2_c::StringMut {
       data_: b.as_mut_ptr() as *mut c_char,
       len_: b.len(),
     };
-    unsafe { Self::from_native(inner) }
+    Self::from_native(inner)
   }
 
   /* NB: not const bc .as_bytes_mut() isn't const!! */
