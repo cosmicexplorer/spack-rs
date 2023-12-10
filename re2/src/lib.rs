@@ -206,21 +206,12 @@ impl RE2 {
 impl str::FromStr for RE2 {
   type Err = CompileError;
 
-  ///```
-  /// assert_eq!(
-  ///   "a(sdf".parse::<re2::RE2>().err().unwrap(),
-  ///   re2::error::CompileError {
-  ///     message: "missing ): a(sdf".to_string(),
-  ///     arg: "a(sdf".to_string(),
-  ///     code: re2::error::RE2ErrorCode::MissingParen,
-  ///   },
-  /// );
-  /// ```
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     Self::compile(StringView::from_str(s), Options::default())
   }
 }
 
+/// Deletes the underlying C++ object on drop.
 impl ops::Drop for RE2 {
   fn drop(&mut self) {
     unsafe {
@@ -231,6 +222,11 @@ impl ops::Drop for RE2 {
 
 /// Introspection methods to investigate match groups and rewrite strings.
 impl RE2 {
+  /// Returns the maximum submatch needed for the `rewrite` to be done by
+  /// [`Self::replace()`]. E.g. if `rewrite == r"foo \2,\1"`, returns 2.
+  ///
+  /// [`Self::check_rewrite()`] ensures that this number is no larger than the
+  /// result of [`Self::num_captures()`].
   ///```
   /// use re2::RE2;
   ///
@@ -243,6 +239,11 @@ impl RE2 {
     unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
+  /// Return the number of capture groups in the current pattern.
+  ///
+  /// Alternately, this can be understood as the highest capture group index
+  /// which this pattern can support in a rewrite string, with 0 referring to
+  /// the entire match. Also see [`Self::max_submatch()`].
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::RE2;
@@ -256,6 +257,11 @@ impl RE2 {
   /// ```
   pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
 
+  /// Return an FFI handle to a C++ iterator over the named capture groups.
+  ///
+  /// This method does not provide information about positional-only capture
+  /// groups. Use [`Self::named_and_numbered_groups()`] for an iterator that
+  /// covers positional as well as named groups.
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::RE2;
@@ -281,6 +287,21 @@ impl RE2 {
     unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
   }
 
+  /// Return an iterator covering both named and positional-only groups.
+  ///
+  /// Positional-only groups are represented with [`None`] instead of a
+  /// [`StringView`].
+  ///
+  /// The index of each group can be recovered by calling `.enumerate()` on the
+  /// result. This is possible because this iterator also generates a
+  /// positional-only group at index 0 for all patterns, which can be thought
+  /// of as corresponding to the 0th group in a rewrite string (aka the entire
+  /// match).
+  ///
+  /// While most use cases will likely employ either only positional or only
+  /// named groups, this method can be useful for introspection over
+  /// uncontrolled inputs.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
@@ -292,8 +313,8 @@ impl RE2 {
   ///   .collect();
   /// assert_eq!(
   ///   &indexed,
-  ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)]
-  /// );
+  ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")),
+  /// (5, None)] );
   /// # Ok(())
   /// # }
   pub fn named_and_numbered_groups(
@@ -302,6 +323,7 @@ impl RE2 {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 
+  /// [`Self::check_rewrite()`] for arbitrary string encodings.
   pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
     let mut sw = StringWrapper::blank();
 
@@ -318,13 +340,27 @@ impl RE2 {
     }
   }
 
+  /// Check that the given `rewrite` string is suitable for use with this
+  /// regular expression.
+  ///
+  /// It checks that:
+  /// - The regular expression has enough parenthesized subexpressions to
+  ///   satisfy all of the `\N` tokens in rewrite
+  /// - The rewrite string doesn't have any syntax errors.  E.g., `\` followed
+  ///   by anything other than a digit or `\`.
+  ///
+  /// A [`true`] return value guarantees that [`Self::replace()`] and
+  /// [`Self::extract()`] won't fail because of a bad rewrite string.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = "asdf".parse()?;
+  /// use re2::{RE2, error::RewriteError};
+  ///
+  /// let r: RE2 = "asdf".parse()?;
   /// r.check_rewrite("a").unwrap();
   /// r.check_rewrite(r"a\0b").unwrap();
   /// assert_eq!(
-  ///   re2::error::RewriteError {
+  ///   RewriteError {
   ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
   ///   },
   ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
@@ -336,6 +372,7 @@ impl RE2 {
     self.check_rewrite_view(StringView::from_str(rewrite))
   }
 
+  /// [`Self::vector_rewrite()`] for arbitrary string encodings.
   pub fn vector_rewrite_view<const N: usize>(
     &self,
     out: &mut StringWrapper,
@@ -358,6 +395,13 @@ impl RE2 {
     }
   }
 
+  /// Append the `rewrite` string, with backslash substitutions from `inputs`,
+  /// to string `out`.
+  ///
+  /// Returns [`true`] on success. This method can fail because of a malformed
+  /// rewrite string. [`Self::check_rewrite`] guarantees that the rewrite will
+  /// be sucessful.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let mut sw = re2::string::StringWrapper::blank();
