@@ -109,7 +109,7 @@ impl RE2 {
   /// Compile an `RE2` pattern.
   ///
   /// A [`FromStr`](str::FromStr) implementation is also provided which calls
-  /// this method with [`Options::default()`].
+  /// this method with [`Options::default()`]:
   ///
   ///```
   /// # fn main() -> Result<(), re2::RE2Error> {
@@ -117,6 +117,9 @@ impl RE2 {
   ///
   /// let r = RE2::compile("asdf".into(), Options::default())?;
   /// assert!(r.full_match("asdf"));
+  ///
+  /// let r2: RE2 = "asdf".parse()?;
+  /// assert_eq!(r, r2);
   /// # Ok(())
   /// # }
   /// ```
