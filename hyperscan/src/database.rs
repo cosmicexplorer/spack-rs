@@ -35,13 +35,10 @@ pub struct Database(*mut NativeDb);
 pub type NativeDb = hs::hs_database;
 
 impl Database {
-  #[inline]
   pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
 
-  #[inline]
   pub fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
 
-  #[inline]
   pub fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
 
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
@@ -314,7 +311,6 @@ impl Database {
   /// # Ok(())
   /// # }
   /// ```
-  #[inline]
   pub fn database_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
     HyperscanRuntimeError::from_native(unsafe {
@@ -338,7 +334,6 @@ impl Database {
   /// # Ok(())
   /// # }
   /// ```
-  #[inline]
   pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
     HyperscanRuntimeError::from_native(unsafe {
@@ -347,7 +342,6 @@ impl Database {
     Ok(unsafe { ret.assume_init() })
   }
 
-  #[inline]
   pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
 
   ///```
@@ -368,7 +362,6 @@ impl Database {
   /// # Ok(())
   /// # })}
   /// ```
-  #[inline]
   pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
     SerializedDb::serialize_db(self)
   }
@@ -399,19 +392,14 @@ unsafe impl Send for MiscAllocation {}
 unsafe impl Sync for MiscAllocation {}
 
 impl MiscAllocation {
-  #[inline(always)]
   pub const fn as_ptr(&self) -> *mut u8 { self.data }
 
-  #[inline(always)]
   pub const fn len(&self) -> usize { self.len }
 
-  #[inline(always)]
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline(always)]
   pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
 
-  #[inline(always)]
   pub fn as_mut_slice(&mut self) -> &mut [u8] {
     unsafe { slice::from_raw_parts_mut(self.data, self.len) }
   }
@@ -484,7 +472,6 @@ pub enum DbAllocation<'a> {
 }
 
 impl<'a> DbAllocation<'a> {
-  #[inline(always)]
   pub fn as_ptr(&self) -> *const u8 {
     match self {
       Self::Misc(misc) => misc.as_ptr(),
@@ -492,7 +479,6 @@ impl<'a> DbAllocation<'a> {
     }
   }
 
-  #[inline(always)]
   pub fn len(&self) -> usize {
     match self {
       Self::Misc(misc) => misc.len(),
@@ -500,10 +486,8 @@ impl<'a> DbAllocation<'a> {
     }
   }
 
-  #[inline(always)]
   pub fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline(always)]
   pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
 }
 
@@ -556,13 +540,10 @@ impl<'a> SerializedDb<'a> {
     Ok(DbInfo(ret))
   }
 
-  #[inline]
   fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
-  #[inline]
   pub fn len(&self) -> usize { self.0.len() }
 
-  #[inline]
   pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
   pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
@@ -641,31 +622,24 @@ static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwra
 
 #[cfg(feature = "compile")]
 impl Platform {
-  #[inline]
   pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
 
-  #[inline]
   pub fn set_tune(&mut self, tune: TuneFamily) { self.0.tune = tune.into_native(); }
 
-  #[inline]
   pub fn cpu_features(&self) -> CpuFeatures { CpuFeatures::from_native(self.0.cpu_features) }
 
-  #[inline]
   pub fn set_cpu_features(&mut self, cpu_features: CpuFeatures) {
     self.0.cpu_features = cpu_features.into_native();
   }
 
-  #[inline]
   fn populate() -> Result<Self, HyperscanRuntimeError> {
     let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
     HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
     Ok(unsafe { Self(s.assume_init()) })
   }
 
-  #[inline]
   pub fn get() -> &'static Self { &CACHED_PLATFORM }
 
-  #[inline]
   pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
 }
 
@@ -700,13 +674,10 @@ pub mod chimera {
   pub type NativeChimeraDb = hs::ch_database;
 
   impl ChimeraDb {
-    #[inline]
     pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
 
-    #[inline]
     pub fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
 
-    #[inline]
     pub fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
     ///```

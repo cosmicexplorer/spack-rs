@@ -31,7 +31,6 @@ pub type NativeScratch = hs::hs_scratch;
 pub struct Scratch(Option<NonNull<NativeScratch>>);
 
 impl Scratch {
-  #[inline]
   pub const fn new() -> Self { Self(None) }
 
   ///```
@@ -74,10 +73,8 @@ impl Scratch {
     Ok(())
   }
 
-  #[inline]
   pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
 
-  #[inline]
   pub fn as_mut_native(&mut self) -> Option<&mut NativeScratch> {
     self.0.map(|mut p| unsafe { p.as_mut() })
   }
@@ -406,7 +403,6 @@ pub mod chimera {
   pub struct ChimeraScratch(Option<NonNull<NativeChimeraScratch>>);
 
   impl ChimeraScratch {
-    #[inline]
     pub const fn new() -> Self { Self(None) }
 
     pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraRuntimeError> {
@@ -418,12 +414,10 @@ pub mod chimera {
       Ok(())
     }
 
-    #[inline]
     pub fn as_ref_native(&self) -> Option<&NativeChimeraScratch> {
       self.0.map(|p| unsafe { p.as_ref() })
     }
 
-    #[inline]
     pub fn as_mut_native(&mut self) -> Option<&mut NativeChimeraScratch> {
       self.0.map(|mut p| unsafe { p.as_mut() })
     }

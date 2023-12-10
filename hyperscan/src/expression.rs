@@ -58,18 +58,14 @@ impl fmt::Debug for Expression {
 }
 
 impl Expression {
-  #[inline]
   pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
 
-  #[inline]
   pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
-  #[inline]
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> {
     Ok(Self(CString::new(x)?))
   }
 
-  #[inline]
   pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
     let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
     let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
@@ -88,7 +84,6 @@ impl Expression {
     Ok(info)
   }
 
-  #[inline]
   pub fn ext_info(
     &self,
     flags: Flags,
@@ -137,15 +132,12 @@ impl fmt::Debug for Literal {
 }
 
 impl Literal {
-  #[inline]
   pub fn as_bytes(&self) -> &[u8] { &self.0 }
 
-  #[inline]
   pub(crate) fn as_ptr(&self) -> *const c_char {
     unsafe { mem::transmute(self.as_bytes().as_ptr()) }
   }
 
-  #[inline]
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
 
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
@@ -214,18 +206,14 @@ impl<'a> ExpressionSet<'a> {
     Database::compile_multi(&self, mode, Platform::get())
   }
 
-  #[inline]
   pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
 
-  #[inline]
   pub(crate) fn exts_ptr(&self) -> Option<*const *const hs::hs_expr_ext> {
     self.exts.as_ref().map(|e| e.as_ptr())
   }
 
-  #[inline]
   pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
 
-  #[inline]
   pub(crate) fn flags_ptr(&self) -> *const c_uint {
     self
       .flags
@@ -234,7 +222,6 @@ impl<'a> ExpressionSet<'a> {
       .unwrap_or(ptr::null())
   }
 
-  #[inline]
   pub(crate) fn ids_ptr(&self) -> *const c_uint {
     self
       .ids
@@ -249,10 +236,8 @@ impl<'a> ExpressionSet<'a> {
 pub struct ExprWidth(usize);
 
 impl ExprWidth {
-  #[inline]
   pub const fn parse_min_width(x: c_uint) -> Self { Self(x as usize) }
 
-  #[inline]
   pub const fn parse_max_width(x: c_uint) -> Option<Self> {
     if x == c_uint::MAX {
       None
@@ -286,7 +271,6 @@ pub enum UnorderedMatchBehavior {
 }
 
 impl UnorderedMatchBehavior {
-  #[inline]
   pub const fn from_native(x: c_char) -> Self {
     if x == 0 {
       Self::OnlyOrdered
@@ -308,7 +292,6 @@ pub enum MatchAtEndBehavior {
 }
 
 impl MatchAtEndBehavior {
-  #[inline]
   pub const fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
     match (matches_at_eod, matches_only_at_eod) {
       (0, 0) => Self::NoMatchAtEOD,
@@ -337,7 +320,6 @@ pub struct ExprInfo {
 }
 
 impl ExprInfo {
-  #[inline]
   pub(crate) const fn from_native(x: hs::hs_expr_info) -> Self {
     let hs::hs_expr_info {
       min_width,
@@ -368,10 +350,8 @@ impl Default for ExprExt {
 }
 
 impl ExprExt {
-  #[inline]
   pub fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
 
-  #[inline]
   pub fn from_min_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_OFFSET;
     let mut s = Self::zeroed();
@@ -380,7 +360,6 @@ impl ExprExt {
     s
   }
 
-  #[inline]
   pub fn from_max_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MAX_OFFSET;
     let mut s = Self::zeroed();
@@ -389,7 +368,6 @@ impl ExprExt {
     s
   }
 
-  #[inline]
   pub fn from_min_length(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_LENGTH;
     let mut s = Self::zeroed();
@@ -398,7 +376,6 @@ impl ExprExt {
     s
   }
 
-  #[inline]
   pub fn from_edit_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::EDIT_DISTANCE;
     let mut s = Self::zeroed();
@@ -408,7 +385,6 @@ impl ExprExt {
     s
   }
 
-  #[inline]
   pub fn from_hamming_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::HAMMING_DISTANCE;
     let mut s = Self::zeroed();
@@ -418,10 +394,8 @@ impl ExprExt {
     s
   }
 
-  #[inline]
   fn ext_flags(&self) -> ExtFlags { ExtFlags::from_native(self.0.flags) }
 
-  #[inline]
   pub fn min_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_offset() {
       Some(self.0.min_offset)
@@ -430,7 +404,6 @@ impl ExprExt {
     }
   }
 
-  #[inline]
   pub fn max_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_max_offset() {
       Some(self.0.max_offset)
@@ -439,7 +412,6 @@ impl ExprExt {
     }
   }
 
-  #[inline]
   pub fn min_length(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_length() {
       Some(self.0.min_length)
@@ -448,7 +420,6 @@ impl ExprExt {
     }
   }
 
-  #[inline]
   pub fn edit_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_edit_distance() {
       Some(self.0.edit_distance)
@@ -457,7 +428,6 @@ impl ExprExt {
     }
   }
 
-  #[inline]
   pub fn hamming_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_hamming_distance() {
       Some(self.0.hamming_distance)
@@ -486,7 +456,6 @@ impl ExprExt {
     self
   }
 
-  #[inline]
   pub(crate) fn as_ref_native(&self) -> &hs::hs_expr_ext { &self.0 }
 }
 
@@ -549,16 +518,12 @@ impl<'a> LiteralSet<'a> {
     Database::compile_multi_literal(&self, mode, Platform::get())
   }
 
-  #[inline]
   pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
 
-  #[inline]
   pub(crate) fn literals_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
 
-  #[inline]
   pub(crate) fn lengths_ptr(&self) -> *const usize { self.lens.as_ptr() }
 
-  #[inline]
   pub(crate) fn flags_ptr(&self) -> *const c_uint {
     self
       .flags
@@ -567,7 +532,6 @@ impl<'a> LiteralSet<'a> {
       .unwrap_or(ptr::null())
   }
 
-  #[inline]
   pub(crate) fn ids_ptr(&self) -> *const c_uint {
     self
       .ids
@@ -610,13 +574,10 @@ pub mod chimera {
   }
 
   impl ChimeraExpression {
-    #[inline]
     pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
 
-    #[inline]
     pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
-    #[inline]
     pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, ChimeraCompileError> {
       Ok(Self(CString::new(x)?))
     }
@@ -689,16 +650,12 @@ pub mod chimera {
       ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
 
-    #[inline]
     pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
 
-    #[inline]
     pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
 
-    #[inline]
     pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
 
-    #[inline]
     pub(crate) fn flags_ptr(&self) -> *const c_uint {
       self
         .flags
@@ -707,7 +664,6 @@ pub mod chimera {
         .unwrap_or(ptr::null())
     }
 
-    #[inline]
     pub(crate) fn ids_ptr(&self) -> *const c_uint {
       self
         .ids

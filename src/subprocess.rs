@@ -173,7 +173,6 @@ pub mod spack {
     once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
   impl SpackInvocation {
-    #[inline]
     pub(crate) fn cache_location(&self) -> &Path { self.repo.cache_location() }
 
     /// Create an instance.

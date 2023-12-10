@@ -110,7 +110,6 @@ pub enum HyperscanRuntimeError {
 }
 
 impl HyperscanRuntimeError {
-  #[inline]
   pub(crate) fn from_native(x: hs::hs_error_t) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, hs::HS_SUCCESS);
     if x == 0 {
@@ -122,7 +121,6 @@ impl HyperscanRuntimeError {
   }
 
   #[cfg(feature = "compile")]
-  #[inline]
   pub(crate) fn copy_from_native_compile_error(
     x: hs::hs_error_t,
     c: *mut hs::hs_compile_error,
@@ -158,7 +156,6 @@ pub struct CompileError {
 
 #[cfg(feature = "compile")]
 impl CompileError {
-  #[inline]
   pub fn copy_from_native(x: &mut hs::hs_compile_error) -> Result<Self, HyperscanRuntimeError> {
     let hs::hs_compile_error {
       message,
@@ -292,7 +289,6 @@ pub mod chimera {
   }
 
   impl ChimeraRuntimeError {
-    #[inline]
     pub(crate) fn from_native(x: hs::ch_error_t) -> Result<(), Self> {
       static_assertions::const_assert_eq!(0, hs::CH_SUCCESS);
       if x == 0 {
@@ -303,7 +299,6 @@ pub mod chimera {
       }
     }
 
-    #[inline]
     pub(crate) fn copy_from_native_compile_error(
       x: hs::ch_error_t,
       c: *mut hs::ch_compile_error,
@@ -327,7 +322,6 @@ pub mod chimera {
   }
 
   impl ChimeraInnerCompileError {
-    #[inline]
     pub fn copy_from_native(x: &mut hs::ch_compile_error) -> Result<Self, ChimeraRuntimeError> {
       let hs::ch_compile_error {
         message,
@@ -378,7 +372,6 @@ pub mod chimera {
   }
 
   impl ChimeraMatchErrorType {
-    #[inline]
     pub(crate) fn from_native(x: hs::ch_error_event_t) -> Self { (x as u8).try_into().unwrap() }
   }
 

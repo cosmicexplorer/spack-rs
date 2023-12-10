@@ -118,10 +118,8 @@ impl StreamMatcher {
     }
   }
 
-  #[inline(always)]
   pub fn push_new_match(&mut self, m: StreamMatch) { self.matches_tx.send(m).unwrap(); }
 
-  #[inline(always)]
   pub fn handle_match(&mut self, m: &StreamMatch) -> MatchResult { (self.handler).stream_scan(m) }
 }
 
@@ -172,13 +170,10 @@ unsafe impl Send for LiveStream {}
 unsafe impl Sync for LiveStream {}
 
 impl LiveStream {
-  #[inline]
   pub(crate) const unsafe fn from_native(p: *mut hs::hs_stream) -> Self { Self(p) }
 
-  #[inline]
   pub(crate) fn as_ref_native(&self) -> &hs::hs_stream { unsafe { &*self.0 } }
 
-  #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.0 } }
 
   pub fn try_open(db: &Database) -> Result<Self, HyperscanRuntimeError> {
@@ -700,7 +695,6 @@ impl Streamer {
     self.sink.reset_flush().await
   }
 
-  #[inline]
   fn sink_pin(self: Pin<&mut Self>) -> Pin<&mut StreamSink> {
     unsafe { self.map_unchecked_mut(|s| &mut s.sink) }
   }

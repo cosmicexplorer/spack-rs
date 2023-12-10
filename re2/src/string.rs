@@ -22,12 +22,10 @@ pub struct StringView<'a> {
 }
 
 impl<'a> StringView<'a> {
-  #[inline(always)]
   pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
     self.as_slice().get(range).map(Self::from_slice)
   }
 
-  #[inline]
   pub const fn empty() -> Self {
     let inner = re2_c::StringView {
       data_: ptr::null(),
@@ -36,7 +34,6 @@ impl<'a> StringView<'a> {
     Self::from_native(inner)
   }
 
-  #[inline]
   pub(crate) const fn from_native(inner: re2_c::StringView) -> Self {
     Self {
       inner,
@@ -44,10 +41,8 @@ impl<'a> StringView<'a> {
     }
   }
 
-  #[inline]
   pub(crate) const fn into_native(self) -> re2_c::StringView { self.inner }
 
-  #[inline]
   pub const fn from_slice(b: &'a [u8]) -> Self {
     let inner = re2_c::StringView {
       data_: b.as_ptr() as *const c_char,
@@ -56,29 +51,22 @@ impl<'a> StringView<'a> {
     Self::from_native(inner)
   }
 
-  #[inline]
   pub const fn from_str(s: &'a str) -> Self { Self::from_slice(s.as_bytes()) }
 
-  #[inline]
   const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
 
-  #[inline]
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
 
-  #[inline]
   pub const fn as_slice(&self) -> &'a [u8] {
     unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
   }
 
-  #[inline]
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 
   /* Used in "consume" methods which may update a string view to a substring
    * upon match. */
-  #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringView { &mut self.inner }
 }
 
@@ -151,7 +139,6 @@ pub struct StringMut<'a> {
 }
 
 impl<'a> StringMut<'a> {
-  #[inline]
   pub fn empty() -> Self {
     let inner = re2_c::StringMut {
       data_: ptr::null_mut(),
@@ -161,7 +148,6 @@ impl<'a> StringMut<'a> {
   }
 
   /* NB: This can't be const because it references &mut data! */
-  #[inline]
   pub(crate) unsafe fn from_native(inner: re2_c::StringMut) -> Self {
     Self {
       inner,
@@ -169,7 +155,6 @@ impl<'a> StringMut<'a> {
     }
   }
 
-  #[inline]
   pub fn from_mut_slice(b: &'a mut [u8]) -> Self {
     let inner = re2_c::StringMut {
       data_: b.as_mut_ptr() as *mut c_char,
@@ -179,24 +164,18 @@ impl<'a> StringMut<'a> {
   }
 
   /* NB: not const bc .as_bytes_mut() isn't const!! */
-  #[inline]
   pub fn from_mut_str(s: &'a mut str) -> Self { Self::from_mut_slice(unsafe { s.as_bytes_mut() }) }
 
-  #[inline]
   const unsafe fn mut_data_pointer(&self) -> *mut u8 { mem::transmute(self.inner.data_) }
 
-  #[inline]
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline]
   pub const fn len(&self) -> usize { self.inner.len_ }
 
-  #[inline]
   pub fn as_mut_slice(&self) -> &'a mut [u8] {
     unsafe { slice::from_raw_parts_mut(self.mut_data_pointer(), self.len()) }
   }
 
-  #[inline]
   pub fn as_mut_str(&self) -> &'a mut str {
     unsafe { str::from_utf8_unchecked_mut(self.as_mut_slice()) }
   }
@@ -256,26 +235,22 @@ impl StringWrapper {
   /// let s = re2::string::StringWrapper::blank();
   /// assert_eq!(s.as_view().as_str(), "");
   /// ```
-  #[inline]
   pub const fn blank() -> Self {
     Self(re2_c::StringWrapper {
       inner_: ptr::null_mut(),
     })
   }
 
-  #[inline]
   pub fn from_view(s: StringView<'_>) -> Self {
     Self(unsafe { re2_c::StringWrapper::new(s.into_native()) })
   }
 
-  #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::StringWrapper { &mut self.0 }
 
   ///```
   /// let s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(s.as_view().as_str(), "asdf");
   /// ```
-  #[inline]
   pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
 
   ///```
@@ -283,7 +258,6 @@ impl StringWrapper {
   /// s.as_mut_view().as_mut_slice()[2] = b'e';
   /// assert_eq!(s.as_view().as_str(), "asef");
   /// ```
-  #[inline]
   pub fn as_mut_view(&mut self) -> StringMut<'_> {
     unsafe { StringMut::from_native(self.0.as_mut_view()) }
   }
@@ -298,7 +272,6 @@ impl StringWrapper {
   /// s.resize(0);
   /// assert_eq!(s.as_view().as_str(), "");
   /// ```
-  #[inline]
   pub fn resize(&mut self, len: usize) {
     unsafe {
       self.0.resize(len);
@@ -311,7 +284,6 @@ impl StringWrapper {
   /// s.clear();
   /// assert_eq!(s.as_view().as_str(), "");
   /// ```
-  #[inline]
   pub fn clear(&mut self) {
     unsafe {
       self.0.clear();

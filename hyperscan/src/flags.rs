@@ -14,7 +14,6 @@ pub(crate) trait BitSet:
   Copy+ops::BitOr<Output=Self>+ops::BitOrAssign+ops::BitAnd<Output=Self>+ops::BitAndAssign
 {
   fn nonzero(&self) -> bool;
-  #[inline]
   fn contains(&self, other: &Self) -> bool { (*self & *other).nonzero() }
 }
 
@@ -52,12 +51,10 @@ impl Flags {
   /// Treat this pattern as a sequence of UTF-8 characters.
   pub const UTF8: Self = Self(hs::HS_FLAG_UTF8 as c_uint);
 
-  #[inline(always)]
   pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
 }
 
 impl BitSet for Flags {
-  #[inline]
   fn nonzero(&self) -> bool { self.0 != 0 }
 }
 
@@ -143,12 +140,10 @@ impl Mode {
   /// Vectored scanning database.
   pub const VECTORED: Self = Self(hs::HS_MODE_VECTORED as u32);
 
-  #[inline]
   fn check_db_type(&self) -> bool {
     self.contains(&Self::NOSTREAM) || self.contains(&Self::STREAM) || self.contains(&Self::VECTORED)
   }
 
-  #[inline]
   pub fn validate_db_type(&self) -> Result<(), HyperscanFlagsError> {
     if self.check_db_type() {
       Ok(())
@@ -157,14 +152,12 @@ impl Mode {
     }
   }
 
-  #[inline]
   fn any_som_horizon_mode_was_selected(&self) -> bool {
     self.contains(&Self::SOM_HORIZON_LARGE)
       || self.contains(&Self::SOM_HORIZON_MEDIUM)
       || self.contains(&Self::SOM_HORIZON_SMALL)
   }
 
-  #[inline]
   pub fn validate_against_flags(&self, flags: &Flags) -> Result<(), HyperscanFlagsError> {
     if flags.contains(&Flags::SOM_LEFTMOST)
       && !self.any_som_horizon_mode_was_selected()
@@ -176,12 +169,10 @@ impl Mode {
     }
   }
 
-  #[inline(always)]
   pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
 }
 
 impl BitSet for Mode {
-  #[inline]
   fn nonzero(&self) -> bool { self.0 != 0 }
 }
 
@@ -220,15 +211,12 @@ impl CpuFeatures {
   pub const AVX512: Self = Self(hs::HS_CPU_FEATURES_AVX512);
   pub const AVX512VBMI: Self = Self(hs::HS_CPU_FEATURES_AVX512VBMI);
 
-  #[inline(always)]
   pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
 
-  #[inline(always)]
   pub(crate) const fn from_native(x: c_ulonglong) -> Self { Self(x as u8) }
 }
 
 impl BitSet for CpuFeatures {
-  #[inline]
   fn nonzero(&self) -> bool { self.0 != 0 }
 }
 
@@ -302,13 +290,11 @@ pub enum TuneFamily {
 
 impl TuneFamily {
   /* FIXME: make num_enum support const fn! */
-  #[inline(always)]
   pub(crate) fn into_native(self) -> c_uint {
     let x: u8 = self.into();
     x as c_uint
   }
 
-  #[inline(always)]
   pub(crate) fn from_native(x: c_uint) -> Self { (x as u8).into() }
 }
 
@@ -323,30 +309,22 @@ impl ExtFlags {
   pub const MIN_LENGTH: Self = Self(hs::HS_EXT_FLAG_MIN_LENGTH);
   pub const MIN_OFFSET: Self = Self(hs::HS_EXT_FLAG_MIN_OFFSET);
 
-  #[inline]
   pub fn has_edit_distance(&self) -> bool { self.contains(&Self::EDIT_DISTANCE) }
 
-  #[inline]
   pub fn has_hamming_distance(&self) -> bool { self.contains(&Self::HAMMING_DISTANCE) }
 
-  #[inline]
   pub fn has_max_offset(&self) -> bool { self.contains(&Self::MAX_OFFSET) }
 
-  #[inline]
   pub fn has_min_length(&self) -> bool { self.contains(&Self::MIN_LENGTH) }
 
-  #[inline]
   pub fn has_min_offset(&self) -> bool { self.contains(&Self::MIN_OFFSET) }
 
-  #[inline(always)]
   pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
 
-  #[inline(always)]
   pub(crate) const fn from_native(x: c_ulonglong) -> Self { Self(x as u8) }
 }
 
 impl BitSet for ExtFlags {
-  #[inline]
   fn nonzero(&self) -> bool { self.0 != 0 }
 }
 
@@ -435,12 +413,10 @@ pub mod chimera {
     /// using this flag are undefined.
     pub const UTF8: Self = Self(hs::CH_FLAG_UTF8 as c_uint);
 
-    #[inline(always)]
     pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
   }
 
   impl BitSet for ChimeraFlags {
-    #[inline]
     fn nonzero(&self) -> bool { self.0 != 0 }
   }
 
@@ -490,12 +466,10 @@ pub mod chimera {
     /// Disable capturing groups.
     pub const NOGROUPS: Self = Self(hs::CH_MODE_NOGROUPS as u32);
 
-    #[inline(always)]
     pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
   }
 
   impl BitSet for ChimeraMode {
-    #[inline]
     fn nonzero(&self) -> bool { self.0 != 0 }
   }
 

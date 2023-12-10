@@ -48,7 +48,6 @@ pub enum CannedOptions {
 }
 
 impl CannedOptions {
-  #[inline]
   pub(crate) fn into_native(self) -> re2::RE2_CannedOptions { self.into() }
 }
 
@@ -76,7 +75,6 @@ pub enum Encoding {
 }
 
 impl Encoding {
-  #[inline]
   pub(crate) fn into_native(self) -> re2::RE2_Options_Encoding { self.into() }
 }
 
@@ -162,7 +160,6 @@ pub struct Options {
 }
 
 impl Options {
-  #[inline]
   pub fn into_native(self) -> re2::RE2_Options {
     let Self {
       max_mem,
@@ -201,7 +198,6 @@ impl Options {
 }
 
 impl From<re2::RE2_Options> for Options {
-  #[inline]
   fn from(x: re2::RE2_Options) -> Self {
     let re2::RE2_Options {
       max_mem_,
@@ -288,6 +284,5 @@ pub enum Anchor {
 }
 
 impl Anchor {
-  #[inline]
   pub fn into_native(self) -> c_uint { self.into() }
 }

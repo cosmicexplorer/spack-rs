@@ -62,7 +62,6 @@ pub enum RE2ErrorCode {
 }
 
 impl RE2ErrorCode {
-  #[inline]
   pub(crate) fn from_native(x: re2::RE2_ErrorCode) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, re2::RE2_ErrorCode_NoError);
     if x == 0 {
@@ -127,7 +126,6 @@ pub enum SetErrorKind {
 }
 
 impl SetErrorKind {
-  #[inline]
   pub(crate) fn from_native(x: re2::RE2_Set_ErrorKind) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, re2::RE2_Set_ErrorKind_kNoError);
     if x == 0 {
@@ -148,7 +146,6 @@ pub struct SetErrorInfo {
 }
 
 impl SetErrorInfo {
-  #[inline]
   pub(crate) fn from_native(x: re2::RE2_Set_ErrorInfo) -> Result<(), Self> {
     let re2::RE2_Set_ErrorInfo { kind } = x;
     SetErrorKind::from_native(kind)?;

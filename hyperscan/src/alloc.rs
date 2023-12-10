@@ -76,7 +76,6 @@ impl MallocLikeAllocator for LayoutTracker {
   }
 }
 
-#[inline(always)]
 unsafe fn alloc_or_libc_fallback(
   allocator: &RwLock<Option<LayoutTracker>>,
   size: usize,
@@ -90,7 +89,6 @@ unsafe fn alloc_or_libc_fallback(
   }
 }
 
-#[inline(always)]
 unsafe fn dealloc_or_libc_fallback(allocator: &RwLock<Option<LayoutTracker>>, p: *mut c_void) {
   match allocator.read().as_ref() {
     Some(allocator) => {

@@ -18,33 +18,24 @@ use std::{
 pub struct ByteSlice<'a>(&'a [u8]);
 
 impl<'a> ByteSlice<'a> {
-  #[inline(always)]
   pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
     self.0.get(range).map(Self)
   }
 
-  #[inline(always)]
   pub const fn from_str(data: &'a str) -> Self { Self(data.as_bytes()) }
 
-  #[inline(always)]
   pub const fn from_slice(data: &'a [u8]) -> Self { Self(data) }
 
-  #[inline(always)]
   pub const fn as_slice(&self) -> &'a [u8] { unsafe { mem::transmute(self.0) } }
 
-  #[inline(always)]
   pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
 
-  #[inline(always)]
   pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
-  #[inline(always)]
   pub const fn len(&self) -> usize { self.0.len() }
 
-  #[inline(always)]
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline(always)]
   pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
 }
 
@@ -65,23 +56,18 @@ impl<'a> From<&'a str> for ByteSlice<'a> {
 pub struct VectoredByteSlices<'a>(&'a [ByteSlice<'a>]);
 
 impl<'a> VectoredByteSlices<'a> {
-  #[inline(always)]
   pub const fn from_slices(data: &'a [ByteSlice<'a>]) -> Self { Self(data) }
 
-  #[inline(always)]
   pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
     let lengths: Vec<c_uint> = self.0.iter().map(|col| col.native_len()).collect();
     let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
     (data_pointers, lengths)
   }
 
-  #[inline(always)]
   pub const fn len(&self) -> usize { self.0.len() }
 
-  #[inline(always)]
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline(always)]
   pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
 
   fn find_index_at(
@@ -189,13 +175,11 @@ pub struct ExpressionIndex(pub c_uint);
 struct RangeIndex(pub c_ulonglong);
 
 impl RangeIndex {
-  #[inline(always)]
   pub const fn into_rust_index(self) -> usize {
     static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
     self.0 as usize
   }
 
-  #[inline(always)]
   pub const fn bounded_range(from: Self, to: Self) -> ops::Range<usize> {
     static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
     let from = from.into_rust_index();
@@ -225,7 +209,6 @@ pub enum MatchResult {
 
 impl MatchResult {
   /* FIXME: update num_enum so they work with const fn too!!! */
-  #[inline(always)]
   #[allow(dead_code)]
   pub(crate) const fn from_native(x: c_int) -> Self {
     if x == 0 {
@@ -235,7 +218,6 @@ impl MatchResult {
     }
   }
 
-  #[inline(always)]
   pub(crate) const fn into_native(self) -> c_int {
     match self {
       Self::Continue => 0,
@@ -252,7 +234,6 @@ pub(crate) struct MatchEvent {
 }
 
 impl MatchEvent {
-  #[inline(always)]
   pub fn coerce_args(
     id: c_uint,
     from: c_ulonglong,
@@ -269,7 +250,6 @@ impl MatchEvent {
     }
   }
 
-  #[inline(always)]
   pub unsafe fn extract_context<'a, T>(
     context: Option<ptr::NonNull<c_void>>,
   ) -> Option<Pin<&'a mut T>> {
@@ -296,7 +276,6 @@ pub mod contiguous_slice {
   }
 
   impl<'data, 'code> SliceMatcher<'data, 'code> {
-    #[inline]
     pub fn new<F: FnMut(&Match<'data>) -> MatchResult+'data>(
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
@@ -310,18 +289,14 @@ pub mod contiguous_slice {
       (s, matches_rx)
     }
 
-    #[inline]
     pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
 
-    #[inline(always)]
     pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
       self.parent_slice.index_range(range).unwrap()
     }
 
-    #[inline(always)]
     pub fn push_new_match(&self, m: Match<'data>) { self.matches_tx.send(m).unwrap(); }
 
-    #[inline(always)]
     pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
   }
 
@@ -367,7 +342,6 @@ pub mod vectored_slice {
   }
 
   impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
-    #[inline]
     pub fn new<F: FnMut(&VectoredMatch<'data>) -> MatchResult+'data>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
@@ -387,10 +361,8 @@ pub mod vectored_slice {
       self.parent_slices.index_range(range).unwrap()
     }
 
-    #[inline(always)]
     pub fn push_new_match(&mut self, m: VectoredMatch<'data>) { self.matches_tx.send(m).unwrap(); }
 
-    #[inline(always)]
     pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
   }
 
@@ -455,7 +427,6 @@ pub mod chimera {
   }
 
   impl ChimeraMatchResult {
-    #[inline(always)]
     pub(crate) fn into_native(self) -> hs::ch_callback_t {
       let x: u8 = self.into();
       x.into()
@@ -486,7 +457,6 @@ pub mod chimera {
   }
 
   impl ChimeraMatchEvent {
-    #[inline(always)]
     pub fn coerce_args(
       id: c_uint,
       from: c_ulonglong,
@@ -520,7 +490,6 @@ pub mod chimera {
       }
     }
 
-    #[inline(always)]
     pub unsafe fn extract_context<'a, T>(
       context: Option<ptr::NonNull<c_void>>,
     ) -> Option<Pin<&'a mut T>> {
@@ -567,7 +536,6 @@ pub mod chimera {
   }
 
   impl<'data, 'code> ChimeraSliceMatcher<'data, 'code> {
-    #[inline]
     pub fn new(
       parent_slice: ByteSlice<'data>,
       scanner: &'code mut impl ChimeraScanner<'data>,
@@ -587,26 +555,20 @@ pub mod chimera {
       (s, matches_rx, errors_rx)
     }
 
-    #[inline]
     pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
 
-    #[inline(always)]
     pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
       self.parent_slice.index_range(range).unwrap()
     }
 
-    #[inline(always)]
     pub fn push_new_match(&self, m: ChimeraMatch<'data>) { self.matches_tx.send(m).unwrap(); }
 
-    #[inline(always)]
     pub fn handle_match(&mut self, m: &ChimeraMatch<'data>) -> ChimeraMatchResult {
       self.handler.handle_match(m)
     }
 
-    #[inline(always)]
     pub fn push_new_error(&self, e: ChimeraMatchError) { self.errors_tx.send(e).unwrap(); }
 
-    #[inline(always)]
     pub fn handle_error(&mut self, e: &ChimeraMatchError) -> ChimeraMatchResult {
       self.handler.handle_error(e)
     }

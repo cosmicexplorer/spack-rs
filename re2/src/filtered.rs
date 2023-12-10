@@ -20,10 +20,8 @@ use std::{marker::PhantomData, mem, ops, os::raw::c_int, slice};
 pub struct AtomIndex(pub(crate) c_int);
 
 impl AtomIndex {
-  #[inline]
   pub const fn as_index(self) -> u16 { self.0 as u16 }
 
-  #[inline]
   pub const fn from_index(x: u16) -> Self { Self(x as c_int) }
 }
 
@@ -36,7 +34,6 @@ impl From<AtomIndex> for u16 {
 pub struct AtomSet(re2_c::StringSet);
 
 impl AtomSet {
-  #[inline]
   pub(crate) const fn from_native(s: re2_c::StringSet) -> Self { Self(s) }
 
   fn as_ptr(&self) -> *const re2_c::StringWrapper { unsafe { self.0.cdata() } }
@@ -124,10 +121,8 @@ impl<'a> SelectedAtoms<'a> {
 pub struct FilteredRE2Builder(re2_c::FilteredRE2Wrapper);
 
 impl FilteredRE2Builder {
-  #[inline]
   pub fn new() -> Self { Self(unsafe { re2_c::FilteredRE2Wrapper::new() }) }
 
-  #[inline]
   pub fn with_min_atom_length(min_atom_len: usize) -> Self {
     Self(unsafe { re2_c::FilteredRE2Wrapper::new1(min_atom_len as c_int) })
   }
@@ -148,7 +143,6 @@ impl FilteredRE2Builder {
     Ok(ExpressionIndex(unsafe { id.assume_init() }))
   }
 
-  #[inline]
   pub fn add(&mut self, pattern: &str, options: Options) -> Result<ExpressionIndex, RE2ErrorCode> {
     self.add_view(StringView::from_str(pattern), options)
   }
@@ -173,12 +167,10 @@ impl FilteredRE2Builder {
     }
   }
 
-  #[inline]
   pub fn slow_first_match(&self, text: &str) -> Option<ExpressionIndex> {
     self.slow_first_match_view(StringView::from_str(text))
   }
 
-  #[inline]
   pub fn num_regexps(&self) -> usize { unsafe { self.0.num_regexps() } }
 }
 
@@ -286,7 +278,6 @@ impl<'o> InnerRE2<'o> {
 pub struct FilteredRE2(re2_c::FilteredRE2Wrapper);
 
 impl FilteredRE2 {
-  #[inline]
   pub(crate) const fn from_native(w: re2_c::FilteredRE2Wrapper) -> Self { Self(w) }
 
   pub fn first_match_view(
@@ -306,7 +297,6 @@ impl FilteredRE2 {
     }
   }
 
-  #[inline]
   pub fn first_match(&self, text: &str, atoms: &MatchedSetInfo) -> Option<ExpressionIndex> {
     self.first_match_view(StringView::from_str(text), atoms)
   }
@@ -326,7 +316,6 @@ impl FilteredRE2 {
     }
   }
 
-  #[inline]
   pub fn all_matches(
     &self,
     text: &str,
@@ -336,7 +325,6 @@ impl FilteredRE2 {
     self.all_matches_view(StringView::from_str(text), atoms, matching_regexps)
   }
 
-  #[inline]
   pub fn all_potentials(
     &self,
     atoms: &MatchedSetInfo,
@@ -350,10 +338,8 @@ impl FilteredRE2 {
     !potential_regexps.is_empty()
   }
 
-  #[inline]
   pub fn num_regexps(&self) -> usize { unsafe { self.0.num_regexps() } }
 
-  #[inline]
   fn get_re2<'o>(&'o self, index: usize) -> InnerRE2<'o> {
     let re2_ptr: *const re2::RE2 = unsafe { self.0.get_re2(index as c_int) };
     InnerRE2::new(re2_ptr)
@@ -441,7 +427,6 @@ impl Filter {
     })
   }
 
-  #[inline]
   pub fn all_matches_view(
     &self,
     text: StringView,
@@ -451,7 +436,6 @@ impl Filter {
     self.set.match_routine_view(text, atoms) && self.filter.all_matches_view(text, atoms, matches)
   }
 
-  #[inline]
   pub fn all_matches(
     &self,
     text: &str,
@@ -461,7 +445,6 @@ impl Filter {
     self.all_matches_view(StringView::from_str(text), atoms, matches)
   }
 
-  #[inline]
   pub fn potential_matches_view(
     &self,
     text: StringView,
@@ -471,7 +454,6 @@ impl Filter {
     self.set.match_routine_view(text, atoms) && self.filter.all_potentials(atoms, matches)
   }
 
-  #[inline]
   pub fn potential_matches(
     &self,
     text: &str,
@@ -481,7 +463,6 @@ impl Filter {
     self.potential_matches_view(StringView::from_str(text), atoms, matches)
   }
 
-  #[inline]
   pub fn get_atoms_view<'a>(
     &'a self,
     atoms: &'a MatchedSetInfo,
@@ -489,7 +470,6 @@ impl Filter {
     self.atom_set.index_by(atoms).map(|sw| sw.as_view())
   }
 
-  #[inline]
   pub fn get_atoms<'a>(
     &'a self,
     atoms: &'a MatchedSetInfo,
@@ -497,7 +477,6 @@ impl Filter {
     self.get_atoms_view(atoms).map(|s| s.as_str())
   }
 
-  #[inline]
   pub fn get_matches<'a>(
     &'a self,
     matches: &'a MatchedSetInfo,

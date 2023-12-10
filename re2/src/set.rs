@@ -23,66 +23,52 @@ use std::{
 pub struct MatchedSetInfo(re2_c::MatchedSetInfo);
 
 impl MatchedSetInfo {
-  #[inline]
   pub const fn empty() -> Self {
     Self(re2_c::MatchedSetInfo {
       matches_: ptr::null_mut(),
     })
   }
 
-  #[inline]
   pub(crate) fn as_ref_native(&self) -> &re2_c::MatchedSetInfo { &self.0 }
 
-  #[inline]
   pub(crate) fn as_mut_native(&mut self) -> &mut re2_c::MatchedSetInfo { &mut self.0 }
 
-  #[inline]
   pub fn as_expression_slice(&self) -> &[ExpressionIndex] {
     unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
   }
 
-  #[inline]
   pub fn as_mut_expression_slice(&mut self) -> &mut [ExpressionIndex] {
     unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
   }
 
-  #[inline]
   pub fn as_atom_slice(&self) -> &[AtomIndex] {
     unsafe { slice::from_raw_parts(self.atom_data_pointer(), self.len()) }
   }
 
-  #[inline]
   pub fn as_mut_atom_slice(&self) -> &mut [AtomIndex] {
     unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
   }
 
-  #[inline]
   pub fn capacity(&self) -> usize { unsafe { self.0.capacity() } }
 
-  #[inline]
   pub fn reserve(&mut self, to: usize) {
     unsafe {
       self.0.reserve(to);
     }
   }
 
-  #[inline]
   pub fn set_len(&mut self, to: usize) {
     unsafe {
       self.0.set_len(to);
     }
   }
 
-  #[inline]
   pub fn len(&self) -> usize { unsafe { self.0.size() } }
 
-  #[inline]
   pub fn is_empty(&self) -> bool { self.len() == 0 }
 
-  #[inline]
   unsafe fn data_pointer(&self) -> *const ExpressionIndex { mem::transmute(self.0.data()) }
 
-  #[inline]
   unsafe fn atom_data_pointer(&self) -> *const AtomIndex { mem::transmute(self.0.data()) }
 }
 
@@ -99,10 +85,8 @@ impl ops::Drop for MatchedSetInfo {
 pub struct ExpressionIndex(pub(crate) c_int);
 
 impl ExpressionIndex {
-  #[inline]
   pub const fn as_index(self) -> u16 { self.0 as u16 }
 
-  #[inline]
   pub const fn from_index(x: u16) -> Self { Self(x as c_int) }
 }
 
@@ -114,12 +98,10 @@ impl From<ExpressionIndex> for u16 {
 pub struct SetBuilder(re2_c::SetWrapper);
 
 impl SetBuilder {
-  #[inline]
   pub fn new(options: Options, anchor: Anchor) -> Self {
     Self(unsafe { re2_c::SetWrapper::new(&options.into_native(), anchor.into_native()) })
   }
 
-  #[inline]
   pub fn add_view(&mut self, pattern: StringView) -> Result<ExpressionIndex, SetPatternError> {
     let mut error = StringWrapper::blank();
     let ret: c_int = unsafe { self.0.add(pattern.into_native(), error.as_mut_native()) };
@@ -143,12 +125,10 @@ impl SetBuilder {
   ///   b.add("as(df").err().unwrap(),
   /// );
   /// ```
-  #[inline]
   pub fn add(&mut self, pattern: &str) -> Result<ExpressionIndex, SetPatternError> {
     self.add_view(StringView::from_str(pattern))
   }
 
-  #[inline]
   pub fn compile(self) -> Result<Set, SetCompileError> {
     let mut s: ManuallyDrop<Self> = ManuallyDrop::new(self);
     if unsafe { s.0.compile() } {
@@ -179,7 +159,6 @@ impl ops::Drop for SetBuilder {
 pub struct Set(pub(crate) re2_c::SetWrapper);
 
 impl Set {
-  #[inline]
   pub fn match_routine_view(&self, text: StringView, matches: &mut MatchedSetInfo) -> bool {
     unsafe {
       self
@@ -208,12 +187,10 @@ impl Set {
   /// assert!(s.match_routine("bsdf", &mut m));
   /// assert_eq!(&[e2], m.as_expression_slice());
   /// ```
-  #[inline]
   pub fn match_routine(&self, text: &str, matches: &mut MatchedSetInfo) -> bool {
     self.match_routine_view(StringView::from_str(text), matches)
   }
 
-  #[inline]
   pub fn match_routine_with_error_view(
     &self,
     text: StringView,
@@ -254,7 +231,6 @@ impl Set {
   /// assert!(s.match_routine_with_error("bsdf", &mut m).unwrap());
   /// assert_eq!(&[e2], m.as_expression_slice());
   /// ```
-  #[inline]
   pub fn match_routine_with_error(
     &self,
     text: &str,

@@ -59,19 +59,15 @@ impl CacheDir {
     Ok(Self { location: path })
   }
 
-  #[inline]
   pub fn location(&self) -> &Path { &self.location }
 
   /// We use the hex-encoded checksum value as the ultimate directory name.
-  #[inline]
   pub fn dirname(&self) -> String { PATCHES_SHA256SUM.encode_hex() }
 
   /// The path to unpack the tar archive into.
-  #[inline]
   pub fn unpacking_path(&self) -> PathBuf { self.location.join(PATCHES_TOPLEVEL_COMPONENT) }
 
   /// The path to download the release tarball to.
-  #[inline]
   pub fn tarball_path(&self) -> PathBuf { self.location.join(format!("{}.tar.gz", self.dirname())) }
 
   /// The path to the root of the spack repo, through a symlink.
@@ -79,11 +75,9 @@ impl CacheDir {
   /// FIXME: Note that this repeats the
   /// [`PATCHES_TOPLEVEL_COMPONENT`] component
   /// used in [`Self::unpacking_path`].
-  #[inline]
   pub fn repo_root(&self) -> PathBuf { self.unpacking_path().join(PATCHES_TOPLEVEL_COMPONENT) }
 
   /// The path to the spack script in the spack repo, through a symlink.
-  #[inline]
   pub fn spack_script(&self) -> PathBuf { self.repo_root().join("bin").join("spack") }
 }
 
@@ -92,7 +86,6 @@ struct SpackTarball {
 }
 
 impl SpackTarball {
-  #[inline]
   pub fn downloaded_path(&self) -> &Path { self.downloaded_location.as_ref() }
 
   async fn check_tarball_digest(
@@ -186,7 +179,6 @@ pub struct SpackRepo {
 }
 
 impl SpackRepo {
-  #[inline]
   pub(crate) fn cache_location(&self) -> &Path { self.cache_dir.location() }
 
   pub(crate) fn unzip_archive(from: &Path, into: &Path) -> Result<Option<()>, SummoningError> {

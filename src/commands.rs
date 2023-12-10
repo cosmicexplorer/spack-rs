@@ -1615,7 +1615,6 @@ pub mod checksum {
     once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
   impl AddToPackage {
-    #[inline]
     async fn version_is_known(
       req: VersionsRequest,
       new_version: &str,
