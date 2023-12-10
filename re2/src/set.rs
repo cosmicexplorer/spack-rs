@@ -108,7 +108,7 @@ impl SetBuilder {
 
     if ret == -1 {
       Err(SetPatternError {
-        message: error.as_view().as_str().to_string(),
+        message: unsafe { error.as_view().as_str() }.to_string(),
       })
     } else {
       assert!(ret <= u8::MAX as c_int);

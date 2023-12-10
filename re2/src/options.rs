@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
+//! Configuration accepted by the pattern compiler.
 
 use crate::re2;
 #[cfg(doc)]
@@ -14,7 +14,8 @@ use std::os::raw::c_uint;
 /// Predefined common options.
 ///
 /// If you need more complicated things, modify an [`Options`] object directly.
-/// This can be converted into [`Options`] by calling `.into()`: ```
+/// This can be converted into [`Options`] by calling `.into()`:
+///```
 /// use re2::options::*;
 ///
 /// let p = Options::default();
@@ -70,7 +71,8 @@ impl CannedOptions {
 ///
 /// However, `re2` will also accept Latin-1 encoded text. Each string method has
 /// a `*_view`-suffixed version which accepts a [`StringView`], which can
-/// represent a slice of arbitrary bytes: ```
+/// represent a slice of arbitrary bytes:
+///```
 /// # fn main() -> Result<(), re2::error::RE2Error> {
 /// use re2::{*, options::*, string::*};
 ///

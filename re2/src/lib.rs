@@ -60,8 +60,8 @@ impl RE2 {
   /// use re2::RE2;
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
-  /// let r: RE2 = q.as_view().as_str().parse()?;
-  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern().as_str());
+  /// let r: RE2 = unsafe { q.as_view().as_str() }.parse()?;
+  /// assert_eq!(r"1\.5\-1\.8\?", unsafe { r.pattern().as_str() });
   /// assert!(r.full_match("1.5-1.8?"));
   /// # Ok(())
   /// # }
@@ -91,7 +91,7 @@ impl RE2 {
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
-  /// assert_eq!(r.pattern().as_str(), "asdf");
+  /// assert_eq!(unsafe { r.pattern().as_str() }, "asdf");
   /// # Ok(())
   /// # }
   /// ```
@@ -132,8 +132,8 @@ impl RE2 {
 
   fn check_error(&self) -> Result<(), CompileError> {
     self.check_error_code().map_err(|code| CompileError {
-      message: self.error().as_str().to_string(),
-      arg: self.error_arg().as_str().to_string(),
+      message: unsafe { self.error().as_str() }.to_string(),
+      arg: unsafe { self.error_arg().as_str() }.to_string(),
       code,
     })
   }
@@ -170,7 +170,7 @@ impl RE2 {
   ///
   /// // Results are sorted by number:
   /// let groups: Vec<(&str, usize)> = r.named_groups()
-  ///   .map(|g| (g.name().as_str(), *g.index()))
+  ///   .map(|g| (unsafe { g.name().as_str() }, *g.index()))
   ///   .collect();
   /// assert_eq!(vec![("y", 1), ("x", 2), ("z", 4)], groups);
   /// # Ok(())
@@ -187,14 +187,19 @@ impl RE2 {
   /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
   /// assert_eq!(5, r.num_captures());
   ///
-  /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups().enumerate().collect();
+  /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups()
+  ///   .map(|s| s.map(|s| unsafe { s.as_str() }))
+  ///   .enumerate()
+  ///   .collect();
   /// assert_eq!(
   ///   &indexed,
   ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)]
   /// );
   /// # Ok(())
   /// # }
-  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+ExactSizeIterator {
+  pub fn named_and_numbered_groups(
+    &self,
+  ) -> impl Iterator<Item=Option<StringView<'_>>>+ExactSizeIterator {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 
@@ -209,7 +214,7 @@ impl RE2 {
   }
 
   fn convert_strings<'a, const N: usize>(argv: [StringView<'a>; N]) -> [&'a str; N] {
-    map_array(argv, |s| s.as_str())
+    map_array(argv, |s| unsafe { s.as_str() })
   }
 
   fn convert_from_strings<'a, const N: usize>(argv: [&'a str; N]) -> [StringView<'a>; N] {
@@ -382,7 +387,7 @@ impl RE2 {
     let mut text_view = StringView::from_str(*text);
     let ret = self.consume_view(&mut text_view);
     if ret {
-      *text = text_view.as_str();
+      *text = unsafe { text_view.as_str() };
     }
     ret
   }
@@ -439,7 +444,7 @@ impl RE2 {
     let mut text_view = StringView::from_str(*text);
     let ret = self.consume_capturing_view(&mut text_view);
     if ret.is_some() {
-      *text = text_view.as_str();
+      *text = unsafe { text_view.as_str() };
     }
     ret.map(Self::convert_strings)
   }
@@ -464,7 +469,7 @@ impl RE2 {
     let mut text_view = StringView::from_str(*text);
     let ret = self.find_and_consume_view(&mut text_view);
     if ret {
-      *text = text_view.as_str();
+      *text = unsafe { text_view.as_str() };
     }
     ret
   }
@@ -524,7 +529,7 @@ impl RE2 {
     let mut text_view = StringView::from_str(*text);
     let ret = self.find_and_consume_capturing_view(&mut text_view);
     if ret.is_some() {
-      *text = text_view.as_str();
+      *text = unsafe { text_view.as_str() };
     }
     ret.map(Self::convert_strings)
   }
@@ -538,7 +543,7 @@ impl RE2 {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
   /// assert!(r.replace(&mut s, "duh"));
-  /// assert_eq!(s.as_view().as_str(), "all duh king's men");
+  /// assert_eq!(unsafe { s.as_view().as_str() }, "all duh king's men");
   /// # Ok(())
   /// # }
   /// ```
@@ -570,7 +575,7 @@ impl RE2 {
   ///   "all the king's horses and all the king's men".into());
   /// assert_eq!(2, r.replace_n(&mut s, "duh", 3));
   /// assert_eq!(
-  ///   s.as_view().as_str(),
+  ///   unsafe { s.as_view().as_str() },
   ///   "all duh king's horses and all duh king's men",
   /// );
   /// # Ok(())
@@ -595,7 +600,7 @@ impl RE2 {
   ///   "all the king's horses and all the king's men".into());
   /// assert_eq!(2, r.global_replace(&mut s, "duh"));
   /// assert_eq!(
-  ///   s.as_view().as_str(),
+  ///   unsafe { s.as_view().as_str() },
   ///   "all duh king's horses and all duh king's men",
   /// );
   /// # Ok(())
@@ -625,7 +630,7 @@ impl RE2 {
   /// let r: re2::RE2 = "(.h)e".parse()?;
   /// let mut s = re2::string::StringWrapper::blank();
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
-  /// assert_eq!(s.as_view().as_str(), "tha");
+  /// assert_eq!(unsafe { s.as_view().as_str() }, "tha");
   /// # Ok(())
   /// # }
   /// ```
@@ -811,7 +816,7 @@ impl RE2 {
   pub fn split<'r, 'h: 'r>(&'r self, hay: &'h str) -> impl Iterator<Item=&'h str>+'r {
     self
       .split_view(StringView::from_str(hay))
-      .map(|s| s.as_str())
+      .map(|s| unsafe { s.as_str() })
   }
 
   pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
@@ -825,7 +830,7 @@ impl RE2 {
       Ok(())
     } else {
       Err(RewriteError {
-        message: sw.as_view().as_str().to_string(),
+        message: unsafe { sw.as_view().as_str() }.to_string(),
       })
     }
   }
@@ -875,7 +880,7 @@ impl RE2 {
   /// let mut sw = re2::string::StringWrapper::blank();
   /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
   /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
-  /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
+  /// assert_eq!(unsafe { sw.as_view().as_str() }, "bbsccasdffddff");
   /// # Ok(())
   /// # }
   /// ```
@@ -1070,7 +1075,7 @@ impl<'a> NamedAndNumberedGroups<'a> {
 }
 
 impl<'a> Iterator for NamedAndNumberedGroups<'a> {
-  type Item = Option<&'a str>;
+  type Item = Option<StringView<'a>>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let Self {
@@ -1113,7 +1118,7 @@ impl<'a> Iterator for NamedAndNumberedGroups<'a> {
         None
       } else {
         debug_assert_eq!(cur_index, named_group.index());
-        Some(named_group.name().as_str())
+        Some(named_group.name())
       }
     } else {
       None
