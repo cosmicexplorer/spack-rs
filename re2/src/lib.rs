@@ -20,15 +20,13 @@ use options::{Anchor, Options};
 pub mod string;
 use string::{StringView, StringWrapper};
 
-pub mod group;
-use group::{NamedAndNumberedGroups, NamedCapturingGroups, NamedGroup};
-
 pub mod set;
 
 pub mod filtered;
 
 use std::{
   cmp, fmt, hash,
+  marker::PhantomData,
   mem::{self, MaybeUninit},
   ops, ptr, str,
 };
@@ -55,7 +53,7 @@ impl RE2 {
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
   /// let r: RE2 = q.as_view().as_str().parse()?;
-  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern());
+  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern().as_str());
   /// assert!(r.full_match("1.5-1.8?"));
   /// # Ok(())
   /// # }
@@ -88,12 +86,12 @@ impl RE2 {
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
-  /// assert_eq!(r.pattern(), "asdf");
+  /// assert_eq!(r.pattern().as_str(), "asdf");
   /// # Ok(())
   /// # }
   /// ```
   #[inline]
-  pub fn pattern(&self) -> &str { unsafe { StringView::from_native(self.0.pattern()) }.as_str() }
+  pub fn pattern(&self) -> StringView { unsafe { StringView::from_native(self.0.pattern()) } }
 
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -124,9 +122,7 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn expensive_clone(&self) -> Self {
-    Self::compile(StringView::from_str(self.pattern()), self.options()).unwrap()
-  }
+  pub fn expensive_clone(&self) -> Self { Self::compile(self.pattern(), self.options()).unwrap() }
 
   #[inline]
   fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
@@ -206,19 +202,42 @@ impl RE2 {
   }
 
   #[inline]
-  fn empty_result<'a, const N: usize>() -> [&'a str; N] {
+  fn empty_result<'a, const N: usize>() -> [StringView<'a>; N] {
     assert_eq!(N, 0);
-    let ret: [MaybeUninit<&'a str>; N] = uninit_array();
+    let ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
     unsafe { array_assume_init(ret) }
   }
 
   #[inline]
-  unsafe fn convert_string_views<'a, const N: usize>(argv: [re2_c::StringView; N]) -> [&'a str; N] {
+  fn convert_string_views<'a, const N: usize>(argv: [re2_c::StringView; N]) -> [StringView<'a>; N] {
+    let mut ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(StringView::from_native(input));
+    }
+    unsafe { array_assume_init(ret) }
+  }
+
+  #[inline]
+  fn convert_strings<'a, const N: usize>(argv: [StringView<'a>; N]) -> [&'a str; N] {
     let mut ret: [MaybeUninit<&'a str>; N] = uninit_array();
     for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(StringView::from_native(input).as_str());
+      output.write(input.as_str());
     }
-    array_assume_init(ret)
+    unsafe { array_assume_init(ret) }
+  }
+
+  #[inline]
+  fn convert_from_strings<'a, const N: usize>(argv: [&'a str; N]) -> [StringView<'a>; N] {
+    let mut ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
+    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+      output.write(StringView::from_str(input));
+    }
+    unsafe { array_assume_init(ret) }
+  }
+
+  #[inline]
+  pub fn full_match_view(&self, text: StringView) -> bool {
+    unsafe { self.0.full_match(text.into_native()) }
   }
 
   ///```
@@ -231,9 +250,37 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn full_match(&self, text: &str) -> bool {
-    let text = StringView::from_str(text);
-    unsafe { self.0.full_match(text.into_native()) }
+  pub fn full_match(&self, text: &str) -> bool { self.full_match_view(StringView::from_str(text)) }
+
+  pub fn full_match_capturing_view<'a, const N: usize>(
+    &self,
+    text_view: StringView<'a>,
+  ) -> Option<[StringView<'a>; N]> {
+    if N == 0 {
+      return if self.full_match_view(text_view) {
+        Some(Self::empty_result())
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+
+    if !unsafe {
+      self.0.full_match_n(
+        text_view.into_native(),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
+        argv.len(),
+      )
+    } {
+      return None;
+    }
+
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -254,33 +301,16 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn full_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
-    if N == 0 {
-      return if self.full_match(text) {
-        Some(Self::empty_result())
-      } else {
-        None
-      };
-    }
-    if N > self.num_captures() {
-      return None;
-    }
+    self
+      .full_match_capturing_view(StringView::from_str(text))
+      .map(Self::convert_strings)
+  }
 
-    let text = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-
-    if !unsafe {
-      self.0.full_match_n(
-        text.into_native(),
-        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
-        mem::transmute(argv.as_mut_ptr()),
-        argv.len(),
-      )
-    } {
-      return None;
-    }
-
-    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
+  #[inline]
+  pub fn partial_match_view(&self, text: StringView) -> bool {
+    unsafe { self.0.partial_match(text.into_native()) }
   }
 
   ///```
@@ -295,8 +325,38 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn partial_match(&self, text: &str) -> bool {
-    let text = StringView::from_str(text);
-    unsafe { self.0.partial_match(text.into_native()) }
+    self.partial_match_view(StringView::from_str(text))
+  }
+
+  pub fn partial_match_capturing_view<'a, const N: usize>(
+    &self,
+    text_view: StringView<'a>,
+  ) -> Option<[StringView<'a>; N]> {
+    if N == 0 {
+      return if self.partial_match_view(text_view) {
+        Some(Self::empty_result())
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+
+    if !unsafe {
+      self.0.partial_match_n(
+        text_view.into_native(),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
+        argv.len(),
+      )
+    } {
+      return None;
+    }
+
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -320,33 +380,18 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn partial_match_capturing<'a, const N: usize>(&self, text: &'a str) -> Option<[&'a str; N]> {
-    if N == 0 {
-      return if self.partial_match(text) {
-        Some(Self::empty_result())
-      } else {
-        None
-      };
-    }
-    if N > self.num_captures() {
-      return None;
-    }
+    self
+      .partial_match_capturing_view(StringView::from_str(text))
+      .map(Self::convert_strings)
+  }
 
-    let text = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-
-    if !unsafe {
-      self.0.partial_match_n(
-        text.into_native(),
-        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
-        mem::transmute(argv.as_mut_ptr()),
-        argv.len(),
-      )
-    } {
-      return None;
+  pub fn consume_view(&self, text_view: &mut StringView) -> bool {
+    if !unsafe { self.0.consume(text_view.as_mut_native()) } {
+      return false;
     }
-
-    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
+    true
   }
 
   ///```
@@ -359,12 +404,43 @@ impl RE2 {
   /// # }
   /// ```
   pub fn consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(text);
-    if !unsafe { self.0.consume(text_view.as_mut_native()) } {
-      return false;
+    let mut text_view = StringView::from_str(*text);
+    let ret = self.consume_view(&mut text_view);
+    if ret {
+      *text = text_view.as_str();
     }
-    *text = text_view.as_str();
-    true
+    ret
+  }
+
+  pub fn consume_capturing_view<'a, const N: usize>(
+    &self,
+    text_view: &mut StringView<'a>,
+  ) -> Option<[StringView<'a>; N]> {
+    if N == 0 {
+      return if self.consume_view(text_view) {
+        Some(Self::empty_result())
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+
+    if !unsafe {
+      self.0.consume_n(
+        text_view.as_mut_native(),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
+        argv.len(),
+      )
+    } {
+      return None;
+    }
+
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -385,34 +461,20 @@ impl RE2 {
   /// # }
   /// ```
   pub fn consume_capturing<'a, const N: usize>(&self, text: &mut &'a str) -> Option<[&'a str; N]> {
-    if N == 0 {
-      return if self.consume(text) {
-        Some(Self::empty_result())
-      } else {
-        None
-      };
+    let mut text_view = StringView::from_str(*text);
+    let ret = self.consume_capturing_view(&mut text_view);
+    if ret.is_some() {
+      *text = text_view.as_str();
     }
-    if N > self.num_captures() {
-      return None;
+    ret.map(Self::convert_strings)
+  }
+
+  #[inline]
+  pub fn find_and_consume_view(&self, text_view: &mut StringView) -> bool {
+    if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
+      return false;
     }
-
-    let mut text_view = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-
-    if !unsafe {
-      self.0.consume_n(
-        text_view.as_mut_native(),
-        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
-        mem::transmute(argv.as_mut_ptr()),
-        argv.len(),
-      )
-    } {
-      return None;
-    }
-
-    *text = text_view.as_str();
-
-    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
+    true
   }
 
   ///```
@@ -424,13 +486,45 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn find_and_consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(text);
-    if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
-      return false;
+    let mut text_view = StringView::from_str(*text);
+    let ret = self.find_and_consume_view(&mut text_view);
+    if ret {
+      *text = text_view.as_str();
     }
-    *text = text_view.as_str();
-    true
+    ret
+  }
+
+  pub fn find_and_consume_capturing_view<'a, const N: usize>(
+    &self,
+    text_view: &mut StringView<'a>,
+  ) -> Option<[StringView<'a>; N]> {
+    if N == 0 {
+      return if self.find_and_consume_view(text_view) {
+        Some(Self::empty_result())
+      } else {
+        None
+      };
+    }
+    if N > self.num_captures() {
+      return None;
+    }
+
+    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+
+    if !unsafe {
+      self.0.find_and_consume_n(
+        text_view.as_mut_native(),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(argv.as_mut_ptr()),
+        argv.len(),
+      )
+    } {
+      return None;
+    }
+
+    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
   ///```
@@ -454,34 +548,17 @@ impl RE2 {
     &self,
     text: &mut &'a str,
   ) -> Option<[&'a str; N]> {
-    if N == 0 {
-      return if self.find_and_consume(text) {
-        Some(Self::empty_result())
-      } else {
-        None
-      };
+    let mut text_view = StringView::from_str(*text);
+    let ret = self.find_and_consume_capturing_view(&mut text_view);
+    if ret.is_some() {
+      *text = text_view.as_str();
     }
-    if N > self.num_captures() {
-      return None;
-    }
+    ret.map(Self::convert_strings)
+  }
 
-    let mut text_view = StringView::from_str(text);
-    let mut argv: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-
-    if !unsafe {
-      self.0.find_and_consume_n(
-        text_view.as_mut_native(),
-        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
-        mem::transmute(argv.as_mut_ptr()),
-        argv.len(),
-      )
-    } {
-      return None;
-    }
-
-    *text = text_view.as_str();
-
-    Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
+  #[inline]
+  pub fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
+    unsafe { self.0.replace(text.as_mut_native(), rewrite.into_native()) }
   }
 
   ///```
@@ -495,8 +572,25 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn replace(&self, text: &mut StringWrapper, rewrite: &str) -> bool {
-    let rewrite = StringView::from_str(rewrite);
-    unsafe { self.0.replace(text.as_mut_native(), rewrite.into_native()) }
+    self.replace_view(text, StringView::from_str(rewrite))
+  }
+
+  #[inline]
+  pub fn replace_n_view(
+    &self,
+    text: &mut StringWrapper,
+    rewrite: StringView,
+    limit: usize,
+  ) -> usize {
+    if limit == 0 {
+      self.global_replace_view(text, rewrite)
+    } else {
+      let mut num_replacements_made: usize = 0;
+      while self.replace_view(text, rewrite) {
+        num_replacements_made += 1;
+      }
+      num_replacements_made
+    }
   }
 
   ///```
@@ -514,14 +608,15 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn replace_n(&self, text: &mut StringWrapper, rewrite: &str, limit: usize) -> usize {
-    if limit == 0 {
-      self.global_replace(text, rewrite)
-    } else {
-      let mut num_replacements_made: usize = 0;
-      while self.replace(text, rewrite) {
-        num_replacements_made += 1;
-      }
-      num_replacements_made
+    self.replace_n_view(text, StringView::from_str(rewrite), limit)
+  }
+
+  #[inline]
+  pub fn global_replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> usize {
+    unsafe {
+      self
+        .0
+        .global_replace(text.as_mut_native(), rewrite.into_native())
     }
   }
 
@@ -540,11 +635,22 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn global_replace(&self, text: &mut StringWrapper, rewrite: &str) -> usize {
-    let rewrite = StringView::from_str(rewrite);
+    self.global_replace_view(text, StringView::from_str(rewrite))
+  }
+
+  #[inline]
+  pub fn extract_view(
+    &self,
+    text: StringView,
+    rewrite: StringView,
+    out: &mut StringWrapper,
+  ) -> bool {
     unsafe {
-      self
-        .0
-        .global_replace(text.as_mut_native(), rewrite.into_native())
+      self.0.extract(
+        text.into_native(),
+        rewrite.into_native(),
+        out.as_mut_native(),
+      )
     }
   }
 
@@ -559,14 +665,25 @@ impl RE2 {
   /// ```
   #[inline]
   pub fn extract(&self, text: &str, rewrite: &str, out: &mut StringWrapper) -> bool {
-    let text = StringView::from_str(text);
-    let rewrite = StringView::from_str(rewrite);
+    self.extract_view(
+      StringView::from_str(text),
+      StringView::from_str(rewrite),
+      out,
+    )
+  }
+
+  pub fn match_no_captures_view(
+    &self,
+    text: StringView,
+    range: ops::Range<usize>,
+    anchor: Anchor,
+  ) -> bool {
+    let ops::Range { start, end } = range;
+
     unsafe {
-      self.0.extract(
-        text.into_native(),
-        rewrite.into_native(),
-        out.as_mut_native(),
-      )
+      self
+        .0
+        .match_single(text.into_native(), start, end, anchor.into_native())
     }
   }
 
@@ -585,15 +702,38 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn match_no_captures(&self, text: &str, range: ops::Range<usize>, anchor: Anchor) -> bool {
-    let text = StringView::from_str(text);
-    let ops::Range { start, end } = range;
+    self.match_no_captures_view(StringView::from_str(text), range, anchor)
+  }
 
-    unsafe {
-      self
-        .0
-        .match_single(text.into_native(), start, end, anchor.into_native())
+  pub fn match_routine_view<'a, const N: usize>(
+    &self,
+    text_view: StringView<'a>,
+    range: ops::Range<usize>,
+    anchor: Anchor,
+  ) -> Option<[StringView<'a>; N]> {
+    assert_ne!(N, 0);
+    let ops::Range { start, end } = range;
+    let mut submatches: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+
+    if !unsafe {
+      self.0.match_routine(
+        text_view.into_native(),
+        start,
+        end,
+        anchor.into_native(),
+        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
+        mem::transmute(submatches.as_mut_ptr()),
+        submatches.len(),
+      )
+    } {
+      return None;
     }
+
+    Some(Self::convert_string_views(unsafe {
+      array_assume_init(submatches)
+    }))
   }
 
   /// **NB: The 0th element of the result is the entire match, so `::<0>`
@@ -614,32 +754,27 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn match_routine<'a, const N: usize>(
     &self,
     text: &'a str,
     range: ops::Range<usize>,
     anchor: Anchor,
   ) -> Option<[&'a str; N]> {
+    self
+      .match_routine_view(StringView::from_str(text), range, anchor)
+      .map(Self::convert_strings)
+  }
+
+  pub fn find_iter_view<'r, 'h: 'r, const N: usize>(
+    &'r self,
+    hay: StringView<'h>,
+  ) -> impl Iterator<Item=[StringView<'h>; N]>+'r {
     assert_ne!(N, 0);
-    let text = StringView::from_str(text);
-    let ops::Range { start, end } = range;
-    let mut submatches: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-
-    if !unsafe {
-      self.0.match_routine(
-        text.into_native(),
-        start,
-        end,
-        anchor.into_native(),
-        /* TODO: use MaybeUninit::slice_as_mut_ptr! */
-        mem::transmute(submatches.as_mut_ptr()),
-        submatches.len(),
-      )
-    } {
-      return None;
+    MatchIter {
+      remaining_input: hay,
+      pattern: self,
     }
-
-    Some(unsafe { Self::convert_string_views(array_assume_init(submatches)) })
   }
 
   /// **NB: if no input is consumed upon searching the regex, iteration will
@@ -657,13 +792,22 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn find_iter<'r, 'h: 'r, const N: usize>(
     &'r self,
     hay: &'h str,
   ) -> impl Iterator<Item=[&'h str; N]>+'r {
-    assert_ne!(N, 0);
-    MatchIter {
-      remaining_input: hay,
+    self
+      .find_iter_view(StringView::from_str(hay))
+      .map(Self::convert_strings)
+  }
+
+  pub fn split_view<'r, 'h: 'r>(
+    &'r self,
+    hay: StringView<'h>,
+  ) -> impl Iterator<Item=StringView<'h>>+'r {
+    SplitIter {
+      remaining_input: Some(hay),
       pattern: self,
     }
   }
@@ -702,29 +846,14 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
+  #[inline]
   pub fn split<'r, 'h: 'r>(&'r self, hay: &'h str) -> impl Iterator<Item=&'h str>+'r {
-    SplitIter {
-      remaining_input: Some(hay),
-      pattern: self,
-    }
+    self
+      .split_view(StringView::from_str(hay))
+      .map(|s| s.as_str())
   }
 
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = "asdf".parse()?;
-  /// r.check_rewrite_string("a").unwrap();
-  /// r.check_rewrite_string(r"a\0b").unwrap();
-  /// assert_eq!(
-  ///   re2::error::RewriteError {
-  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
-  ///   },
-  ///   r.check_rewrite_string(r"a\0b\1").err().unwrap(),
-  /// );
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn check_rewrite_string(&self, rewrite: &str) -> Result<(), RewriteError> {
-    let rewrite = StringView::from_str(rewrite);
+  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
     let mut sw = StringWrapper::blank();
 
     if unsafe {
@@ -742,24 +871,32 @@ impl RE2 {
 
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let mut sw = re2::string::StringWrapper::blank();
-  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
-  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
-  /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
+  /// let r: re2::RE2 = "asdf".parse()?;
+  /// r.check_rewrite("a").unwrap();
+  /// r.check_rewrite(r"a\0b").unwrap();
+  /// assert_eq!(
+  ///   re2::error::RewriteError {
+  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
+  ///   },
+  ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
+  /// );
   /// # Ok(())
   /// # }
   /// ```
-  pub fn vector_rewrite<const N: usize>(
+  #[inline]
+  pub fn check_rewrite(&self, rewrite: &str) -> Result<(), RewriteError> {
+    self.check_rewrite_view(StringView::from_str(rewrite))
+  }
+
+  pub fn vector_rewrite_view<const N: usize>(
     &self,
     out: &mut StringWrapper,
-    rewrite: &str,
-    inputs: [&str; N],
+    rewrite: StringView,
+    inputs: [StringView; N],
   ) -> bool {
-    let rewrite = StringView::from_str(rewrite);
-
     let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
     for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
-      sv.write(StringView::from_str(s).into_native());
+      sv.write(s.into_native());
     }
     let input_views = unsafe { array_assume_init(input_views) };
 
@@ -771,6 +908,27 @@ impl RE2 {
         input_views.len(),
       )
     }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let mut sw = re2::string::StringWrapper::blank();
+  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
+  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
+  /// assert_eq!(sw.as_view().as_str(), "bbsccasdffddff");
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[inline]
+  pub fn vector_rewrite<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: &str,
+    inputs: [&str; N],
+  ) -> bool {
+    let rewrite = StringView::from_str(rewrite);
+    let inputs = Self::convert_from_strings(inputs);
+    self.vector_rewrite_view(out, rewrite, inputs)
   }
 }
 
@@ -824,7 +982,7 @@ impl fmt::Display for RE2 {
 
 impl cmp::PartialEq for RE2 {
   fn eq(&self, other: &Self) -> bool {
-    self.pattern().eq(other.pattern()) && self.options().eq(&other.options())
+    self.pattern().eq(&other.pattern()) && self.options().eq(&other.options())
   }
 }
 
@@ -852,16 +1010,186 @@ impl hash::Hash for RE2 {
   }
 }
 
+
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+pub struct NamedGroup<'a> {
+  inner: re2_c::NamedGroup,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> NamedGroup<'a> {
+  #[inline]
+  pub(crate) const unsafe fn from_native(inner: re2_c::NamedGroup) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  pub const fn name(&self) -> StringView<'a> { StringView::from_native(self.inner.name_) }
+
+  #[inline]
+  pub const fn index(&self) -> &'a usize { unsafe { mem::transmute(&self.inner.index_) } }
+}
+
+impl<'a> fmt::Debug for NamedGroup<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "NamedGroup(i={}, name={:?})", self.index(), self.name())
+  }
+}
+
+#[repr(transparent)]
+struct NamedCapturingGroups<'a> {
+  inner: re2_c::NamedCapturingGroups,
+  _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> NamedCapturingGroups<'a> {
+  #[inline]
+  pub(crate) const unsafe fn from_native(inner: re2_c::NamedCapturingGroups) -> Self {
+    Self {
+      inner,
+      _ph: PhantomData,
+    }
+  }
+
+  #[inline]
+  fn deref(&self) -> NamedGroup<'a> {
+    let mut out: MaybeUninit<re2_c::NamedGroup> = MaybeUninit::uninit();
+    unsafe {
+      self.inner.deref(out.as_mut_ptr());
+      NamedGroup::from_native(out.assume_init())
+    }
+  }
+
+  #[inline]
+  fn advance(&mut self) {
+    unsafe {
+      self.inner.advance();
+    }
+  }
+
+  #[inline]
+  fn completed(&self) -> bool { unsafe { self.inner.completed() } }
+}
+
+impl<'a> Iterator for NamedCapturingGroups<'a> {
+  type Item = NamedGroup<'a>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.completed() {
+      return None;
+    }
+
+    let ret = self.deref();
+    self.advance();
+    Some(ret)
+  }
+}
+
+struct NamedAndNumberedGroups<'a> {
+  at_start: bool,
+  total_num_captures: usize,
+  groups_iter: Option<NamedCapturingGroups<'a>>,
+  next_named_group: Option<NamedGroup<'a>>,
+  cur_index: usize,
+}
+
+impl<'a> NamedAndNumberedGroups<'a> {
+  pub fn new(total_num_captures: usize, groups_iter: NamedCapturingGroups<'a>) -> Self {
+    Self {
+      at_start: true,
+      total_num_captures,
+      groups_iter: Some(groups_iter),
+      next_named_group: None,
+      cur_index: 0,
+    }
+  }
+
+  const fn remaining(&self) -> usize {
+    if self.at_start {
+      self.total_num_captures + 1
+    } else {
+      self.total_num_captures - self.cur_index + 1
+    }
+  }
+}
+
+impl<'a> Iterator for NamedAndNumberedGroups<'a> {
+  type Item = Option<&'a str>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    let Self {
+      ref mut at_start,
+      ref total_num_captures,
+      ref mut groups_iter,
+      ref mut next_named_group,
+      ref mut cur_index,
+    } = self;
+
+    /* Return 0th submatch (for whole pattern). */
+    if *at_start {
+      *at_start = false;
+      *cur_index = 1;
+      return Some(None);
+    }
+
+    if *cur_index > *total_num_captures {
+      return None;
+    }
+
+    if next_named_group.is_none() {
+      let reset_groups_iter = if let Some(ref mut g) = groups_iter {
+        if g.completed() {
+          true
+        } else {
+          *next_named_group = Some(g.deref());
+          g.advance();
+          false
+        }
+      } else {
+        false
+      };
+      if reset_groups_iter {
+        *groups_iter = None;
+      }
+    }
+    let ret = if let Some(named_group) = next_named_group {
+      if *cur_index < *named_group.index() {
+        None
+      } else {
+        debug_assert_eq!(cur_index, named_group.index());
+        Some(named_group.name().as_str())
+      }
+    } else {
+      None
+    };
+    if ret.is_some() {
+      *next_named_group = None;
+    }
+
+    *cur_index += 1;
+
+    Some(ret)
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) { (self.remaining(), Some(self.remaining())) }
+}
+
+impl<'a> ExactSizeIterator for NamedAndNumberedGroups<'a> {}
+
 struct MatchIter<'r, 'h, const N: usize> {
-  remaining_input: &'h str,
+  remaining_input: StringView<'h>,
   pattern: &'r RE2,
 }
 
 impl<'r, 'h, const N: usize> Iterator for MatchIter<'r, 'h, N> {
-  type Item = [&'h str; N];
+  type Item = [StringView<'h>; N];
 
   fn next(&mut self) -> Option<Self::Item> {
-    let matches = self.pattern.match_routine(
+    let matches = self.pattern.match_routine_view(
       self.remaining_input,
       0..self.remaining_input.len(),
       Anchor::Unanchored,
@@ -869,11 +1197,11 @@ impl<'r, 'h, const N: usize> Iterator for MatchIter<'r, 'h, N> {
     let consumed = unsafe {
       /* Group 0 has the entire match, and since we checked N > 0 elsewhere we know
        * it exists. */
-      let full_match = matches.get_unchecked(0).as_bytes();
+      let full_match = matches.get_unchecked(0).as_slice();
       /* The remaining input should point past the end of the match. */
       let new_start = full_match.as_ptr().add(full_match.len());
       /* Calculate the distance from the previous start. */
-      let consumed = new_start.offset_from(self.remaining_input.as_bytes().as_ptr());
+      let consumed = new_start.offset_from(self.remaining_input.as_slice().as_ptr());
       debug_assert!(consumed >= 0);
       consumed as usize
     };
@@ -881,37 +1209,38 @@ impl<'r, 'h, const N: usize> Iterator for MatchIter<'r, 'h, N> {
     if consumed == 0 {
       return None;
     }
-    self.remaining_input = &self.remaining_input[consumed..];
+    self.remaining_input = self.remaining_input.index_range(consumed..).unwrap();
     Some(matches)
   }
 }
 
 struct SplitIter<'r, 'h> {
-  remaining_input: Option<&'h str>,
+  remaining_input: Option<StringView<'h>>,
   pattern: &'r RE2,
 }
 
 impl<'r, 'h> Iterator for SplitIter<'r, 'h> {
-  type Item = &'h str;
+  type Item = StringView<'h>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let remaining = self.remaining_input?;
-    if let Some([m]) = self
-      .pattern
-      .match_routine(remaining, 0..remaining.len(), Anchor::Unanchored)
+    if let Some([m]) =
+      self
+        .pattern
+        .match_routine_view(remaining, 0..remaining.len(), Anchor::Unanchored)
     {
-      let m = m.as_bytes();
-      let prev_start = remaining.as_bytes().as_ptr();
+      let m = m.as_slice();
+      let prev_start = remaining.as_slice().as_ptr();
       let consumed = unsafe { m.as_ptr().offset_from(prev_start) };
       debug_assert!(consumed >= 0);
       let consumed = consumed as usize;
-      let ret = &remaining[..consumed];
+      let ret = remaining.index_range(..consumed).unwrap();
       let consumed_with_match = consumed + m.len();
       /* Matched empty string; to avoid looping forever, return None. */
       self.remaining_input = if consumed_with_match == 0 {
         None
       } else {
-        Some(&remaining[consumed_with_match..])
+        Some(remaining.index_range(consumed_with_match..).unwrap())
       };
       Some(ret)
     } else {

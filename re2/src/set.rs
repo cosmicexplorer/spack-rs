@@ -119,18 +119,8 @@ impl SetBuilder {
     Self(unsafe { re2_c::SetWrapper::new(&options.into_native(), anchor.into_native()) })
   }
 
-  ///```
-  /// use re2::{options::*, error::*, set::*};
-  ///
-  /// let mut b = SetBuilder::new(Options::default(), Anchor::Unanchored);
-  /// assert_eq!(
-  ///   SetPatternError { message: "missing ): as(df".to_string() },
-  ///   b.add("as(df").err().unwrap(),
-  /// );
-  /// ```
   #[inline]
-  pub fn add(&mut self, pattern: &str) -> Result<ExpressionIndex, SetPatternError> {
-    let pattern = StringView::from_str(pattern);
+  pub fn add_view(&mut self, pattern: StringView) -> Result<ExpressionIndex, SetPatternError> {
     let mut error = StringWrapper::blank();
     let ret: c_int = unsafe { self.0.add(pattern.into_native(), error.as_mut_native()) };
 
@@ -142,6 +132,20 @@ impl SetBuilder {
       assert!(ret <= u8::MAX as c_int);
       Ok(ExpressionIndex(ret))
     }
+  }
+
+  ///```
+  /// use re2::{options::*, error::*, set::*};
+  ///
+  /// let mut b = SetBuilder::new(Options::default(), Anchor::Unanchored);
+  /// assert_eq!(
+  ///   SetPatternError { message: "missing ): as(df".to_string() },
+  ///   b.add("as(df").err().unwrap(),
+  /// );
+  /// ```
+  #[inline]
+  pub fn add(&mut self, pattern: &str) -> Result<ExpressionIndex, SetPatternError> {
+    self.add_view(StringView::from_str(pattern))
   }
 
   #[inline]
@@ -175,6 +179,15 @@ impl ops::Drop for SetBuilder {
 pub struct Set(pub(crate) re2_c::SetWrapper);
 
 impl Set {
+  #[inline]
+  pub fn match_routine_view(&self, text: StringView, matches: &mut MatchedSetInfo) -> bool {
+    unsafe {
+      self
+        .0
+        .match_routine(text.into_native(), matches.as_mut_native())
+    }
+  }
+
   ///```
   /// use re2::{set::*, options::*};
   ///
@@ -197,11 +210,27 @@ impl Set {
   /// ```
   #[inline]
   pub fn match_routine(&self, text: &str, matches: &mut MatchedSetInfo) -> bool {
-    let text = StringView::from_str(text);
-    unsafe {
-      self
-        .0
-        .match_routine(text.into_native(), matches.as_mut_native())
+    self.match_routine_view(StringView::from_str(text), matches)
+  }
+
+  #[inline]
+  pub fn match_routine_with_error_view(
+    &self,
+    text: StringView,
+    matches: &mut MatchedSetInfo,
+  ) -> Result<bool, SetErrorInfo> {
+    let mut error: MaybeUninit<re2::RE2_Set_ErrorInfo> = MaybeUninit::uninit();
+    if unsafe {
+      self.0.match_routine_with_error(
+        text.into_native(),
+        matches.as_mut_native(),
+        error.as_mut_ptr(),
+      )
+    } {
+      Ok(true)
+    } else {
+      SetErrorInfo::from_native(unsafe { error.assume_init() })?;
+      Ok(false)
     }
   }
 
@@ -231,20 +260,7 @@ impl Set {
     text: &str,
     matches: &mut MatchedSetInfo,
   ) -> Result<bool, SetErrorInfo> {
-    let text = StringView::from_str(text);
-    let mut error: MaybeUninit<re2::RE2_Set_ErrorInfo> = MaybeUninit::uninit();
-    if unsafe {
-      self.0.match_routine_with_error(
-        text.into_native(),
-        matches.as_mut_native(),
-        error.as_mut_ptr(),
-      )
-    } {
-      Ok(true)
-    } else {
-      SetErrorInfo::from_native(unsafe { error.assume_init() })?;
-      Ok(false)
-    }
+    self.match_routine_with_error_view(StringView::from_str(text), matches)
   }
 }
 

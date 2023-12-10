@@ -22,17 +22,22 @@ pub struct StringView<'a> {
 }
 
 impl<'a> StringView<'a> {
+  #[inline(always)]
+  pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
+    self.as_slice().get(range).map(Self::from_slice)
+  }
+
   #[inline]
   pub const fn empty() -> Self {
     let inner = re2_c::StringView {
       data_: ptr::null(),
       len_: 0,
     };
-    unsafe { Self::from_native(inner) }
+    Self::from_native(inner)
   }
 
   #[inline]
-  pub(crate) const unsafe fn from_native(inner: re2_c::StringView) -> Self {
+  pub(crate) const fn from_native(inner: re2_c::StringView) -> Self {
     Self {
       inner,
       _ph: PhantomData,
@@ -48,7 +53,7 @@ impl<'a> StringView<'a> {
       data_: b.as_ptr() as *const c_char,
       len_: b.len(),
     };
-    unsafe { Self::from_native(inner) }
+    Self::from_native(inner)
   }
 
   #[inline]
