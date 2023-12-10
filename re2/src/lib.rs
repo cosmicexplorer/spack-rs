@@ -214,7 +214,7 @@ impl RE2 {
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
   /// let r: RE2 = q.as_view().as_str().parse()?;
-  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern().as_str());
+  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern());
   /// assert!(r.full_match("1.5-1.8?"));
   /// # Ok(())
   /// # }
@@ -247,12 +247,12 @@ impl RE2 {
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
-  /// assert_eq!(r.pattern().as_str(), "asdf");
+  /// assert_eq!(r.pattern(), "asdf");
   /// # Ok(())
   /// # }
   /// ```
   #[inline]
-  pub fn pattern(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.pattern()) } }
+  pub fn pattern(&self) -> &str { unsafe { StringView::from_native(self.0.pattern()) }.as_str() }
 
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -283,7 +283,9 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn expensive_clone(&self) -> Self { Self::compile(self.pattern(), self.options()).unwrap() }
+  pub fn expensive_clone(&self) -> Self {
+    Self::compile(StringView::from_str(self.pattern()), self.options()).unwrap()
+  }
 
   #[inline]
   fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
@@ -987,7 +989,7 @@ impl fmt::Display for RE2 {
 
 impl cmp::PartialEq for RE2 {
   fn eq(&self, other: &Self) -> bool {
-    self.pattern().eq(&other.pattern()) && self.options().eq(&other.options())
+    self.pattern().eq(other.pattern()) && self.options().eq(&other.options())
   }
 }
 

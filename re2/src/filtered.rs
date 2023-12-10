@@ -193,7 +193,7 @@ impl<'o> InnerRE2<'o> {
     }
   }
 
-  pub fn as_re2_ref(&self) -> &'o RE2 { unsafe { mem::transmute(&self.inner) } }
+  pub fn as_re2(&self) -> &'o RE2 { unsafe { mem::transmute(&self.inner) } }
 }
 
 ///```
@@ -207,7 +207,7 @@ impl<'o> InnerRE2<'o> {
 ///
 /// let (filter, atom_set) = builder.compile();
 /// let patterns: Vec<_> = filter.inner_regexps()
-///   .map(|r| r.as_re2_ref().pattern().as_str())
+///   .map(|r| r.as_re2().pattern())
 ///   .collect();
 /// assert_eq!(&patterns, &["asdf", "asay", "as+"]);
 ///
@@ -335,9 +335,12 @@ impl FilteredRE2 {
     &'o self,
     m: &'o MatchedSetInfo,
   ) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
-    m.as_expression_slice()
-      .iter()
-      .map(|i| self.get_re2(i.as_index() as usize))
+    let n = self.num_regexps();
+    m.as_expression_slice().iter().map(move |i| {
+      let i = i.as_index() as usize;
+      assert!(i < n);
+      self.get_re2(i)
+    })
   }
 }
 
@@ -367,7 +370,7 @@ impl ops::Drop for FilteredRE2 {
 /// let matched_atoms: Vec<&str> = filter.get_atoms(&atoms).collect();
 /// assert_eq!(&matched_atoms, &["a", "s", "asdf", "asay"]);
 /// let matched_regexps: Vec<&str> = filter.get_matches(&matches)
-///   .map(|r| r.as_re2_ref().pattern().as_str())
+///   .map(|r| r.as_re2().pattern())
 ///   .collect();
 /// assert_eq!(&matched_regexps, &["asdf", "asay", "as+"]);
 ///
