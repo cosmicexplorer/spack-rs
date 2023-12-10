@@ -12,6 +12,7 @@
 pub(crate) use re2_sys::{re2, re2_c};
 
 pub mod error;
+/* pub use error::RE2Error; */
 use error::{CompileError, RE2ErrorCode, RewriteError};
 
 pub mod options;

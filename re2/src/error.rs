@@ -1,7 +1,13 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
+//! Error codes and additional data.
+//!
+//! [`RE2`](crate::RE2) objects don't produce [`Result`] objects when matching,
+//! preferring to simply return [`bool`] or [`Option`]. Instead, errors
+//! typically occur during compilation of different types of patterns, with the
+//! exception of [`SetErrorInfo`] which is returned by
+//! [`Set::match_routine_with_error()`](crate::set::Set::match_routine_with_error).
 
 use crate::re2;
 
@@ -10,6 +16,7 @@ use thiserror::Error;
 
 use std::os::raw::c_uint;
 
+/// Basic error code for compile failures, corresponding to a C++ enum.
 #[derive(
   Debug,
   Display,
@@ -88,6 +95,7 @@ pub struct RewriteError {
   pub message: String,
 }
 
+/// Error compiling a set of patterns.
 #[derive(Debug, Display, Error)]
 pub enum SetError {
   /// error in set building: {0}
@@ -98,6 +106,7 @@ pub enum SetError {
   SetCompile(#[from] SetCompileError),
 }
 
+/// Basic error code for set matching failures, corresponding to a C++ enum.
 #[derive(
   Debug,
   Display,
@@ -159,12 +168,14 @@ pub struct SetPatternError {
   pub message: String,
 }
 
+/// Errors compiling a set of patterns.
 #[derive(Debug, Display, Error, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SetCompileError {
   /// out of memory
   OutOfMemory,
 }
 
+/// Top-level catch-all error for all types of failures in this crate.
 #[derive(Debug, Display, Error)]
 pub enum RE2Error {
   /// re2 runtime error: {0}
