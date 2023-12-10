@@ -33,7 +33,7 @@
 //! - `r"(version (\d+))"`      -- `\d` matches a digit
 //! - `r"(hello\s+world)"`      -- `\s` matches any whitespace character
 //! - `r"(\b(\w+)\b)"`          -- `\b` matches non-empty string at word
-//!                                     boundary
+//!   boundary
 //! - `r"((?i)hello)"`          -- `(?i)` turns on case-insensitive matching
 //! - `r"(/\*(.*?)\*/)"`        -- `.*?` matches . minimum no. of times possible
 //!
@@ -53,7 +53,7 @@ pub use error::RE2Error;
 use error::{CompileError, RE2ErrorCode, RewriteError};
 
 pub mod options;
-pub use options::{Anchor, Options};
+pub use options::{Anchor, CannedOptions, Options};
 
 pub mod string;
 use string::{StringView, StringWrapper};
@@ -89,7 +89,7 @@ fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] 
   unsafe { array_assume_init(ret) }
 }
 
-/// Single pattern compiler.
+/// High-level string search and replacement with a single pattern.
 ///
 ///```
 /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -107,6 +107,9 @@ pub struct RE2(re2_c::RE2Wrapper);
 /// Basic components of `RE2` objects.
 impl RE2 {
   /// Compile an `RE2` pattern.
+  ///
+  /// A [`FromStr`](str::FromStr) implementation is also provided which calls
+  /// this method with [`Options::default()`].
   ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -430,7 +433,7 @@ impl RE2 {
   ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// use re2::{*, options::*};
+  /// use re2::*;
   ///
   /// let o: Options = CannedOptions::POSIX.into();
   /// let r = RE2::compile("a(.+)d(f)".into(), o)?;

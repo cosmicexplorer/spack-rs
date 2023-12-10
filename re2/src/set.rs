@@ -192,7 +192,9 @@ impl ops::Drop for SetBuilder {
   }
 }
 
-/// Multiple pattern compiler. Created by [`SetBuilder::compile()`].
+/// Multiple pattern compiler with restricted matching interface.
+///
+/// Created by [`SetBuilder::compile()`].
 ///
 ///```
 /// # fn main() -> Result<(), re2::error::SetError> {
