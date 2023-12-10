@@ -1,5 +1,8 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+//! Routines for extracting fixed string "atoms" from a set of patterns and
+//! using those to pre-filter for later matching.
 
 use crate::{
   error::{RE2ErrorCode, SetError},
@@ -14,17 +17,30 @@ use indexmap::IndexMap;
 
 use std::{marker::PhantomData, mem, ops, os::raw::c_int, slice};
 
-
+/// Identifier for sub-patterns within an [`AtomSet`].
+///
+/// Wrapper for [`c_int`]. Indices start at 0 and are returned by
+/// [`SetBuilder::add`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct AtomIndex(pub(crate) c_int);
 
 impl AtomIndex {
+  /// Interpret this [`c_int`] value as the largest possible unsigned integer
+  /// type it can represent.
   pub const fn as_index(self) -> u16 { self.0 as u16 }
 
+  /// Generate an index from an unsigned integer guaranteed to fit into a
+  /// [`c_int`] without wrapping.
   pub const fn from_index(x: u16) -> Self { Self(x as c_int) }
 }
 
+/// Holds the "atom" strings as a result of compiling a [`FilteredRE2Builder`].
+///
+/// This object owns a vector of [`StringWrapper`] instances and manages their
+/// lifetime. It also serves as the canonical reference for [`AtomIndex`]
+/// identifiers via [`Self::indexed_atoms()`] for traversal and
+/// [`Self::index_by()`] for lookup.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct AtomSet(re2_c::StringSet);
@@ -34,19 +50,21 @@ impl AtomSet {
 
   fn as_ptr(&self) -> *const re2_c::StringWrapper { unsafe { self.0.cdata() } }
 
-  fn as_mut_ptr(&mut self) -> *mut re2_c::StringWrapper { unsafe { self.0.data() } }
-
+  /// Return the number of atom strings.
   pub fn len(&self) -> usize { unsafe { self.0.size() } }
 
+  /// Whether any atoms were extracted.
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  /// Generate a Rust-compatible slice of read-only string handles.
   pub fn as_slice(&self) -> &[StringWrapper] {
     unsafe { mem::transmute(slice::from_raw_parts(self.as_ptr(), self.len())) }
   }
 
-  pub fn as_mut_slice(&mut self) -> &mut [StringWrapper] {
-    unsafe { mem::transmute(slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())) }
-  }
-
-  pub fn indexed_atoms(&self) -> impl Iterator<Item=(AtomIndex, StringView<'_>)>+'_ {
+  /// Associate each atom with an [`AtomIndex`].
+  pub fn indexed_atoms(
+    &self,
+  ) -> impl Iterator<Item=(AtomIndex, StringView<'_>)>+ExactSizeIterator+'_ {
     self
       .as_slice()
       .iter()
@@ -54,6 +72,7 @@ impl AtomSet {
       .map(|(i, sw)| (AtomIndex(i as c_int), sw.as_view()))
   }
 
+  /// Look up the registered atoms corresponding to the matches in `m`.
   pub fn index_by<'a>(
     &'a self,
     m: &'a MatchedSetInfo,
@@ -73,21 +92,31 @@ impl ops::Drop for AtomSet {
   }
 }
 
+/// Higher-level Rust interface for selecting atoms to convert into a
+/// [`MatchedSetInfo`] instance.
+///
+/// Modifications to the internal [`IndexMap`] instance will be reflected in the
+/// output of [`Self::allocate_match_set()`] and
+/// [`Self::allocate_into_match_set()`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct SelectedAtoms<'a>(pub IndexMap<StringView<'a>, AtomIndex>);
 
 impl<'a> SelectedAtoms<'a> {
+  /// Extract and index the known atoms.
   pub fn from_atom_set(atom_set: &'a AtomSet) -> Self {
     Self(atom_set.indexed_atoms().map(|(x, y)| (y, x)).collect())
   }
 
+  /// Create and return new match set for the result of
+  /// [`Self::allocate_into_match_set()`].
   pub fn allocate_match_set(&self) -> MatchedSetInfo {
     let mut ret = MatchedSetInfo::empty();
     self.allocate_into_match_set(&mut ret);
     ret
   }
 
+  /// Modify `ret` to contain exactly the values from the internal [`IndexMap`].
   pub fn allocate_into_match_set(&self, ret: &mut MatchedSetInfo) {
     ret.set_len(self.0.len());
     for (out_index, arg_index) in ret.as_mut_atom_slice().iter_mut().zip(self.0.values()) {
@@ -96,6 +125,8 @@ impl<'a> SelectedAtoms<'a> {
   }
 }
 
+/// Mutable builder interface to create a [`FilteredRE2`].
+///
 ///```
 /// # fn main() -> Result<(), re2::error::RE2Error> {
 /// use re2::{filtered::*, options::*};
@@ -117,12 +148,16 @@ impl<'a> SelectedAtoms<'a> {
 pub struct FilteredRE2Builder(re2_c::FilteredRE2Wrapper);
 
 impl FilteredRE2Builder {
+  /// Generate a new instance with an arbitrary atom length.
   pub fn new() -> Self { Self(unsafe { re2_c::FilteredRE2Wrapper::new() }) }
 
+  /// Generate a new instance with the specified minimum length for returned
+  /// "atom" strings.
   pub fn with_min_atom_length(min_atom_len: usize) -> Self {
     Self(unsafe { re2_c::FilteredRE2Wrapper::new1(min_atom_len as c_int) })
   }
 
+  /// [`Self::add()`] for arbitrary string encodings.
   pub fn add_view(
     &mut self,
     pattern: StringView,
@@ -139,10 +174,15 @@ impl FilteredRE2Builder {
     Ok(ExpressionIndex(unsafe { id.assume_init() }))
   }
 
+  /// Use [`RE2::compile()`] to create an [`RE2`] object. The return value can
+  /// be used in [`FilteredRE2::all_matches()`].
   pub fn add(&mut self, pattern: &str, options: Options) -> Result<ExpressionIndex, RE2ErrorCode> {
     self.add_view(StringView::from_str(pattern), options)
   }
 
+  /// Prepares the regexps added by [`Self::add()`] for filtering. Returns a set
+  /// of strings that the caller should check for in candidate texts
+  /// ("atoms").
   pub fn compile(self) -> (FilteredRE2, AtomSet) {
     let mut s: mem::ManuallyDrop<Self> = mem::ManuallyDrop::new(self);
     let mut set = mem::MaybeUninit::<re2_c::StringSet>::uninit();
@@ -154,6 +194,7 @@ impl FilteredRE2Builder {
     (ret, set)
   }
 
+  /// [`Self::slow_first_match()`] for arbitrary string encodings.
   pub fn slow_first_match_view(&self, text: StringView) -> Option<ExpressionIndex> {
     let ret = unsafe { self.0.slow_first_match(text.into_native()) };
     if ret == -1 {
@@ -163,10 +204,14 @@ impl FilteredRE2Builder {
     }
   }
 
+  /// Returns the index of the first matching regexp.
+  ///
+  /// Does not do any filtering: simply tries to match the regexps in a loop.
   pub fn slow_first_match(&self, text: &str) -> Option<ExpressionIndex> {
     self.slow_first_match_view(StringView::from_str(text))
   }
 
+  /// The number of regexps added.
   pub fn num_regexps(&self) -> usize { unsafe { self.0.num_regexps() } }
 }
 
@@ -178,6 +223,10 @@ impl ops::Drop for FilteredRE2Builder {
   }
 }
 
+/// A reference to an [`RE2`] instance held somewhere else.
+///
+/// In particular, this is used to reference the regexps provided to
+/// [`FilteredRE2Builder::add()`].
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct InnerRE2<'o> {
@@ -196,9 +245,30 @@ impl<'o> InnerRE2<'o> {
     }
   }
 
+  /// Extract the pattern reference.
   pub const fn as_re2(&self) -> &'o RE2 { unsafe { mem::transmute(&self.inner) } }
 }
 
+/// This struct is used as a wrapper to multiple [`RE2`] regexps.
+/// It provides a prefilter mechanism that helps in cutting down the
+/// number of regexps that need to be actually searched.
+///
+/// By design, it does not include a string matching engine. This is to
+/// allow the user of the struct to use their favorite string matching
+/// engine. The overall flow is:
+/// - Add all the regexps using [`FilteredRE2Builder::add()`],
+/// - then [`FilteredRE2Builder::compile()`].
+///
+/// `compile()` returns strings that need to be matched ("atoms" in an
+/// [`AtomSet`]). Note that the returned strings are lowercased and distinct.
+///
+/// For applying regexps to a search text, the caller does the string
+/// matching using the returned strings. When doing the string match,
+/// note that the caller has to do that in a case-insensitive way or
+/// on a lowercased version of the search text. Then call
+/// [`Self::first_match()`] or [`Self::all_matches()`] with a vector of indices
+/// of strings that were found in the text to get the actual regexp matches.
+///
 ///```
 /// # fn main() -> Result<(), re2::error::RE2Error> {
 /// use re2::{filtered::*, set::*, options::*, string::*};
@@ -277,6 +347,7 @@ pub struct FilteredRE2(re2_c::FilteredRE2Wrapper);
 impl FilteredRE2 {
   pub(crate) const fn from_native(w: re2_c::FilteredRE2Wrapper) -> Self { Self(w) }
 
+  /// [`Self::first_match()`] for arbitrary string encodings.
   pub fn first_match_view(
     &self,
     text: StringView,
@@ -294,10 +365,13 @@ impl FilteredRE2 {
     }
   }
 
+  /// Return a pattern which contributed to one of the given `atoms` that
+  /// matches `text`.
   pub fn first_match(&self, text: &str, atoms: &MatchedSetInfo) -> Option<ExpressionIndex> {
     self.first_match_view(StringView::from_str(text), atoms)
   }
 
+  /// [`Self::all_matches()`] for arbitrary string encodings.
   pub fn all_matches_view(
     &self,
     text: StringView,
@@ -313,6 +387,8 @@ impl FilteredRE2 {
     }
   }
 
+  /// Return all patterns which contributed to any of the given `atoms` which
+  /// match `text`.
   pub fn all_matches(
     &self,
     text: &str,
@@ -322,6 +398,7 @@ impl FilteredRE2 {
     self.all_matches_view(StringView::from_str(text), atoms, matching_regexps)
   }
 
+  /// Return all patterns which contributed to any of the given `atoms`.
   pub fn all_potentials(
     &self,
     atoms: &MatchedSetInfo,
@@ -335,6 +412,7 @@ impl FilteredRE2 {
     !potential_regexps.is_empty()
   }
 
+  /// The number of regexps added.
   pub fn num_regexps(&self) -> usize { unsafe { self.0.num_regexps() } }
 
   fn get_re2<'o>(&'o self, index: usize) -> InnerRE2<'o> {
@@ -342,10 +420,12 @@ impl FilteredRE2 {
     InnerRE2::new(re2_ptr)
   }
 
+  /// Get references to the individual [`RE2`] objects.
   pub fn inner_regexps<'o>(&'o self) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
     (0..self.num_regexps()).map(|i| self.get_re2(i))
   }
 
+  /// Look up the constituent [`RE2`] objects according to the indices in `m`.
   pub fn index_by<'o>(
     &'o self,
     m: &'o MatchedSetInfo,
@@ -367,6 +447,9 @@ impl ops::Drop for FilteredRE2 {
   }
 }
 
+/// [`Filter`] demonstrates the use of [`FilteredRE2`] by using
+/// [`Set`] as the backing search engine for the atoms produced by `compile()`.
+///
 ///```
 /// # fn main() -> Result<(), re2::error::RE2Error> {
 /// use re2::{filtered::*, options::*, set::*};
@@ -403,6 +486,9 @@ pub struct Filter {
 }
 
 impl Filter {
+  /// Extract the [`AtomSet`] from compiling the `builder`, then use it to
+  /// construct a [`Set`] to search the atoms as literal case-insensitive
+  /// strings.
   pub fn compile(builder: FilteredRE2Builder) -> Result<Self, SetError> {
     let (filter, atom_set) = builder.compile();
 
@@ -426,6 +512,7 @@ impl Filter {
     })
   }
 
+  /// [`Self::all_matches()`] for arbitrary string encodings.
   pub fn all_matches_view(
     &self,
     text: StringView,
@@ -435,6 +522,7 @@ impl Filter {
     self.set.match_routine_view(text, atoms) && self.filter.all_matches_view(text, atoms, matches)
   }
 
+  /// Get all patterns matching `text` contributing to `atoms` in `matches`.
   pub fn all_matches(
     &self,
     text: &str,
@@ -444,6 +532,7 @@ impl Filter {
     self.all_matches_view(StringView::from_str(text), atoms, matches)
   }
 
+  /// [`Self::potential_matches()`] for arbitrary string encodings.
   pub fn potential_matches_view(
     &self,
     text: StringView,
@@ -453,6 +542,8 @@ impl Filter {
     self.set.match_routine_view(text, atoms) && self.filter.all_potentials(atoms, matches)
   }
 
+  /// Get all patterns contributing to the `atoms` which were found in `text`
+  /// into `matches`.
   pub fn potential_matches(
     &self,
     text: &str,
@@ -462,6 +553,7 @@ impl Filter {
     self.potential_matches_view(StringView::from_str(text), atoms, matches)
   }
 
+  /// Look up the atom strings referenced in `atoms`.
   pub fn get_atoms<'a>(
     &'a self,
     atoms: &'a MatchedSetInfo,
@@ -469,6 +561,7 @@ impl Filter {
     self.atom_set.index_by(atoms).map(|sw| sw.as_view())
   }
 
+  /// Look up the pattern objects referenced in `matches`.
   pub fn get_matches<'a>(
     &'a self,
     matches: &'a MatchedSetInfo,
