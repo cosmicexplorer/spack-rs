@@ -108,7 +108,7 @@ impl SetBuilder {
 
     if ret == -1 {
       Err(SetPatternError {
-        message: unsafe { error.as_view().as_str() }.to_string(),
+        message: String::from_utf8_lossy(error.as_view().as_slice()).to_string(),
       })
     } else {
       assert!(ret <= u8::MAX as c_int);

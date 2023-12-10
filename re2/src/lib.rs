@@ -164,8 +164,8 @@ impl RE2 {
 
   fn check_error(&self) -> Result<(), CompileError> {
     self.check_error_code().map_err(|code| CompileError {
-      message: unsafe { self.error().as_str() }.to_string(),
-      arg: unsafe { self.error_arg().as_str() }.to_string(),
+      message: String::from_utf8_lossy(self.error().as_slice()).to_string(),
+      arg: String::from_utf8_lossy(self.error_arg().as_slice()).to_string(),
       code,
     })
   }
@@ -294,7 +294,7 @@ impl RE2 {
   ///
   /// The index of each group can be recovered by calling `.enumerate()` on the
   /// result. This is possible because this iterator also generates a
-  /// positional-only group at index 0 for all patterns, which can be thought
+  /// positional-only group at index 0, which can be thought
   /// of as corresponding to the 0th group in a rewrite string (aka the entire
   /// match).
   ///
@@ -335,7 +335,7 @@ impl RE2 {
       Ok(())
     } else {
       Err(RewriteError {
-        message: unsafe { sw.as_view().as_str() }.to_string(),
+        message: String::from_utf8_lossy(sw.as_view().as_slice()).to_string(),
       })
     }
   }
