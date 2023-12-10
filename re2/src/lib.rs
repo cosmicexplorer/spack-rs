@@ -61,8 +61,7 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn quote_meta(pattern: &str) -> StringWrapper {
-    let pattern = StringView::from_str(pattern);
+  pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
     let mut out = StringWrapper::from_view(pattern);
     unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
     out
@@ -77,8 +76,7 @@ impl RE2 {
   /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
   /// ```
   #[inline]
-  pub fn max_submatch(rewrite: &str) -> usize {
-    let rewrite = StringView::from_str(rewrite);
+  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
     unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
@@ -126,7 +124,9 @@ impl RE2 {
   /// # }
   /// ```
   #[inline]
-  pub fn expensive_clone(&self) -> Self { Self::compile(self.pattern(), self.options()).unwrap() }
+  pub fn expensive_clone(&self) -> Self {
+    Self::compile(StringView::from_str(self.pattern()), self.options()).unwrap()
+  }
 
   #[inline]
   fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
@@ -142,8 +142,7 @@ impl RE2 {
     })
   }
 
-  pub fn compile(pattern: &str, options: Options) -> Result<Self, CompileError> {
-    let pattern = StringView::from_str(pattern);
+  pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
     let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
     s.check_error()?;
     Ok(s)
@@ -796,7 +795,9 @@ impl str::FromStr for RE2 {
   ///   },
   /// );
   /// ```
-  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::compile(s, Options::default()) }
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Self::compile(StringView::from_str(s), Options::default())
+  }
 }
 
 impl fmt::Debug for RE2 {
