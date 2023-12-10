@@ -25,10 +25,6 @@ impl AtomIndex {
   pub const fn from_index(x: u16) -> Self { Self(x as c_int) }
 }
 
-impl From<AtomIndex> for u16 {
-  fn from(x: AtomIndex) -> Self { x.as_index() }
-}
-
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct AtomSet(re2_c::StringSet);

@@ -98,8 +98,8 @@ pub struct RewriteError {
 /// Error compiling a set of patterns.
 #[derive(Debug, Display, Error)]
 pub enum SetError {
-  /// error in set building: {0}
-  Compile(#[from] SetErrorInfo),
+  /// error in set matching: {0}
+  Runtime(#[from] SetErrorInfo),
   /// error in set pattern: {0}
   Pattern(#[from] SetPatternError),
   /// error compiling set: {0}
