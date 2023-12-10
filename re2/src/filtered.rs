@@ -186,14 +186,17 @@ pub struct InnerRE2<'o> {
 }
 
 impl<'o> InnerRE2<'o> {
-  pub(crate) fn new(inner: RE2) -> Self {
+  pub(crate) fn new(re2_ptr: *const re2::RE2) -> Self {
+    let inner = RE2(re2_c::RE2Wrapper {
+      re_: unsafe { mem::transmute(re2_ptr) },
+    });
     Self {
       inner: mem::ManuallyDrop::new(inner),
       _ph: PhantomData,
     }
   }
 
-  pub fn as_re2(&self) -> &'o RE2 { unsafe { mem::transmute(&self.inner) } }
+  pub const fn as_re2(&self) -> &'o RE2 { unsafe { mem::transmute(&self.inner) } }
 }
 
 ///```
@@ -322,9 +325,7 @@ impl FilteredRE2 {
   #[inline]
   fn get_re2<'o>(&'o self, index: usize) -> InnerRE2<'o> {
     let re2_ptr: *const re2::RE2 = unsafe { self.0.get_re2(index as c_int) };
-    InnerRE2::new(RE2(re2_c::RE2Wrapper {
-      re_: unsafe { mem::transmute(re2_ptr) },
-    }))
+    InnerRE2::new(re2_ptr)
   }
 
   pub fn inner_regexps<'o>(&'o self) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
