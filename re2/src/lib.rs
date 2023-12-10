@@ -808,114 +808,7 @@ impl RE2 {
     ret.map(Self::convert_strings)
   }
 
-  pub fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
-    unsafe { self.0.replace(text.as_mut_native(), rewrite.into_native()) }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = ".he".parse()?;
-  /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
-  /// assert!(r.replace(&mut s, "duh"));
-  /// assert_eq!(unsafe { s.as_view().as_str() }, "all duh king's men");
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn replace(&self, text: &mut StringWrapper, rewrite: &str) -> bool {
-    self.replace_view(text, StringView::from_str(rewrite))
-  }
-
-  pub fn replace_n_view(
-    &self,
-    text: &mut StringWrapper,
-    rewrite: StringView,
-    limit: usize,
-  ) -> usize {
-    if limit == 0 {
-      self.global_replace_view(text, rewrite)
-    } else {
-      let mut num_replacements_made: usize = 0;
-      while self.replace_view(text, rewrite) {
-        num_replacements_made += 1;
-      }
-      num_replacements_made
-    }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = ".he".parse()?;
-  /// let mut s = re2::string::StringWrapper::from_view(
-  ///   "all the king's horses and all the king's men".into());
-  /// assert_eq!(2, r.replace_n(&mut s, "duh", 3));
-  /// assert_eq!(
-  ///   unsafe { s.as_view().as_str() },
-  ///   "all duh king's horses and all duh king's men",
-  /// );
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn replace_n(&self, text: &mut StringWrapper, rewrite: &str, limit: usize) -> usize {
-    self.replace_n_view(text, StringView::from_str(rewrite), limit)
-  }
-
-  pub fn global_replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> usize {
-    unsafe {
-      self
-        .0
-        .global_replace(text.as_mut_native(), rewrite.into_native())
-    }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = ".he".parse()?;
-  /// let mut s = re2::string::StringWrapper::from_view(
-  ///   "all the king's horses and all the king's men".into());
-  /// assert_eq!(2, r.global_replace(&mut s, "duh"));
-  /// assert_eq!(
-  ///   unsafe { s.as_view().as_str() },
-  ///   "all duh king's horses and all duh king's men",
-  /// );
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn global_replace(&self, text: &mut StringWrapper, rewrite: &str) -> usize {
-    self.global_replace_view(text, StringView::from_str(rewrite))
-  }
-
-  pub fn extract_view(
-    &self,
-    text: StringView,
-    rewrite: StringView,
-    out: &mut StringWrapper,
-  ) -> bool {
-    unsafe {
-      self.0.extract(
-        text.into_native(),
-        rewrite.into_native(),
-        out.as_mut_native(),
-      )
-    }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = "(.h)e".parse()?;
-  /// let mut s = re2::string::StringWrapper::blank();
-  /// assert!(r.extract("all the king's men", r"\1a", &mut s));
-  /// assert_eq!(unsafe { s.as_view().as_str() }, "tha");
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn extract(&self, text: &str, rewrite: &str, out: &mut StringWrapper) -> bool {
-    self.extract_view(
-      StringView::from_str(text),
-      StringView::from_str(rewrite),
-      out,
-    )
-  }
-
+  /// [`Self::match_no_captures()`] for arbitrary string encodings.
   pub fn match_no_captures_view(
     &self,
     text: StringView,
@@ -931,6 +824,11 @@ impl RE2 {
     }
   }
 
+  /// General matching routine. Suitable for calling from higher-level code.
+  ///
+  /// Match against `text` within `range`, taking into account `anchor`. Returns
+  /// [`true`] if match found, [`false`] if not.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::Anchor};
@@ -950,13 +848,20 @@ impl RE2 {
     self.match_no_captures_view(StringView::from_str(text), range, anchor)
   }
 
+  /// [`Self::match_routine()`] for arbirary string encodings.
   pub fn match_routine_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
     range: ops::Range<usize>,
     anchor: Anchor,
   ) -> Option<[StringView<'a>; N]> {
-    assert_ne!(N, 0);
+    if N == 0 {
+      return if self.match_no_captures_view(text_view, range, anchor) {
+        Some(Self::empty_result())
+      } else {
+        None
+      };
+    }
     let ops::Range { start, end } = range;
     let mut submatches: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
 
@@ -979,8 +884,24 @@ impl RE2 {
     }))
   }
 
-  /// **NB: The 0th element of the result is the entire match, so `::<0>`
-  /// panics!**
+  /// General matching routine with capture groups. Suitable for calling from
+  /// higher-level code.
+  ///
+  /// Match against `text` within `range`, taking into account `anchor`. Returns
+  /// [`Some`] if match found, [`None`] if not.
+  ///
+  /// NB: Unlike other matching methods, the 0th element of the result
+  /// corresponds to the entire matched text, so the indices of the returned
+  /// array correspond to the indices of declared capture groups e.g. from
+  /// [`Self::named_groups()`]. Also unlike other matching methods, requesting
+  /// more captures than the number of declared capture groups will simply
+  /// return empty strings for the excessive captures instead of failing the
+  /// match.
+  ///
+  /// Performance-wise, `N == 0` (capturing nothing, like
+  /// [`Self::match_no_captures()`]) is much faster than `N == 1` (only
+  /// capturing the entire match text), which is faster than `N > 1` (if any
+  /// capture groups are selected).
   ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -1007,7 +928,171 @@ impl RE2 {
       .match_routine_view(StringView::from_str(text), range, anchor)
       .map(Self::convert_strings)
   }
+}
 
+/// String search and replace interface.
+///
+/// These methods use a mutable [`StringWrapper`] instance with dynamically
+/// allocated data to record the result of applying a "rewrite string" to the
+/// capture groups for a given match using [`Self::vector_rewrite()`]. They may
+/// mutate data from the string or append to the string upon a successful match.
+///
+/// Within a rewrite string, backslash-escaped digits (`\1` to `\9`) can be
+/// used to insert text matching corresponding parenthesized group
+/// from the pattern. `\0` refers to the entire matched text:
+///```
+/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// use re2::{RE2, string::StringWrapper};
+///
+/// let r: RE2 = "b+".parse()?;
+/// let mut s = StringWrapper::from_view("yabba dabba doo".into());
+///
+/// assert!(r.replace(&mut s, "d"));
+/// assert_eq!("yada dabba doo", unsafe { s.as_view().as_str() });
+///
+/// assert!(r.replace(&mut s, r"!\0!"));
+/// assert_eq!("yada da!bb!a doo", unsafe { s.as_view().as_str() });
+/// # Ok(())
+/// # }
+/// ```
+///
+/// As with the matching interface, methods with a `*_view` suffix accept and
+/// return [`StringView`] instances, which may have arbitrary encodings.
+impl RE2 {
+  /// [`Self::replace()`] for arbitrary string encodings.
+  pub fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
+    unsafe { self.0.replace(text.as_mut_native(), rewrite.into_native()) }
+  }
+
+  /// Replace the first match of this pattern in `text` with `rewrite`.
+  ///
+  /// Returns [`true`] if the pattern matches and a replacement occurs,
+  /// [`false`] otherwise.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
+  /// assert!(r.replace(&mut s, "duh"));
+  /// assert_eq!(unsafe { s.as_view().as_str() }, "all duh king's men");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn replace(&self, text: &mut StringWrapper, rewrite: &str) -> bool {
+    self.replace_view(text, StringView::from_str(rewrite))
+  }
+
+  /// [`Self::replace_n()`] for arbitrary string encodings.
+  pub fn replace_n_view(
+    &self,
+    text: &mut StringWrapper,
+    rewrite: StringView,
+    limit: usize,
+  ) -> usize {
+    if limit == 0 {
+      self.global_replace_view(text, rewrite)
+    } else {
+      let mut num_replacements_made: usize = 0;
+      while self.replace_view(text, rewrite) {
+        num_replacements_made += 1;
+      }
+      num_replacements_made
+    }
+  }
+
+  /// Applies [`Self::replace()`] to `text` at most `limit` times. Returns the
+  /// number of replacements made.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view(
+  ///   "all the king's horses and all the king's men".into());
+  /// assert_eq!(2, r.replace_n(&mut s, "duh", 3));
+  /// assert_eq!(
+  ///   unsafe { s.as_view().as_str() },
+  ///   "all duh king's horses and all duh king's men",
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn replace_n(&self, text: &mut StringWrapper, rewrite: &str, limit: usize) -> usize {
+    self.replace_n_view(text, StringView::from_str(rewrite), limit)
+  }
+
+  /// [`Self::global_replace()`] for arbitrary string encodings.
+  pub fn global_replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> usize {
+    unsafe {
+      self
+        .0
+        .global_replace(text.as_mut_native(), rewrite.into_native())
+    }
+  }
+
+  /// Applies [`Self::replace()`] to `text` for all non-overlapping occurrences
+  /// of the pattern. Returns the number of replacements made.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = ".he".parse()?;
+  /// let mut s = re2::string::StringWrapper::from_view(
+  ///   "all the king's horses and all the king's men".into());
+  /// assert_eq!(2, r.global_replace(&mut s, "duh"));
+  /// assert_eq!(
+  ///   unsafe { s.as_view().as_str() },
+  ///   "all duh king's horses and all duh king's men",
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn global_replace(&self, text: &mut StringWrapper, rewrite: &str) -> usize {
+    self.global_replace_view(text, StringView::from_str(rewrite))
+  }
+
+  /// [`Self::extract()`] for arbitrary string encodings.
+  pub fn extract_view(
+    &self,
+    text: StringView,
+    rewrite: StringView,
+    out: &mut StringWrapper,
+  ) -> bool {
+    unsafe {
+      self.0.extract(
+        text.into_native(),
+        rewrite.into_native(),
+        out.as_mut_native(),
+      )
+    }
+  }
+
+  /// Like [`Self::replace()`], except that if the pattern matches, `rewrite` is
+  /// copied into `out` with substitutions. The non-matching portions of
+  /// `text` are ignored.
+  ///
+  /// Returns [`true`] iff a match occured and the extraction happened
+  /// successfully; if no match occurs, the string is left unaffected.
+  ///
+  /// **REQUIRES: `text` must not alias any part of `out`!**
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "(.h)e".parse()?;
+  /// let mut s = re2::string::StringWrapper::blank();
+  /// assert!(r.extract("all the king's men", r"\1a", &mut s));
+  /// assert_eq!(unsafe { s.as_view().as_str() }, "tha");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn extract(&self, text: &str, rewrite: &str, out: &mut StringWrapper) -> bool {
+    self.extract_view(
+      StringView::from_str(text),
+      StringView::from_str(rewrite),
+      out,
+    )
+  }
+}
+
+impl RE2 {
   pub fn find_iter_view<'r, 'h: 'r, const N: usize>(
     &'r self,
     hay: StringView<'h>,
