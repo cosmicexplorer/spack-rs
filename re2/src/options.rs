@@ -4,6 +4,8 @@
 //! ???
 
 use crate::re2;
+#[cfg(doc)]
+use crate::{string::StringView, RE2};
 
 use displaydoc::Display;
 
@@ -51,6 +53,34 @@ impl CannedOptions {
   pub(crate) fn into_native(self) -> re2::RE2_CannedOptions { self.into() }
 }
 
+/// Encoding of text inputs.
+///
+/// When [`Self::Utf8`] is selected (the default), `re2` will happily accept
+/// [`str`] patterns and inputs:
+///```
+/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// use re2::{*, options::*};
+///
+/// let r: RE2 = "asdf".parse()?;
+/// assert_eq!(Encoding::Utf8, r.options().encoding);
+/// assert!(r.full_match("asdf"));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// However, `re2` will also accept Latin-1 encoded text. Each string method has
+/// a `*_view`-suffixed version which accepts a [`StringView`], which can
+/// represent a slice of arbitrary bytes: ```
+/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// use re2::{*, options::*, string::*};
+///
+/// let o: Options = CannedOptions::Latin1.into();
+/// let r = RE2::compile(StringView::from_slice(b"asdf"), o)?;
+/// assert_eq!(Encoding::Latin1, r.options().encoding);
+/// assert!(r.full_match_view(StringView::from_slice(b"asdf")));
+/// # Ok(())
+/// # }
+/// ```
 #[derive(
   Default,
   Display,
@@ -78,6 +108,7 @@ impl Encoding {
   pub(crate) fn into_native(self) -> re2::RE2_Options_Encoding { self.into() }
 }
 
+/// Options to configure support for POSIX egrep syntax features.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PosixOptions {
   /// Allow perl's `\d`, `\s`, `\w`, `\D`, `\S`, and `\W`.
@@ -98,6 +129,10 @@ impl Default for PosixOptions {
   }
 }
 
+/// Options to configure compilation or search behavior.
+///
+/// The regexp pattern may supplement these options with PCRE-like options in
+/// the pattern string itself, such as `(?i)` for case-insensitive matching.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Options {
   /// Encoding of text to assume.
@@ -106,7 +141,7 @@ pub struct Options {
   pub posix_syntax: bool,
   /// Search for longest match, not first match.
   pub longest_match: bool,
-  /// Log syntax and execution errors to `ERROR` as defined in C++.
+  /// Log syntax and execution errors to `ERROR` (as defined in C++).
   pub log_errors: bool,
   /// Interpret string as literal, not regexp.
   pub literal: bool,
@@ -160,7 +195,10 @@ pub struct Options {
 }
 
 impl Options {
-  pub fn into_native(self) -> re2::RE2_Options {
+  /// For now, make the default budget something close to Code Search.
+  pub const DEFAULT_MAX_MEM: u32 = re2::RE2_Options_kDefaultMaxMem as u32;
+
+  pub(crate) fn into_native(self) -> re2::RE2_Options {
     let Self {
       max_mem,
       encoding,
@@ -243,7 +281,7 @@ impl Default for Options {
   fn default() -> Self {
     static_assertions::const_assert!(re2::RE2_Options_kDefaultMaxMem >= 0);
     Self {
-      max_mem: re2::RE2_Options_kDefaultMaxMem as u32,
+      max_mem: Self::DEFAULT_MAX_MEM,
       encoding: Encoding::Utf8,
       posix_syntax: false,
       longest_match: false,
