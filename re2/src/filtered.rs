@@ -128,7 +128,7 @@ impl<'a> SelectedAtoms<'a> {
 /// Mutable builder interface to create a [`FilteredRE2`].
 ///
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{filtered::*, options::*};
 ///
 /// let mut builder = FilteredRE2Builder::new();
@@ -270,7 +270,7 @@ impl<'o> InnerRE2<'o> {
 /// of strings that were found in the text to get the actual regexp matches.
 ///
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{filtered::*, set::*, options::*, string::*};
 /// use indexmap::IndexMap;
 ///
@@ -451,7 +451,7 @@ impl ops::Drop for FilteredRE2 {
 /// [`Set`] as the backing search engine for the atoms produced by `compile()`.
 ///
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{filtered::*, options::*, set::*};
 ///
 /// let mut builder = FilteredRE2Builder::with_min_atom_length(1);

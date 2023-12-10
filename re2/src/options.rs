@@ -59,7 +59,7 @@ impl CannedOptions {
 /// When [`Self::Utf8`] is selected (the default), `re2` will happily accept
 /// [`str`] patterns and inputs:
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{*, options::*};
 ///
 /// let r: RE2 = "asdf".parse()?;
@@ -73,7 +73,7 @@ impl CannedOptions {
 /// a `*_view`-suffixed version which accepts a [`StringView`], which can
 /// represent a slice of arbitrary bytes:
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{*, options::*, string::*};
 ///
 /// let o: Options = CannedOptions::Latin1.into();

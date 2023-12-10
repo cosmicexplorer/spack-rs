@@ -92,7 +92,7 @@ fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] 
 /// High-level string search and replacement with a single pattern.
 ///
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::RE2;
 ///
 /// let r: RE2 = "a(.+)f".parse()?;
@@ -112,7 +112,7 @@ impl RE2 {
   /// this method with [`Options::default()`].
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::Options};
   ///
   /// let r = RE2::compile("asdf".into(), Options::default())?;
@@ -148,7 +148,7 @@ impl RE2 {
   /// Extract the pattern string provided to the compiler.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
   /// assert_eq!(unsafe { r.pattern().as_str() }, "asdf");
   /// # Ok(())
@@ -159,7 +159,7 @@ impl RE2 {
   /// Extract the options object provided to the compiler.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -184,7 +184,7 @@ impl RE2 {
   /// NFA is also somewhat expensive in itself (even if less expensive than a
   /// DFA), and best to avoid repeating.
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::*};
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -214,7 +214,7 @@ impl RE2 {
   /// Escape any metacharacters in `pattern`.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::RE2;
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
@@ -227,7 +227,7 @@ impl RE2 {
   ///
   /// Note that literal patterns can be used instead in some cases:
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::Options};
   ///
   /// let o = Options { literal: true, ..Default::default() };
@@ -303,7 +303,7 @@ impl RE2 {
   /// Match against `text` without capturing. Pattern must match entire string.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.full_match("asdf"));
   /// assert!(!r.full_match("asdfe"));
@@ -349,7 +349,7 @@ impl RE2 {
   /// Pattern must match entire string.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -381,7 +381,7 @@ impl RE2 {
   /// of `text`.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
   /// assert!(r.partial_match("asdf"));
   /// assert!(r.partial_match("asdfe"));
@@ -432,7 +432,7 @@ impl RE2 {
   /// substring of `text`.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::*;
   ///
   /// let o: Options = CannedOptions::POSIX.into();
@@ -470,7 +470,7 @@ impl RE2 {
   /// match.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "asdf";
   /// assert!(r.consume(&mut s));
@@ -523,7 +523,7 @@ impl RE2 {
   /// match and return some subset of captured sub-patterns.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -562,7 +562,7 @@ impl RE2 {
   /// of the text.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
   /// let mut s = "the asdf";
   /// assert!(r.find_and_consume(&mut s));
@@ -618,7 +618,7 @@ impl RE2 {
   /// beginning of the text.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
   /// assert_eq!(2, r.num_captures());
   ///
@@ -668,7 +668,7 @@ impl RE2 {
   /// [`true`] if match found, [`false`] if not.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
@@ -742,7 +742,7 @@ impl RE2 {
   /// capture groups are selected).
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, options::Anchor};
   ///
   /// let r: RE2 = "(foo)|(bar)baz".parse()?;
@@ -779,7 +779,7 @@ impl RE2 {
 /// used to insert text matching corresponding parenthesized group
 /// from the pattern. `\0` refers to the entire matched text:
 ///```
-/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// # fn main() -> Result<(), re2::RE2Error> {
 /// use re2::{RE2, string::StringWrapper};
 ///
 /// let r: RE2 = "b+".parse()?;
@@ -808,7 +808,7 @@ impl RE2 {
   /// [`false`] otherwise.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view("all the king's men".into());
   /// assert!(r.replace(&mut s, "duh"));
@@ -842,7 +842,7 @@ impl RE2 {
   /// number of replacements made.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view(
   ///   "all the king's horses and all the king's men".into());
@@ -871,7 +871,7 @@ impl RE2 {
   /// of the pattern. Returns the number of replacements made.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = ".he".parse()?;
   /// let mut s = re2::string::StringWrapper::from_view(
   ///   "all the king's horses and all the king's men".into());
@@ -913,7 +913,7 @@ impl RE2 {
   /// **REQUIRES: `text` must not alias any part of `out`!**
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "(.h)e".parse()?;
   /// let mut s = re2::string::StringWrapper::blank();
   /// assert!(r.extract("all the king's men", r"\1a", &mut s));
@@ -965,7 +965,7 @@ impl RE2 {
   /// end to avoid looping infinitely.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a+(.)".parse()?;
   ///
   /// let hay = "aardvarks all ailing: awesome";
@@ -1000,7 +1000,7 @@ impl RE2 {
   ///
   /// Split by arbitrary amount of tabs or whitespace:
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = r"[ \t]+".parse()?;
   ///
   /// let hay = "a b \t  c\td    e";
@@ -1012,7 +1012,7 @@ impl RE2 {
   ///
   /// Multiple contiguous matches yield empty slices:
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "X".parse()?;
   ///
   /// let hay = "XXXXaXXbXc";
@@ -1024,7 +1024,7 @@ impl RE2 {
   ///
   /// Separators at start or end also yield empty slices:
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "0".parse()?;
   ///
   /// let hay = "010";
@@ -1065,7 +1065,7 @@ impl RE2 {
   /// which this pattern can support in a rewrite string, with 0 referring to
   /// the entire match. Also see [`Self::max_submatch()`].
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::RE2;
   ///
   /// assert_eq!(0, "a.df".parse::<RE2>()?.num_captures());
@@ -1083,7 +1083,7 @@ impl RE2 {
   /// groups. Use [`Self::named_and_numbered_groups()`] for an iterator that
   /// covers positional as well as named groups.
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::RE2;
   ///
   /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
@@ -1123,7 +1123,7 @@ impl RE2 {
   /// uncontrolled inputs.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
   /// assert_eq!(5, r.num_captures());
   ///
@@ -1172,7 +1172,7 @@ impl RE2 {
   /// [`Self::extract()`] won't fail because of a bad rewrite string.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// use re2::{RE2, error::RewriteError};
   ///
   /// let r: RE2 = "asdf".parse()?;
@@ -1222,7 +1222,7 @@ impl RE2 {
   /// be sucessful.
   ///
   ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// # fn main() -> Result<(), re2::RE2Error> {
   /// let mut sw = re2::string::StringWrapper::blank();
   /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
   /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
