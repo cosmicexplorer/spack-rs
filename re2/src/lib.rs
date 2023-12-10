@@ -57,9 +57,9 @@ fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] 
 /// # fn main() -> Result<(), re2::error::RE2Error> {
 /// use re2::RE2;
 ///
-/// let r: RE2 = "a+(.)df".parse()?;
+/// let r: RE2 = "a(.+)f".parse()?;
 /// let [m] = r.full_match_capturing("asdf").unwrap();
-/// assert_eq!(m, "s");
+/// assert_eq!(m, "sd");
 /// # Ok(())
 /// # }
 /// ```
@@ -217,209 +217,6 @@ impl ops::Drop for RE2 {
     unsafe {
       self.0.clear();
     }
-  }
-}
-
-/// Introspection methods to investigate match groups and rewrite strings.
-impl RE2 {
-  /// Returns the maximum submatch needed for the `rewrite` to be done by
-  /// [`Self::replace()`]. E.g. if `rewrite == r"foo \2,\1"`, returns 2.
-  ///
-  /// [`Self::check_rewrite()`] ensures that this number is no larger than the
-  /// result of [`Self::num_captures()`].
-  ///```
-  /// use re2::RE2;
-  ///
-  /// assert_eq!(0, RE2::max_submatch("asdf".into()));
-  /// assert_eq!(0, RE2::max_submatch(r"\0asdf".into()));
-  /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
-  /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
-  /// ```
-  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
-    unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
-  }
-
-  /// Return the number of capture groups in the current pattern.
-  ///
-  /// Alternately, this can be understood as the highest capture group index
-  /// which this pattern can support in a rewrite string, with 0 referring to
-  /// the entire match. Also see [`Self::max_submatch()`].
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// use re2::RE2;
-  ///
-  /// assert_eq!(0, "a.df".parse::<RE2>()?.num_captures());
-  /// assert_eq!(1, "a(.)df".parse::<RE2>()?.num_captures());
-  /// assert_eq!(2, "a((.)df)".parse::<RE2>()?.num_captures());
-  /// assert_eq!(3, "(?P<foo>a)((.)df)".parse::<RE2>()?.num_captures());
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
-
-  /// Return an FFI handle to a C++ iterator over the named capture groups.
-  ///
-  /// This method does not provide information about positional-only capture
-  /// groups. Use [`Self::named_and_numbered_groups()`] for an iterator that
-  /// covers positional as well as named groups.
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// use re2::RE2;
-  ///
-  /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
-  /// assert_eq!(1, "a(?P<hey>.)df".parse::<RE2>()?.named_groups().count());
-  ///
-  /// // Not all captures are named:
-  /// let r: RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e))".parse()?;
-  /// assert_eq!(4, r.num_captures());
-  ///
-  /// // Results are sorted by number:
-  /// let groups: Vec<(&str, usize)> = r.named_groups()
-  ///   .map(|g| (unsafe { g.name().as_str() }, *g.index()))
-  ///   .collect();
-  /// assert_eq!(vec![("y", 1), ("x", 2), ("z", 4)], groups);
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn named_groups(&self) -> impl Iterator<Item=NamedGroup<'_>>+'_ { self.make_named_groups() }
-
-  fn make_named_groups(&self) -> NamedCapturingGroups<'_> {
-    unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
-  }
-
-  /// Return an iterator covering both named and positional-only groups.
-  ///
-  /// Positional-only groups are represented with [`None`] instead of a
-  /// [`StringView`].
-  ///
-  /// The index of each group can be recovered by calling `.enumerate()` on the
-  /// result. This is possible because this iterator also generates a
-  /// positional-only group at index 0, which can be thought
-  /// of as corresponding to the 0th group in a rewrite string (aka the entire
-  /// match).
-  ///
-  /// While most use cases will likely employ either only positional or only
-  /// named groups, this method can be useful for introspection over
-  /// uncontrolled inputs.
-  ///
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
-  /// assert_eq!(5, r.num_captures());
-  ///
-  /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups()
-  ///   .map(|s| s.map(|s| unsafe { s.as_str() }))
-  ///   .enumerate()
-  ///   .collect();
-  /// assert_eq!(
-  ///   &indexed,
-  ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")),
-  /// (5, None)] );
-  /// # Ok(())
-  /// # }
-  pub fn named_and_numbered_groups(
-    &self,
-  ) -> impl Iterator<Item=Option<StringView<'_>>>+ExactSizeIterator {
-    NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
-  }
-
-  /// [`Self::check_rewrite()`] for arbitrary string encodings.
-  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
-    let mut sw = StringWrapper::blank();
-
-    if unsafe {
-      self
-        .0
-        .check_rewrite_string(rewrite.into_native(), sw.as_mut_native())
-    } {
-      Ok(())
-    } else {
-      Err(RewriteError {
-        message: String::from_utf8_lossy(sw.as_view().as_slice()).to_string(),
-      })
-    }
-  }
-
-  /// Check that the given `rewrite` string is suitable for use with this
-  /// regular expression.
-  ///
-  /// It checks that:
-  /// - The regular expression has enough parenthesized subexpressions to
-  ///   satisfy all of the `\N` tokens in rewrite
-  /// - The rewrite string doesn't have any syntax errors.  E.g., `\` followed
-  ///   by anything other than a digit or `\`.
-  ///
-  /// A [`true`] return value guarantees that [`Self::replace()`] and
-  /// [`Self::extract()`] won't fail because of a bad rewrite string.
-  ///
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// use re2::{RE2, error::RewriteError};
-  ///
-  /// let r: RE2 = "asdf".parse()?;
-  /// r.check_rewrite("a").unwrap();
-  /// r.check_rewrite(r"a\0b").unwrap();
-  /// assert_eq!(
-  ///   RewriteError {
-  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
-  ///   },
-  ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
-  /// );
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn check_rewrite(&self, rewrite: &str) -> Result<(), RewriteError> {
-    self.check_rewrite_view(StringView::from_str(rewrite))
-  }
-
-  /// [`Self::vector_rewrite()`] for arbitrary string encodings.
-  pub fn vector_rewrite_view<const N: usize>(
-    &self,
-    out: &mut StringWrapper,
-    rewrite: StringView,
-    inputs: [StringView; N],
-  ) -> bool {
-    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-    for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
-      sv.write(s.into_native());
-    }
-    let input_views = unsafe { array_assume_init(input_views) };
-
-    unsafe {
-      self.0.vector_rewrite(
-        out.as_mut_native(),
-        rewrite.into_native(),
-        input_views.as_ptr(),
-        input_views.len(),
-      )
-    }
-  }
-
-  /// Append the `rewrite` string, with backslash substitutions from `inputs`,
-  /// to string `out`.
-  ///
-  /// Returns [`true`] on success. This method can fail because of a malformed
-  /// rewrite string. [`Self::check_rewrite`] guarantees that the rewrite will
-  /// be sucessful.
-  ///
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let mut sw = re2::string::StringWrapper::blank();
-  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
-  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
-  /// assert_eq!(unsafe { sw.as_view().as_str() }, "bbsccasdffddff");
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn vector_rewrite<const N: usize>(
-    &self,
-    out: &mut StringWrapper,
-    rewrite: &str,
-    inputs: [&str; N],
-  ) -> bool {
-    let rewrite = StringView::from_str(rewrite);
-    let inputs = Self::convert_from_strings(inputs);
-    self.vector_rewrite_view(out, rewrite, inputs)
   }
 }
 
@@ -956,8 +753,8 @@ impl RE2 {
 /// # }
 /// ```
 ///
-/// As with the matching interface, methods with a `*_view` suffix accept and
-/// return [`StringView`] instances, which may have arbitrary encodings.
+/// As with the matching interface, methods with a `*_view` suffix operate on
+/// [`StringView`] instances, which may have arbitrary encodings.
 impl RE2 {
   /// [`Self::replace()`] for arbitrary string encodings.
   pub fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
@@ -1092,20 +889,39 @@ impl RE2 {
   }
 }
 
+/// High-level iterator adaptor interface.
+///
+/// These methods make use of lower-level matching methods like
+/// [`Self::match_routine()`] to produce lazy streams of results.
+///
+/// As with the matching interface, methods with a `*_view` suffix operate on
+/// [`StringView`] instances, which may have arbitrary encodings.
 impl RE2 {
+  /// [`Self::find_iter()`] for arbitrary string encodings.
   pub fn find_iter_view<'r, 'h: 'r, const N: usize>(
     &'r self,
     hay: StringView<'h>,
   ) -> impl Iterator<Item=[StringView<'h>; N]>+'r {
-    assert_ne!(N, 0);
+    assert_ne!(
+      N, 0,
+      "N must be at least 1 to capture the match text for non-overlapping matches"
+    );
     MatchIter {
       remaining_input: hay,
       pattern: self,
     }
   }
 
-  /// **NB: if no input is consumed upon searching the regex, iteration will
-  /// end to avoid looping infinitely.**
+  /// Yields all non-overlapping matches in `hay`. Supports capture groups.
+  ///
+  /// The `N` argument is interpreted the same way as in
+  /// [`Self::match_routine()`], where requesting fewer submatches is more
+  /// performant, and the 0th submatch corresponds to the entire matched text.
+  /// However, note that `N` must be at least 1 when calling this method in
+  /// order to record match boundaries to avoid overlaps.
+  ///
+  /// NB: if no input is consumed upon searching the regex, iteration will
+  /// end to avoid looping infinitely.
   ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
@@ -1128,6 +944,7 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
+  /// [`Self::split()`] for arbitrary string encodings.
   pub fn split_view<'r, 'h: 'r>(
     &'r self,
     hay: StringView<'h>,
@@ -1138,6 +955,9 @@ impl RE2 {
     }
   }
 
+  /// Yields all slices between matches of the pattern.
+  ///
+  /// Split by arbitrary amount of tabs or whitespace:
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = r"[ \t]+".parse()?;
@@ -1158,7 +978,7 @@ impl RE2 {
   /// let chunks: Vec<&str> = r.split(hay).collect();
   /// assert_eq!(&chunks, &["", "", "", "", "a", "", "b", "c"]);
   /// # Ok(())
-  /// }
+  /// # }
   /// ```
   ///
   /// Separators at start or end also yield empty slices:
@@ -1176,6 +996,208 @@ impl RE2 {
     self
       .split_view(StringView::from_str(hay))
       .map(|s| unsafe { s.as_str() })
+  }
+}
+
+/// Introspection methods to investigate match groups and rewrite strings.
+impl RE2 {
+  /// Returns the maximum submatch needed for the `rewrite` to be done by
+  /// [`Self::replace()`]. E.g. if `rewrite == r"foo \2,\1"`, returns 2.
+  ///
+  /// [`Self::check_rewrite()`] ensures that this number is no larger than the
+  /// result of [`Self::num_captures()`].
+  ///```
+  /// use re2::RE2;
+  ///
+  /// assert_eq!(0, RE2::max_submatch("asdf".into()));
+  /// assert_eq!(0, RE2::max_submatch(r"\0asdf".into()));
+  /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
+  /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
+  /// ```
+  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
+    unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
+  }
+
+  /// Return the number of capture groups in the current pattern.
+  ///
+  /// Alternately, this can be understood as the highest capture group index
+  /// which this pattern can support in a rewrite string, with 0 referring to
+  /// the entire match. Also see [`Self::max_submatch()`].
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// use re2::RE2;
+  ///
+  /// assert_eq!(0, "a.df".parse::<RE2>()?.num_captures());
+  /// assert_eq!(1, "a(.)df".parse::<RE2>()?.num_captures());
+  /// assert_eq!(2, "a((.)df)".parse::<RE2>()?.num_captures());
+  /// assert_eq!(3, "(?P<foo>a)((.)df)".parse::<RE2>()?.num_captures());
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn num_captures(&self) -> usize { unsafe { self.0.num_captures() } }
+
+  /// Return an FFI handle to a C++ iterator over the named capture groups.
+  ///
+  /// This method does not provide information about positional-only capture
+  /// groups. Use [`Self::named_and_numbered_groups()`] for an iterator that
+  /// covers positional as well as named groups.
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// use re2::RE2;
+  ///
+  /// assert_eq!(0, "a(.)df".parse::<RE2>()?.named_groups().count());
+  /// assert_eq!(1, "a(?P<hey>.)df".parse::<RE2>()?.named_groups().count());
+  ///
+  /// // Not all captures are named:
+  /// let r: RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e))".parse()?;
+  /// assert_eq!(4, r.num_captures());
+  ///
+  /// // Results are sorted by number:
+  /// let groups: Vec<(&str, usize)> = r.named_groups()
+  ///   .map(|g| (unsafe { g.name().as_str() }, *g.index()))
+  ///   .collect();
+  /// assert_eq!(vec![("y", 1), ("x", 2), ("z", 4)], groups);
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn named_groups(&self) -> impl Iterator<Item=NamedGroup<'_>>+'_ { self.make_named_groups() }
+
+  fn make_named_groups(&self) -> NamedCapturingGroups<'_> {
+    unsafe { NamedCapturingGroups::from_native(self.0.named_groups()) }
+  }
+
+  /// Return an iterator covering both named and positional-only groups.
+  ///
+  /// Positional-only groups are represented with [`None`] instead of a
+  /// [`StringView`].
+  ///
+  /// The index of each group can be recovered by calling `.enumerate()` on the
+  /// result. This is possible because this iterator also generates a
+  /// positional-only group at index 0, which can be thought
+  /// of as corresponding to the 0th group in a rewrite string (aka the entire
+  /// match).
+  ///
+  /// While most use cases will likely employ either only positional or only
+  /// named groups, this method can be useful for introspection over
+  /// uncontrolled inputs.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "a(?P<y>(?P<x>.)d(f)(?P<z>e)(n))".parse()?;
+  /// assert_eq!(5, r.num_captures());
+  ///
+  /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups()
+  ///   .map(|s| s.map(|s| unsafe { s.as_str() }))
+  ///   .enumerate()
+  ///   .collect();
+  /// assert_eq!(
+  ///   &indexed,
+  ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)] );
+  /// # Ok(())
+  /// # }
+  pub fn named_and_numbered_groups(
+    &self,
+  ) -> impl Iterator<Item=Option<StringView<'_>>>+ExactSizeIterator {
+    NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
+  }
+
+  /// [`Self::check_rewrite()`] for arbitrary string encodings.
+  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
+    let mut sw = StringWrapper::blank();
+
+    if unsafe {
+      self
+        .0
+        .check_rewrite_string(rewrite.into_native(), sw.as_mut_native())
+    } {
+      Ok(())
+    } else {
+      Err(RewriteError {
+        message: String::from_utf8_lossy(sw.as_view().as_slice()).to_string(),
+      })
+    }
+  }
+
+  /// Check that the given `rewrite` string is suitable for use with this
+  /// regular expression.
+  ///
+  /// It checks that:
+  /// - The regular expression has enough parenthesized subexpressions to
+  ///   satisfy all of the `\N` tokens in rewrite
+  /// - The rewrite string doesn't have any syntax errors.  E.g., `\` followed
+  ///   by anything other than a digit or `\`.
+  ///
+  /// A [`true`] return value guarantees that [`Self::replace()`] and
+  /// [`Self::extract()`] won't fail because of a bad rewrite string.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// use re2::{RE2, error::RewriteError};
+  ///
+  /// let r: RE2 = "asdf".parse()?;
+  /// r.check_rewrite("a").unwrap();
+  /// r.check_rewrite(r"a\0b").unwrap();
+  /// assert_eq!(
+  ///   RewriteError {
+  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
+  ///   },
+  ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn check_rewrite(&self, rewrite: &str) -> Result<(), RewriteError> {
+    self.check_rewrite_view(StringView::from_str(rewrite))
+  }
+
+  /// [`Self::vector_rewrite()`] for arbitrary string encodings.
+  pub fn vector_rewrite_view<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: StringView,
+    inputs: [StringView; N],
+  ) -> bool {
+    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+    for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
+      sv.write(s.into_native());
+    }
+    let input_views = unsafe { array_assume_init(input_views) };
+
+    unsafe {
+      self.0.vector_rewrite(
+        out.as_mut_native(),
+        rewrite.into_native(),
+        input_views.as_ptr(),
+        input_views.len(),
+      )
+    }
+  }
+
+  /// Append the `rewrite` string, with backslash substitutions from `inputs`,
+  /// to string `out`.
+  ///
+  /// Returns [`true`] on success. This method can fail because of a malformed
+  /// rewrite string. [`Self::check_rewrite`] guarantees that the rewrite will
+  /// be sucessful.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let mut sw = re2::string::StringWrapper::blank();
+  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
+  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
+  /// assert_eq!(unsafe { sw.as_view().as_str() }, "bbsccasdffddff");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn vector_rewrite<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: &str,
+    inputs: [&str; N],
+  ) -> bool {
+    let rewrite = StringView::from_str(rewrite);
+    let inputs = Self::convert_from_strings(inputs);
+    self.vector_rewrite_view(out, rewrite, inputs)
   }
 }
 
