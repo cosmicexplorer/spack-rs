@@ -423,6 +423,21 @@ impl RE2 {
   }
 }
 
+/// The useful part: the matching interface.
+///
+/// Matching methods tend to have a few variants:
+/// - Methods with a `*_view` suffix accept and return [`StringView`] instances.
+///   These may have arbitrary encodings, as opposed to UTF-8-encoded
+///   [`str`](prim@str) instances.
+/// - Methods with a `*_capturing` suffix will return a variable array of
+///   strings corresponding to matching capture groups. For these methods,
+///   requesting more groups than the result of [`Self::num_captures()`] will
+///   immediately return [`None`] without performing the search.
+///
+/// [`Self::match_routine()`] also returns a variable array of strings, but
+/// presents a slightly different interface. It is the most general matching
+/// entry point along with [`Self::match_no_captures()`] and is suitable for
+/// building higher-level matching interfaces.
 impl RE2 {
   fn empty_result<'a, const N: usize>() -> [StringView<'a>; N] {
     assert_eq!(N, 0);
@@ -442,10 +457,13 @@ impl RE2 {
     map_array(argv, StringView::from_str)
   }
 
+  /// [`Self::full_match()`] for arbitrary string encodings.
   pub fn full_match_view(&self, text: StringView) -> bool {
     unsafe { self.0.full_match(text.into_native()) }
   }
 
+  /// Match against `text` without capturing. Pattern must match entire string.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
@@ -457,6 +475,7 @@ impl RE2 {
   /// ```
   pub fn full_match(&self, text: &str) -> bool { self.full_match_view(StringView::from_str(text)) }
 
+  /// [`Self::full_match_capturing()`] for arbitrary string encodings.
   pub fn full_match_capturing_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
@@ -488,6 +507,9 @@ impl RE2 {
     Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
+  /// Match against `text` and return a subset of declared capture groups.
+  /// Pattern must match entire string.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
@@ -512,10 +534,14 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
+  /// [`Self::partial_match()`] for arbitrary string encodings.
   pub fn partial_match_view(&self, text: StringView) -> bool {
     unsafe { self.0.partial_match(text.into_native()) }
   }
 
+  /// Like [`Self::full_match()`], except that the pattern may match a substring
+  /// of `text`.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.df".parse()?;
@@ -530,6 +556,7 @@ impl RE2 {
     self.partial_match_view(StringView::from_str(text))
   }
 
+  /// [`Self::partial_match_capturing()`] for arbitrary string encodings.
   pub fn partial_match_capturing_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
@@ -561,6 +588,11 @@ impl RE2 {
     Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
+  /// Match against `text` and return a subset of declared capture groups.
+  ///
+  /// Like [`Self::full_match_capturing()`], except that the pattern may match a
+  /// substring of `text`.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{*, options::*};
@@ -588,6 +620,7 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
+  /// [`Self::consume()`] for arbitrary string encodings.
   pub fn consume_view(&self, text_view: &mut StringView) -> bool {
     if !unsafe { self.0.consume(text_view.as_mut_native()) } {
       return false;
@@ -595,6 +628,9 @@ impl RE2 {
     true
   }
 
+  /// If the pattern matches some prefix of `text`, advance `text` past the
+  /// match.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
@@ -613,6 +649,7 @@ impl RE2 {
     ret
   }
 
+  /// [`Self::consume_capturing()`] for arbitrary string encodings.
   pub fn consume_capturing_view<'a, const N: usize>(
     &self,
     text_view: &mut StringView<'a>,
@@ -644,6 +681,9 @@ impl RE2 {
     Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
+  /// If the pattern matches some prefix of `text`, advance `text` past the
+  /// match and return some subset of captured sub-patterns.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
@@ -670,6 +710,7 @@ impl RE2 {
     ret.map(Self::convert_strings)
   }
 
+  /// [`Self::find_and_consume()`] for arbitrary string encodings.
   pub fn find_and_consume_view(&self, text_view: &mut StringView) -> bool {
     if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
       return false;
@@ -677,6 +718,11 @@ impl RE2 {
     true
   }
 
+  /// If the pattern matches anywhere in `text`, advance `text` past the match.
+  ///
+  /// Like [`Self::consume()`], but does not anchor the match at the beginning
+  /// of the text.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a.{2}".parse()?;
@@ -695,6 +741,7 @@ impl RE2 {
     ret
   }
 
+  /// [`Self::find_and_consume_capturing()`] for arbitrary string encodings.
   pub fn find_and_consume_capturing_view<'a, const N: usize>(
     &self,
     text_view: &mut StringView<'a>,
@@ -726,6 +773,12 @@ impl RE2 {
     Some(unsafe { Self::convert_string_views(array_assume_init(argv)) })
   }
 
+  /// If the pattern matches anywhere in `text`, advance `text` past the match
+  /// and return some subset of captured sub-patterns.
+  ///
+  /// Like [`Self::consume_capturing()`], but does not anchor the match at the
+  /// beginning of the text.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "a(.)d(f)".parse()?;
