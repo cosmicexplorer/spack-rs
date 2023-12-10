@@ -51,43 +51,61 @@ fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] 
   unsafe { array_assume_init(ret) }
 }
 
+/// Single pattern compiler.
+///
+///```
+/// # fn main() -> Result<(), re2::error::RE2Error> {
+/// use re2::RE2;
+///
+/// let r: RE2 = "a+(.)df".parse()?;
+/// let [m] = r.full_match_capturing("asdf").unwrap();
+/// assert_eq!(m, "s");
+/// # Ok(())
+/// # }
+/// ```
 #[repr(transparent)]
 pub struct RE2(re2_c::RE2Wrapper);
 
+/// Basic components of `RE2` objects.
 impl RE2 {
+  /// Compile an `RE2` pattern.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// use re2::RE2;
+  /// use re2::{RE2, options::Options};
   ///
-  /// let q = RE2::quote_meta("1.5-1.8?".into());
-  /// let r: RE2 = unsafe { q.as_view().as_str() }.parse()?;
-  /// assert_eq!(r"1\.5\-1\.8\?", unsafe { r.pattern().as_str() });
-  /// assert!(r.full_match("1.5-1.8?"));
+  /// let r = RE2::compile("asdf".into(), Options::default())?;
+  /// assert!(r.full_match("asdf"));
   /// # Ok(())
   /// # }
   /// ```
-  pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
-    let mut out = StringWrapper::from_view(pattern);
-    unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
-    out
-  }
-
-  ///```
-  /// use re2::RE2;
   ///
-  /// assert_eq!(0, RE2::max_submatch("asdf".into()));
-  /// assert_eq!(0, RE2::max_submatch(r"\0asdf".into()));
-  /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
-  /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
+  /// The error contains the original pattern string as well as a description of
+  /// the compile failure:
+  ///```
+  /// use re2::{RE2, error::*};
+  ///
+  /// assert_eq!(
+  ///   "a(sdf".parse::<RE2>().err().unwrap(),
+  ///   CompileError {
+  ///     message: "missing ): a(sdf".to_string(),
+  ///     arg: "a(sdf".to_string(),
+  ///     code: RE2ErrorCode::MissingParen,
+  ///   },
+  /// );
   /// ```
-  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
-    unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
+  pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
+    let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
+    s.check_error()?;
+    Ok(s)
   }
 
   fn check_error_code(&self) -> Result<(), RE2ErrorCode> {
     RE2ErrorCode::from_native(unsafe { self.0.error_code() })
   }
 
+  /// Extract the pattern string provided to the compiler.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
@@ -97,6 +115,8 @@ impl RE2 {
   /// ```
   pub fn pattern(&self) -> StringView { unsafe { StringView::from_native(self.0.pattern()) } }
 
+  /// Extract the options object provided to the compiler.
+  ///
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::*};
@@ -110,6 +130,18 @@ impl RE2 {
   /// ```
   pub fn options(&self) -> Options { unsafe { *self.0.options() }.into() }
 
+  /// Create a new instance of this `RE2` with the same semantics.
+  ///
+  /// This method is largely intended for documentation purposes; [`Clone`] is
+  /// not implemented because of several performance reasons to re-use the
+  /// same instance, e.g. with an [`Arc`](std::sync::Arc).
+  ///
+  /// The matching implementation may use a lazy NFA, which is partially
+  /// constructed as it is matched against input strings, so it improves
+  /// performance to use a reference to the same instance where possible, to
+  /// avoid reconstructing the same NFA components. Upfront compilation of this
+  /// NFA is also somewhat expensive in itself (even if less expensive than a
+  /// DFA), and best to avoid repeating.
   ///```
   /// # fn main() -> Result<(), re2::error::RE2Error> {
   /// use re2::{RE2, options::*};
@@ -138,10 +170,77 @@ impl RE2 {
     })
   }
 
-  pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
-    let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
-    s.check_error()?;
-    Ok(s)
+  /// Escape any metacharacters in `pattern`.
+  ///
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// use re2::RE2;
+  ///
+  /// let q = RE2::quote_meta("1.5-1.8?".into());
+  /// let r: RE2 = unsafe { q.as_view().as_str() }.parse()?;
+  /// assert_eq!(r"1\.5\-1\.8\?", unsafe { r.pattern().as_str() });
+  /// assert!(r.full_match("1.5-1.8?"));
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  /// Note that literal patterns can be used instead in some cases:
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// use re2::{RE2, options::Options};
+  ///
+  /// let o = Options { literal: true, ..Default::default() };
+  /// let r = RE2::compile("1.5-1.8?".into(), o)?;
+  /// assert_eq!("1.5-1.8?", unsafe { r.pattern().as_str() });
+  /// assert!(r.full_match("1.5-1.8?"));
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
+    let mut out = StringWrapper::from_view(pattern);
+    unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
+    out
+  }
+}
+
+impl str::FromStr for RE2 {
+  type Err = CompileError;
+
+  ///```
+  /// assert_eq!(
+  ///   "a(sdf".parse::<re2::RE2>().err().unwrap(),
+  ///   re2::error::CompileError {
+  ///     message: "missing ): a(sdf".to_string(),
+  ///     arg: "a(sdf".to_string(),
+  ///     code: re2::error::RE2ErrorCode::MissingParen,
+  ///   },
+  /// );
+  /// ```
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Self::compile(StringView::from_str(s), Options::default())
+  }
+}
+
+impl ops::Drop for RE2 {
+  fn drop(&mut self) {
+    unsafe {
+      self.0.clear();
+    }
+  }
+}
+
+/// Introspection methods to investigate match groups and rewrite strings.
+impl RE2 {
+  ///```
+  /// use re2::RE2;
+  ///
+  /// assert_eq!(0, RE2::max_submatch("asdf".into()));
+  /// assert_eq!(0, RE2::max_submatch(r"\0asdf".into()));
+  /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
+  /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
+  /// ```
+  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
+    unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
   ///```
@@ -203,6 +302,84 @@ impl RE2 {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 
+  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
+    let mut sw = StringWrapper::blank();
+
+    if unsafe {
+      self
+        .0
+        .check_rewrite_string(rewrite.into_native(), sw.as_mut_native())
+    } {
+      Ok(())
+    } else {
+      Err(RewriteError {
+        message: unsafe { sw.as_view().as_str() }.to_string(),
+      })
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let r: re2::RE2 = "asdf".parse()?;
+  /// r.check_rewrite("a").unwrap();
+  /// r.check_rewrite(r"a\0b").unwrap();
+  /// assert_eq!(
+  ///   re2::error::RewriteError {
+  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
+  ///   },
+  ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn check_rewrite(&self, rewrite: &str) -> Result<(), RewriteError> {
+    self.check_rewrite_view(StringView::from_str(rewrite))
+  }
+
+  pub fn vector_rewrite_view<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: StringView,
+    inputs: [StringView; N],
+  ) -> bool {
+    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
+    for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
+      sv.write(s.into_native());
+    }
+    let input_views = unsafe { array_assume_init(input_views) };
+
+    unsafe {
+      self.0.vector_rewrite(
+        out.as_mut_native(),
+        rewrite.into_native(),
+        input_views.as_ptr(),
+        input_views.len(),
+      )
+    }
+  }
+
+  ///```
+  /// # fn main() -> Result<(), re2::error::RE2Error> {
+  /// let mut sw = re2::string::StringWrapper::blank();
+  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
+  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
+  /// assert_eq!(unsafe { sw.as_view().as_str() }, "bbsccasdffddff");
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn vector_rewrite<const N: usize>(
+    &self,
+    out: &mut StringWrapper,
+    rewrite: &str,
+    inputs: [&str; N],
+  ) -> bool {
+    let rewrite = StringView::from_str(rewrite);
+    let inputs = Self::convert_from_strings(inputs);
+    self.vector_rewrite_view(out, rewrite, inputs)
+  }
+}
+
+impl RE2 {
   fn empty_result<'a, const N: usize>() -> [StringView<'a>; N] {
     assert_eq!(N, 0);
     let ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
@@ -818,108 +995,6 @@ impl RE2 {
       .split_view(StringView::from_str(hay))
       .map(|s| unsafe { s.as_str() })
   }
-
-  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
-    let mut sw = StringWrapper::blank();
-
-    if unsafe {
-      self
-        .0
-        .check_rewrite_string(rewrite.into_native(), sw.as_mut_native())
-    } {
-      Ok(())
-    } else {
-      Err(RewriteError {
-        message: unsafe { sw.as_view().as_str() }.to_string(),
-      })
-    }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let r: re2::RE2 = "asdf".parse()?;
-  /// r.check_rewrite("a").unwrap();
-  /// r.check_rewrite(r"a\0b").unwrap();
-  /// assert_eq!(
-  ///   re2::error::RewriteError {
-  ///     message: "Rewrite schema requests 1 matches, but the regexp only has 0 parenthesized subexpressions.".to_string(),
-  ///   },
-  ///   r.check_rewrite(r"a\0b\1").err().unwrap(),
-  /// );
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn check_rewrite(&self, rewrite: &str) -> Result<(), RewriteError> {
-    self.check_rewrite_view(StringView::from_str(rewrite))
-  }
-
-  pub fn vector_rewrite_view<const N: usize>(
-    &self,
-    out: &mut StringWrapper,
-    rewrite: StringView,
-    inputs: [StringView; N],
-  ) -> bool {
-    let mut input_views: [MaybeUninit<re2_c::StringView>; N] = uninit_array();
-    for (sv, s) in input_views.iter_mut().zip(inputs.into_iter()) {
-      sv.write(s.into_native());
-    }
-    let input_views = unsafe { array_assume_init(input_views) };
-
-    unsafe {
-      self.0.vector_rewrite(
-        out.as_mut_native(),
-        rewrite.into_native(),
-        input_views.as_ptr(),
-        input_views.len(),
-      )
-    }
-  }
-
-  ///```
-  /// # fn main() -> Result<(), re2::error::RE2Error> {
-  /// let mut sw = re2::string::StringWrapper::blank();
-  /// let r: re2::RE2 = "a(s+)d(f+)".parse()?;
-  /// assert!(r.vector_rewrite(&mut sw, r"bb\1cc\0dd\2", ["asdff", "s", "ff"]));
-  /// assert_eq!(unsafe { sw.as_view().as_str() }, "bbsccasdffddff");
-  /// # Ok(())
-  /// # }
-  /// ```
-  pub fn vector_rewrite<const N: usize>(
-    &self,
-    out: &mut StringWrapper,
-    rewrite: &str,
-    inputs: [&str; N],
-  ) -> bool {
-    let rewrite = StringView::from_str(rewrite);
-    let inputs = Self::convert_from_strings(inputs);
-    self.vector_rewrite_view(out, rewrite, inputs)
-  }
-}
-
-impl ops::Drop for RE2 {
-  fn drop(&mut self) {
-    unsafe {
-      self.0.clear();
-    }
-  }
-}
-
-impl str::FromStr for RE2 {
-  type Err = CompileError;
-
-  ///```
-  /// assert_eq!(
-  ///   "a(sdf".parse::<re2::RE2>().err().unwrap(),
-  ///   re2::error::CompileError {
-  ///     message: "missing ): a(sdf".to_string(),
-  ///     arg: "a(sdf".to_string(),
-  ///     code: re2::error::RE2ErrorCode::MissingParen,
-  ///   },
-  /// );
-  /// ```
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Self::compile(StringView::from_str(s), Options::default())
-  }
 }
 
 impl fmt::Debug for RE2 {
@@ -974,7 +1049,8 @@ impl hash::Hash for RE2 {
   }
 }
 
-
+/// An FFI handle to a string-index pair representing a named parenthetical
+/// capture group.
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct NamedGroup<'a> {
@@ -990,8 +1066,11 @@ impl<'a> NamedGroup<'a> {
     }
   }
 
+  /// Get a handle to the group's name, which can be decoded to
+  /// [`str`](prim@str) if the original pattern was also UTF-8.
   pub const fn name(&self) -> StringView<'a> { StringView::from_native(self.inner.name_) }
 
+  /// Get a handle to the index, which does not change after creation.
   pub const fn index(&self) -> &'a usize { unsafe { mem::transmute(&self.inner.index_) } }
 }
 
