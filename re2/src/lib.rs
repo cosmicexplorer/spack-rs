@@ -43,6 +43,14 @@ unsafe fn array_assume_init<T: Sized, const N: usize>(x: [MaybeUninit<T>; N]) ->
   ptr::read(y)
 }
 
+fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] {
+  let mut ret: [MaybeUninit<U>; N] = uninit_array();
+  for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
+    output.write(f(input));
+  }
+  unsafe { array_assume_init(ret) }
+}
+
 #[repr(transparent)]
 pub struct RE2(re2_c::RE2Wrapper);
 
@@ -197,27 +205,15 @@ impl RE2 {
   }
 
   fn convert_string_views<'a, const N: usize>(argv: [re2_c::StringView; N]) -> [StringView<'a>; N] {
-    let mut ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(StringView::from_native(input));
-    }
-    unsafe { array_assume_init(ret) }
+    map_array(argv, StringView::from_native)
   }
 
   fn convert_strings<'a, const N: usize>(argv: [StringView<'a>; N]) -> [&'a str; N] {
-    let mut ret: [MaybeUninit<&'a str>; N] = uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(input.as_str());
-    }
-    unsafe { array_assume_init(ret) }
+    map_array(argv, |s| s.as_str())
   }
 
   fn convert_from_strings<'a, const N: usize>(argv: [&'a str; N]) -> [StringView<'a>; N] {
-    let mut ret: [MaybeUninit<StringView<'a>>; N] = uninit_array();
-    for (output, input) in ret.iter_mut().zip(argv.into_iter()) {
-      output.write(StringView::from_str(input));
-    }
-    unsafe { array_assume_init(ret) }
+    map_array(argv, StringView::from_str)
   }
 
   pub fn full_match_view(&self, text: StringView) -> bool {
