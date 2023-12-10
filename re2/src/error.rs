@@ -83,8 +83,11 @@ impl RE2ErrorCode {
 /// compile error({code}): {message}({arg})
 #[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
 pub struct CompileError {
+  /// error message
   pub message: String,
+  /// pattern string that produced the error
   pub arg: String,
+  /// underlying error code
   #[source]
   pub code: RE2ErrorCode,
 }
@@ -92,6 +95,7 @@ pub struct CompileError {
 /// rewrite error: {message}
 #[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
 pub struct RewriteError {
+  /// error message
   pub message: String,
 }
 
@@ -150,6 +154,7 @@ impl SetErrorKind {
 #[derive(Debug, Display, Error, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct SetErrorInfo {
+  /// underlying error code
   #[from]
   pub kind: SetErrorKind,
 }
@@ -165,6 +170,7 @@ impl SetErrorInfo {
 /// error parsing pattern for set: {message}
 #[derive(Debug, Display, Error, PartialEq, Eq, Hash)]
 pub struct SetPatternError {
+  /// error message
   pub message: String,
 }
 

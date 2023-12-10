@@ -298,6 +298,8 @@ impl Default for Options {
   }
 }
 
+/// Anchoring behavior: whether the pattern must match at the start or end of
+/// the input text.
 #[derive(
   Debug,
   Default,
@@ -324,5 +326,5 @@ pub enum Anchor {
 }
 
 impl Anchor {
-  pub fn into_native(self) -> c_uint { self.into() }
+  pub(crate) fn into_native(self) -> c_uint { self.into() }
 }

@@ -2,6 +2,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Wrappers for string data that interact with C++.
+//!
+//! [`StringView`] is widely interchangeable with [`str`](prim@str) throughout
+//! this crate in order to operate on non-UTF-8 borrowed text, and is used to
+//! implement the [`str`](prim@str) interface. [`StringWrapper`] on the other
+//! hand is used to manage owned string data, and can be resized as well as
+//! converted into a [`StringView`] or [`StringMut`] to avoid reallocating
+//! memory while retaining a C++-compatible string.
 
 use crate::re2_c;
 #[cfg(doc)]
@@ -79,8 +86,10 @@ impl<'a> StringView<'a> {
 
   const unsafe fn data_pointer(&self) -> *const u8 { mem::transmute(self.inner.data_) }
 
+  /// Whether the slice has any data.
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
+  /// The number of bytes in the slice.
   pub const fn len(&self) -> usize { self.inner.len_ }
 
   /// Produce a Rust-compatible view of this byte slice.
@@ -217,8 +226,10 @@ impl<'a> StringMut<'a> {
 
   const unsafe fn mut_data_pointer(&self) -> *mut u8 { mem::transmute(self.inner.data_) }
 
+  /// Whether the slice has any data.
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
+  /// The number of bytes in the slice.
   pub const fn len(&self) -> usize { self.inner.len_ }
 
   /// Produce a Rust-compatible view of this mutable byte slice.
