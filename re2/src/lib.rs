@@ -1,10 +1,47 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
+//! Rust interface to the re2 regular-expression library. RE2 supports
+//! Perl-style regular expressions (with extensions like `\d`, `\w`, `\s`, ...).
+//!
+//! # Regexp Syntax
+//!
+//! This module uses the `re2` library and hence supports
+//! its syntax for regular expressions, which is similar to Perl's with
+//! some of the more complicated things thrown away.  In particular,
+//! backreferences and generalized assertions are not available, nor is `\Z`.
+//!
+//! See [Syntax] for the syntax supported by RE2, and a comparison with PCRE and
+//! PERL regexps.
+//!
+//! [Syntax]: https://github.com/google/re2/wiki/Syntax
+//!
+//! For those not familiar with Perl's regular expressions,
+//! here are some examples of the most commonly used extensions:
+//!
+//! - `"hello (\\w+) world"`  -- `\w` matches a "word" character
+//! - `"version (\\d+)"`      -- `\d` matches a digit
+//! - `"hello\\s+world"`      -- `\s` matches any whitespace character
+//! - `"\\b(\\w+)\\b"`        -- `\b` matches non-empty string at word boundary
+//! - `"(?i)hello"`           -- `(?i)` turns on case-insensitive matching
+//! - `"/\\*(.*?)\\*/"`       -- `.*?` matches . minimum no. of times possible
+//!
+//! The double backslashes are needed when writing string literals.
+//! However, they should NOT be used when writing raw string literals:
+//!
+//! - `r"(hello (\w+) world)"`  -- `\w` matches a "word" character
+//! - `r"(version (\d+))"`      -- `\d` matches a digit
+//! - `r"(hello\s+world)"`      -- `\s` matches any whitespace character
+//! - `r"(\b(\w+)\b)"`          -- `\b` matches non-empty string at word
+//!                                     boundary
+//! - `r"((?i)hello)"`          -- `(?i)` turns on case-insensitive matching
+//! - `r"(/\*(.*?)\*/)"`        -- `.*?` matches . minimum no. of times possible
+//!
+//! When using UTF-8 encoding, case-insensitive matching will perform
+//! simple case folding, not full case folding.
 
 // Warn for missing docs in general, and hard require crate-level docs.
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
@@ -12,11 +49,11 @@
 pub(crate) use re2_sys::{re2, re2_c};
 
 pub mod error;
-/* pub use error::RE2Error; */
+pub use error::RE2Error;
 use error::{CompileError, RE2ErrorCode, RewriteError};
 
 pub mod options;
-use options::{Anchor, Options};
+pub use options::{Anchor, Options};
 
 pub mod string;
 use string::{StringView, StringWrapper};
