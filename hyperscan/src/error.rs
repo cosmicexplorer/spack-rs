@@ -1,8 +1,6 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
-
 use crate::hs;
 #[cfg(feature = "compile")]
 use crate::matchers::ExpressionIndex;

@@ -1,8 +1,6 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
-
 #[cfg(feature = "static")]
 use crate::alloc;
 use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
@@ -37,9 +35,9 @@ pub type NativeDb = hs::hs_database;
 impl Database {
   pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
 
-  pub fn as_ref_native(&self) -> &hs::hs_database { unsafe { &*self.0 } }
+  pub fn as_ref_native(&self) -> &NativeDb { unsafe { &*self.0 } }
 
-  pub fn as_mut_native(&mut self) -> &mut hs::hs_database { unsafe { &mut *self.0 } }
+  pub fn as_mut_native(&mut self) -> &mut NativeDb { unsafe { &mut *self.0 } }
 
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
     let mut scratch = Scratch::new();

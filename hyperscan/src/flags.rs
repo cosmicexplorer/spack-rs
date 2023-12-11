@@ -1,8 +1,6 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! ???
-
 use crate::{error::HyperscanFlagsError, hs};
 
 use std::{
@@ -10,7 +8,7 @@ use std::{
   os::raw::{c_uint, c_ulonglong},
 };
 
-pub(crate) trait BitSet:
+trait BitSet:
   Copy+ops::BitOr<Output=Self>+ops::BitOrAssign+ops::BitAnd<Output=Self>+ops::BitAndAssign
 {
   fn nonzero(&self) -> bool;
