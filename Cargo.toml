@@ -38,7 +38,7 @@ name                    = "spack"
 hyperscan-async         = { path = "hyperscan" }
 hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.4" }
 re2                     = { path = "re2" }
-re2-sys                 = { path = "re2/sys", version = "0.0.3" }
+re2-sys                 = { path = "re2/sys", version = "0.0.4" }
 spack                   = { path = ".", version = "0.0.3", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.1" }
 

@@ -1221,7 +1221,7 @@ impl RE2 {
   /// to string `out`.
   ///
   /// Returns [`true`] on success. This method can fail because of a malformed
-  /// rewrite string. [`Self::check_rewrite`] guarantees that the rewrite will
+  /// rewrite string. [`Self::check_rewrite()`] guarantees that the rewrite will
   /// be sucessful.
   ///
   ///```

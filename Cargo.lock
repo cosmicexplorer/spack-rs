@@ -1429,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "re2"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "displaydoc",
  "indexmap 1.9.3",
@@ -1441,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "re2-sys"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bindgen",
  "cc",
