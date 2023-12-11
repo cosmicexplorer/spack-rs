@@ -290,11 +290,11 @@ impl RE2 {
     map_array(argv, StringView::from_native)
   }
 
-  fn convert_strings<'a, const N: usize>(argv: [StringView<'a>; N]) -> [&'a str; N] {
+  fn convert_strings<const N: usize>(argv: [StringView; N]) -> [&str; N] {
     map_array(argv, |s| unsafe { s.as_str() })
   }
 
-  fn convert_from_strings<'a, const N: usize>(argv: [&'a str; N]) -> [StringView<'a>; N] {
+  fn convert_from_strings<const N: usize>(argv: [&str; N]) -> [StringView; N] {
     map_array(argv, StringView::from_str)
   }
 
@@ -482,7 +482,7 @@ impl RE2 {
   /// # }
   /// ```
   pub fn consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let ret = self.consume_view(&mut text_view);
     if ret {
       *text = unsafe { text_view.as_str() };
@@ -543,7 +543,7 @@ impl RE2 {
   /// # }
   /// ```
   pub fn consume_capturing<'a, const N: usize>(&self, text: &mut &'a str) -> Option<[&'a str; N]> {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let ret = self.consume_capturing_view(&mut text_view);
     if ret.is_some() {
       *text = unsafe { text_view.as_str() };
@@ -574,7 +574,7 @@ impl RE2 {
   /// # }
   /// ```
   pub fn find_and_consume(&self, text: &mut &str) -> bool {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let ret = self.find_and_consume_view(&mut text_view);
     if ret {
       *text = unsafe { text_view.as_str() };
@@ -641,7 +641,7 @@ impl RE2 {
     &self,
     text: &mut &'a str,
   ) -> Option<[&'a str; N]> {
-    let mut text_view = StringView::from_str(*text);
+    let mut text_view = StringView::from_str(text);
     let ret = self.find_and_consume_capturing_view(&mut text_view);
     if ret.is_some() {
       *text = unsafe { text_view.as_str() };

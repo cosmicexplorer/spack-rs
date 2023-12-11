@@ -147,6 +147,7 @@ pub struct FilteredRE2Builder(re2_c::FilteredRE2Wrapper);
 
 impl FilteredRE2Builder {
   /// Generate a new instance with an arbitrary atom length.
+  #[allow(clippy::new_without_default)]
   pub fn new() -> Self { Self(unsafe { re2_c::FilteredRE2Wrapper::new() }) }
 
   /// Generate a new instance with the specified minimum length for returned
@@ -413,13 +414,13 @@ impl FilteredRE2 {
   /// The number of regexps added.
   pub fn num_regexps(&self) -> usize { unsafe { self.0.num_regexps() } }
 
-  fn get_re2<'o>(&'o self, index: usize) -> InnerRE2<'o> {
+  fn get_re2(&self, index: usize) -> InnerRE2 {
     let re2_ptr: *const re2::RE2 = unsafe { self.0.get_re2(index as c_int) };
     InnerRE2::new(re2_ptr)
   }
 
   /// Get references to the individual [`RE2`] objects.
-  pub fn inner_regexps<'o>(&'o self) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
+  pub fn inner_regexps(&self) -> impl Iterator<Item=InnerRE2>+ExactSizeIterator {
     (0..self.num_regexps()).map(|i| self.get_re2(i))
   }
 
@@ -490,9 +491,11 @@ impl Filter {
   pub fn compile(builder: FilteredRE2Builder) -> Result<Self, SetError> {
     let (filter, atom_set) = builder.compile();
 
-    let mut options = Options::default();
-    options.literal = true;
-    options.case_sensitive = false;
+    let options = Options {
+      literal: true,
+      case_sensitive: false,
+      ..Default::default()
+    };
     let mut set_builder = SetBuilder::new(options, Anchor::Unanchored);
     for (i, atom) in atom_set.indexed_atoms() {
       let j = set_builder.add_view(atom)?;

@@ -98,6 +98,10 @@ impl<'a> StringView<'a> {
   }
 
   /// Produce a Rust string view of this byte slice.
+  ///
+  /// # Safety
+  /// The underlying bytes must be UTF-8 encoded. This is currently always safe,
+  /// as this library only supports UTF-8 and Latin-1 encodings.
   pub const unsafe fn as_str(&self) -> &'a str { str::from_utf8_unchecked(self.as_slice()) }
 
   /* Used in "consume" methods which may update a string view to a substring
@@ -238,6 +242,10 @@ impl<'a> StringMut<'a> {
   }
 
   /// Produce a Rust string view of this mutable byte slice.
+  ///
+  /// # Safety
+  /// The underlying bytes must be UTF-8 encoded. This is currently always safe,
+  /// as this library only supports UTF-8 and Latin-1 encodings.
   pub unsafe fn as_mut_str(&self) -> &'a mut str {
     str::from_utf8_unchecked_mut(self.as_mut_slice())
   }

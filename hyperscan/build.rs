@@ -11,7 +11,7 @@ fn main() {
    * from dependencies to dependee build scripts: https://doc.rust-lang.org/cargo/reference/build-script-examples.html#using-another-sys-crate. */
   if cfg!(feature = "dynamic") {
     if let Ok(joined_rpath) = env::var("DEP_HYPERSCAN_JOINED_RPATH") {
-      for dir in joined_rpath.split(":").filter(|s| !s.is_empty()) {
+      for dir in joined_rpath.split(':').filter(|s| !s.is_empty()) {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir);
       }
     } else {

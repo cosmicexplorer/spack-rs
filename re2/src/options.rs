@@ -111,7 +111,7 @@ impl Encoding {
 }
 
 /// Options to configure support for POSIX egrep syntax features.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PosixOptions {
   /// Allow perl's `\d`, `\s`, `\w`, `\D`, `\S`, and `\W`.
   pub perl_classes: bool,
@@ -119,16 +119,6 @@ pub struct PosixOptions {
   pub word_boundary: bool,
   /// `^` and `$` only match beginning and end of text.
   pub one_line: bool,
-}
-
-impl Default for PosixOptions {
-  fn default() -> Self {
-    Self {
-      perl_classes: false,
-      word_boundary: false,
-      one_line: false,
-    }
-  }
 }
 
 /// Options to configure compilation or search behavior.

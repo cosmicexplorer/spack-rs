@@ -69,7 +69,7 @@ impl MatchedSetInfo {
   }
 
   /// Interpret this `std::vector<int>` as a mutable slice of atom indices.
-  pub fn as_mut_atom_slice(&self) -> &mut [AtomIndex] {
+  pub fn as_mut_atom_slice(&mut self) -> &mut [AtomIndex] {
     unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
   }
 
@@ -120,6 +120,7 @@ pub struct ExpressionIndex(pub(crate) c_int);
 impl ExpressionIndex {
   /// Interpret this [`c_int`] value as the largest possible unsigned integer
   /// type it can represent.
+  #[allow(clippy::absurd_extreme_comparisons)]
   pub const fn as_index(self) -> u16 {
     static_assertions::const_assert!(u16::MAX as c_int <= c_int::MAX);
     self.0 as u16
