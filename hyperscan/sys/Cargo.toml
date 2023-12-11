@@ -8,6 +8,9 @@ repository.workspace    = true
 authors.workspace       = true
 links                   = "hyperscan"
 
+[lib]
+name                    = "hyperscan_sys"
+
 [features]
 default                 = []
 static                  = []

@@ -1,6 +1,14 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Routines for overriding the allocators used in several components of
+//! hyperscan.
+//!
+//! These methods mutate global process state when setting function pointers for
+//! alloc and free, so this module is restricted to the `"static"` feature which
+//! statically links the hyperscan native library to ensure exclusive access to
+//! this global state.
+
 use crate::{error::HyperscanRuntimeError, hs};
 
 use indexmap::IndexMap;
