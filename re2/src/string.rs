@@ -335,7 +335,7 @@ impl StringWrapper {
   /// let s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(unsafe { s.as_view().as_str() }, "asdf");
   /// ```
-  pub fn from_view(s: StringView<'_>) -> Self {
+  pub fn from_view(s: StringView) -> Self {
     Self(unsafe { re2_c::StringWrapper::new(s.into_native()) })
   }
 
@@ -347,7 +347,7 @@ impl StringWrapper {
   /// let s = re2::string::StringWrapper::from_view("asdf".into());
   /// assert_eq!(unsafe { s.as_view().as_str() }, "asdf");
   /// ```
-  pub fn as_view(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.as_view()) } }
+  pub fn as_view(&self) -> StringView { unsafe { StringView::from_native(self.0.as_view()) } }
 
   /// Generate a mutable view of the dynamically allocated memory.
   ///

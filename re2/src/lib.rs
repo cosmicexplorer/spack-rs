@@ -138,7 +138,7 @@ impl RE2 {
   ///   },
   /// );
   /// ```
-  pub fn compile(pattern: StringView<'_>, options: Options) -> Result<Self, CompileError> {
+  pub fn compile(pattern: StringView, options: Options) -> Result<Self, CompileError> {
     let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
     s.check_error()?;
     Ok(s)
@@ -202,9 +202,9 @@ impl RE2 {
   /// ```
   pub fn expensive_clone(&self) -> Self { Self::compile(self.pattern(), self.options()).unwrap() }
 
-  fn error(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error()) } }
+  fn error(&self) -> StringView { unsafe { StringView::from_native(self.0.error()) } }
 
-  fn error_arg(&self) -> StringView<'_> { unsafe { StringView::from_native(self.0.error_arg()) } }
+  fn error_arg(&self) -> StringView { unsafe { StringView::from_native(self.0.error_arg()) } }
 
   fn check_error(&self) -> Result<(), CompileError> {
     self.check_error_code().map_err(|code| CompileError {
@@ -240,7 +240,7 @@ impl RE2 {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn quote_meta(pattern: StringView<'_>) -> StringWrapper {
+  pub fn quote_meta(pattern: StringView) -> StringWrapper {
     let mut out = StringWrapper::from_view(pattern);
     unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
     out
@@ -1058,7 +1058,7 @@ impl RE2 {
   /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
   /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
   /// ```
-  pub fn max_submatch(rewrite: StringView<'_>) -> usize {
+  pub fn max_submatch(rewrite: StringView) -> usize {
     unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
@@ -1141,7 +1141,7 @@ impl RE2 {
   /// # }
   pub fn named_and_numbered_groups(
     &self,
-  ) -> impl Iterator<Item=Option<StringView<'_>>>+ExactSizeIterator {
+  ) -> impl Iterator<Item=Option<StringView>>+ExactSizeIterator {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 

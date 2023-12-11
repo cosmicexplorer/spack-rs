@@ -62,9 +62,7 @@ impl AtomSet {
   }
 
   /// Associate each atom with an [`AtomIndex`].
-  pub fn indexed_atoms(
-    &self,
-  ) -> impl Iterator<Item=(AtomIndex, StringView<'_>)>+ExactSizeIterator+'_ {
+  pub fn indexed_atoms(&self) -> impl Iterator<Item=(AtomIndex, StringView)>+ExactSizeIterator+'_ {
     self
       .as_slice()
       .iter()
