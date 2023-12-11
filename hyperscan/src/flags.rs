@@ -279,13 +279,28 @@ impl ops::BitAndAssign for Mode {
   }
 }
 
+/// CPU feature support flags
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct CpuFeatures(u8);
 
 impl CpuFeatures {
+  /// Intel(R) Advanced Vector Extensions 2 (Intel(R) AVX2)
+  ///
+  /// Setting this flag indicates that the target platform supports AVX2
+  /// instructions.
   pub const AVX2: Self = Self(hs::HS_CPU_FEATURES_AVX2);
+  /// Intel(R) Advanced Vector Extensions 512 (Intel(R) AVX512)
+  ///
+  /// Setting this flag indicates that the target platform supports AVX512
+  /// instructions, specifically AVX-512BW. Using AVX512 implies the use of
+  /// AVX2.
   pub const AVX512: Self = Self(hs::HS_CPU_FEATURES_AVX512);
+  /// Intel(R) Advanced Vector Extensions 512 Vector Byte Manipulation
+  /// Instructions (Intel(R) AVX512VBMI)
+  ///
+  /// Setting this flag indicates that the target platform supports AVX512VBMI
+  /// instructions. Using AVX512VBMI implies the use of AVX512.
   pub const AVX512VBMI: Self = Self(hs::HS_CPU_FEATURES_AVX512VBMI);
 
   pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
@@ -323,6 +338,7 @@ impl ops::BitAndAssign for CpuFeatures {
   }
 }
 
+/// Tuning flags
 #[derive(
   Debug,
   Copy,
@@ -377,7 +393,7 @@ impl TuneFamily {
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct ExtFlags(u8);
+pub(crate) struct ExtFlags(u8);
 
 impl ExtFlags {
   pub const EDIT_DISTANCE: Self = Self(hs::HS_EXT_FLAG_EDIT_DISTANCE);
@@ -475,13 +491,6 @@ pub mod chimera {
     /// This flag sets the expression's match ID to match at most once, only the
     /// first match for each invocation of @ref ch_scan() will be returned.
     pub const SINGLEMATCH: Self = Self(hs::CH_FLAG_SINGLEMATCH as c_uint);
-    /// Enable Unicode property support for this expression.
-    ///
-    /// This flag instructs Chimera to use Unicode properties, rather than the
-    /// default ASCII interpretations, for character mnemonics like `\w` and
-    /// `\s` as well as the POSIX character classes. It is only meaningful
-    /// in conjunction with @ref CH_FLAG_UTF8.
-    pub const UCP: Self = Self(hs::CH_FLAG_UCP as c_uint);
     /// Enable UTF-8 mode for this expression.
     ///
     /// This flag instructs Chimera to treat the pattern as a sequence of UTF-8
@@ -489,6 +498,13 @@ pub mod chimera {
     /// Chimera library that has been compiled with one or more patterns
     /// using this flag are undefined.
     pub const UTF8: Self = Self(hs::CH_FLAG_UTF8 as c_uint);
+    /// Enable Unicode property support for this expression.
+    ///
+    /// This flag instructs Chimera to use Unicode properties, rather than the
+    /// default ASCII interpretations, for character mnemonics like `\w` and
+    /// `\s` as well as the POSIX character classes. It is only meaningful
+    /// in conjunction with @ref CH_FLAG_UTF8.
+    pub const UCP: Self = Self(hs::CH_FLAG_UCP as c_uint);
 
     pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
   }
@@ -526,11 +542,13 @@ pub mod chimera {
   /// Compile mode flags
   ///
   /// The mode flags are used as values for the mode parameter of the various
-  /// compile calls (@ref ch_compile(), @ref ch_compile_multi().
+  /// compile calls
+  /// ([`compile()`](crate::database::chimera::ChimeraDb::compile),
+  /// [`compile_multi()`](crate::database::chimera::ChimeraDb::compile_multi)).
   ///
   /// By default, the matcher will only supply the start and end offsets of the
-  /// match when the match callback is called. Using mode flag @ref
-  /// CH_MODE_GROUPS will also fill the `captured' array with the start and
+  /// match when the match callback is called. Using mode flag
+  /// [`Self::GROUPS`] will also fill the `captured' array with the start and
   /// end offsets of all the capturing groups specified by the pattern that
   /// has matched.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
