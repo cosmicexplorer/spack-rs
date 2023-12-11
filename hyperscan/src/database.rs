@@ -3,18 +3,20 @@
 
 #[cfg(feature = "static")]
 use crate::alloc;
-use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 #[cfg(feature = "compile")]
 use crate::{
-  error::{HyperscanCompileError, HyperscanFlagsError},
+  error::HyperscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
   flags::{CpuFeatures, Flags, Mode, TuneFamily},
 };
+use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 
 use cfg_if::cfg_if;
 #[cfg(feature = "compile")]
 use once_cell::sync::Lazy;
 
+#[cfg(feature = "compile")]
+use std::ptr;
 use std::{
   borrow::Cow,
   ffi::CStr,
@@ -23,8 +25,6 @@ use std::{
   os::raw::{c_char, c_void},
   slice, str,
 };
-#[cfg(feature = "compile")]
-use std::{os::raw::c_uint, ptr};
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -43,16 +43,6 @@ impl Database {
     let mut scratch = Scratch::new();
     scratch.setup_for_db(self)?;
     Ok(scratch)
-  }
-
-  #[cfg(feature = "compile")]
-  fn validate_flags_and_mode(
-    flags: Flags,
-    mode: Mode,
-  ) -> Result<(c_uint, c_uint), HyperscanFlagsError> {
-    mode.validate_db_type()?;
-    mode.validate_against_flags(&flags)?;
-    Ok((flags.into_native(), mode.into_native()))
   }
 
   ///```
@@ -82,16 +72,14 @@ impl Database {
     mode: Mode,
     platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
-    let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
-
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
           expression.as_ptr(),
-          flags,
-          mode,
+          flags.into_native(),
+          mode.into_native(),
           platform.as_ref_native(),
           &mut db,
           &mut compile_err,
@@ -129,17 +117,15 @@ impl Database {
     mode: Mode,
     platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
-    let (flags, mode) = Self::validate_flags_and_mode(flags, mode)?;
-
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit(
           literal.as_ptr(),
-          flags,
+          flags.into_native(),
           literal.as_bytes().len(),
-          mode,
+          mode.into_native(),
           platform.as_ref_native(),
           &mut db,
           &mut compile_err,
@@ -193,8 +179,6 @@ impl Database {
     mode: Mode,
     platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
-    mode.validate_db_type()?;
-
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
@@ -271,8 +255,6 @@ impl Database {
     mode: Mode,
     platform: &Platform,
   ) -> Result<Self, HyperscanCompileError> {
-    mode.validate_db_type()?;
-
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(

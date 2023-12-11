@@ -134,14 +134,6 @@ impl HyperscanRuntimeError {
   }
 }
 
-#[derive(Debug, Display, Error)]
-pub enum HyperscanFlagsError {
-  /// A mode was created without BLOCK, STREAM, or VECTORED somehow.
-  InvalidDbMode,
-  /// SOM_LEFTMOST flag provided, but no SOM_HORIZON_* mode was specified.
-  SomHorizonModeRequired,
-}
-
 /// compile error(@{expression}): {message}
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
@@ -175,8 +167,6 @@ impl CompileError {
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 #[derive(Debug, Display, Error)]
 pub enum HyperscanCompileError {
-  /// flags error: {0}
-  Flags(#[from] HyperscanFlagsError),
   /// non-compilation error: {0}
   NonCompile(#[from] HyperscanRuntimeError),
   /// pattern compilation error: {0}
