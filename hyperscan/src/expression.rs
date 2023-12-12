@@ -504,6 +504,48 @@ impl<'a> ExpressionSet<'a> {
     self
   }
 
+  /// Optionally assign [`ExprExt`] configuration to each pattern.
+  ///
+  /// This is the only available entry point to compiling a database with
+  /// [`ExprExt`] configuration for a given pattern (i.e. the single
+  /// expression compiler does not support extended configuration).
+  ///
+  /// If [`Expression::ext_info()`] succeeds with a given
+  /// [`Expression`]/[`ExprExt`] pair, then compiling the same pattern and
+  /// configuration into a hyperscan database via an expression set with this
+  /// method is likely but not guaranteed to succeed.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  ///
+  /// // Apply extended configuration to one pattern, but not the other:
+  /// let a: Expression = "a.*b".parse()?;
+  /// let a_ext = ExprExt::from_min_length(4);
+  /// let set = ExpressionSet::from_exprs([&a, &a])
+  ///   .with_exts([Some(&a_ext), None])
+  ///   .with_ids([ExprId(1), ExprId(2)])
+  ///   .compile(Mode::BLOCK)?;
+  /// let mut scratch = set.allocate_scratch()?;
+  ///
+  /// // The configured pattern does not match because of its min length attribute:
+  /// let mut matches: Vec<ExpressionIndex> = Vec::new();
+  /// scratch.scan_sync(&set, "ab".into(), |m| {
+  ///   matches.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(&matches, &[ExpressionIndex(2)]);
+  ///
+  /// // Howver, both patterns match a longer input:
+  /// matches.clear();
+  /// scratch.scan_sync(&set, "asssssb".into(), |m| {
+  ///   matches.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(&matches, &[ExpressionIndex(1), ExpressionIndex(2)]);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn with_exts(mut self, exts: impl IntoIterator<Item=Option<&'a ExprExt>>) -> Self {
     let exts: Vec<*const hs::hs_expr_ext> = exts
       .into_iter()
