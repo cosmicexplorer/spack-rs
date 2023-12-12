@@ -288,7 +288,7 @@ pub mod contiguous_slice {
   ) -> c_int {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
     let mut sync_slice_matcher: Pin<&mut SyncSliceMatcher> =
-      MatchEvent::extract_context::<'_, SyncSliceMatcher>(context).unwrap();
+      MatchEvent::extract_context(context).unwrap();
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = Match {
       id,
@@ -346,7 +346,7 @@ pub mod vectored_slice {
   ) -> c_int {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
     let mut sync_slice_matcher: Pin<&mut SyncVectoredSliceMatcher> =
-      MatchEvent::extract_context::<'_, SyncVectoredSliceMatcher>(context).unwrap();
+      MatchEvent::extract_context(context).unwrap();
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
@@ -407,30 +407,15 @@ pub mod chimera {
     }
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-  enum ChimeraCaptureOffset {
-    Active(ops::Range<usize>),
-    Inactive,
-  }
-
-  impl ChimeraCaptureOffset {
-    pub fn index<'a>(self, source: ByteSlice<'a>) -> Option<ByteSlice<'a>> {
-      match self {
-        Self::Inactive => None,
-        Self::Active(range) => source.index_range(range),
-      }
-    }
-  }
-
   #[derive(Debug)]
-  struct ChimeraMatchEvent {
+  struct ChimeraMatchEvent<'a> {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
-    pub captures: Vec<ChimeraCaptureOffset>,
+    pub captures: &'a [hs::ch_capture],
     pub context: Option<ptr::NonNull<c_void>>,
   }
 
-  impl ChimeraMatchEvent {
+  impl<'a> ChimeraMatchEvent<'a> {
     pub fn coerce_args(
       id: c_uint,
       from: c_ulonglong,
@@ -441,32 +426,17 @@ pub mod chimera {
       context: *mut c_void,
     ) -> Self {
       debug_assert_eq!(flags, 0);
-      let captures: Vec<ChimeraCaptureOffset> =
-        unsafe { slice::from_raw_parts(captured, size as usize) }
-          .iter()
-          .map(|hs::ch_capture { flags, from, to }| {
-            if *flags == hs::CH_CAPTURE_FLAG_INACTIVE as c_uint {
-              ChimeraCaptureOffset::Inactive
-            } else {
-              debug_assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
-              ChimeraCaptureOffset::Active(RangeIndex::bounded_range(
-                RangeIndex(*from),
-                RangeIndex(*to),
-              ))
-            }
-          })
-          .collect();
       Self {
         id: ExpressionIndex(id),
         range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
-        captures,
+        captures: unsafe { slice::from_raw_parts(captured, size as usize) },
         context: ptr::NonNull::new(context),
       }
     }
 
-    pub unsafe fn extract_context<'a, T>(
+    pub unsafe fn extract_context<'c, T>(
       context: Option<ptr::NonNull<c_void>>,
-    ) -> Option<Pin<&'a mut T>> {
+    ) -> Option<Pin<&'c mut T>> {
       MatchEvent::extract_context(context)
     }
   }
@@ -528,14 +498,22 @@ pub mod chimera {
       context,
     } = ChimeraMatchEvent::coerce_args(id, from, to, flags, size, captured, context);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
-      ChimeraMatchEvent::extract_context::<'_, ChimeraSyncSliceMatcher>(context).unwrap();
+      ChimeraMatchEvent::extract_context(context).unwrap();
     let matched_substring = matcher.index_range(range);
     let m = ChimeraMatch {
       id,
       source: matched_substring,
       captures: captures
-        .into_iter()
-        .map(|c| c.index(matcher.parent_slice()))
+        .iter()
+        .map(|hs::ch_capture { flags, from, to }| {
+          if *flags == hs::CH_CAPTURE_FLAG_INACTIVE as c_uint {
+            None
+          } else {
+            debug_assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
+            let range = RangeIndex::bounded_range(RangeIndex(*from), RangeIndex(*to));
+            Some(matcher.index_range(range))
+          }
+        })
         .collect(),
     };
 
@@ -553,8 +531,8 @@ pub mod chimera {
     let id = ExpressionIndex(id);
     let info = ptr::NonNull::new(info);
     let ctx = ptr::NonNull::new(ctx);
-    let mut matcher: Pin<&mut ChimeraSyncSliceMatcher<'_, '_>> =
-      ChimeraMatchEvent::extract_context::<'_, ChimeraSyncSliceMatcher<'_, '_>>(ctx).unwrap();
+    let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
+      ChimeraMatchEvent::extract_context(ctx).unwrap();
     let e = ChimeraMatchError {
       error_type,
       id,

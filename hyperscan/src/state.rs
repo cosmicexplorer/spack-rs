@@ -489,7 +489,9 @@ pub mod chimera {
     /// let mut scratch = db.allocate_scratch()?;
     ///
     /// let mut matches: Vec<(&str, &str)> = Vec::new();
-    /// scratch.scan_sync(&db, "aardvark".into(),
+    /// scratch.scan_sync(
+    ///   &db,
+    ///   "aardvark".into(),
     ///   |ChimeraMatch { source, captures, .. }| {
     ///     matches.push(unsafe { (source.as_str(), captures[1].unwrap().as_str()) });
     ///     ChimeraMatchResult::Continue
