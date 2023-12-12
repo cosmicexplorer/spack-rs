@@ -134,19 +134,21 @@ impl HyperscanRuntimeError {
   }
 }
 
-/// compile error(@{expression}): {message}
+/// compile error(@{expression:?}): {message}
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 #[derive(Debug, Display, Error)]
 #[ignore_extra_doc_attributes]
 pub struct CompileError {
   pub message: String,
-  pub expression: ExpressionIndex,
+  pub expression: Option<ExpressionIndex>,
 }
 
 #[cfg(feature = "compile")]
 impl CompileError {
-  pub fn copy_from_native(x: &mut hs::hs_compile_error) -> Result<Self, HyperscanRuntimeError> {
+  pub(crate) fn copy_from_native(
+    x: &mut hs::hs_compile_error,
+  ) -> Result<Self, HyperscanRuntimeError> {
     let hs::hs_compile_error {
       message,
       expression,
@@ -156,7 +158,11 @@ impl CompileError {
       message: unsafe { CStr::from_ptr(*message) }
         .to_string_lossy()
         .to_string(),
-      expression: ExpressionIndex(*expression as c_uint),
+      expression: if *expression < 0 {
+        None
+      } else {
+        Some(ExpressionIndex(*expression as c_uint))
+      },
     };
     HyperscanRuntimeError::from_native(unsafe { hs::hs_free_compile_error(x) })?;
     Ok(ret)
@@ -302,15 +308,17 @@ pub mod chimera {
     }
   }
 
-  /// compile error(@{expression}): {message}
+  /// compile error(@{expression:?}): {message}
   #[derive(Debug, Display, Error)]
   pub struct ChimeraInnerCompileError {
     pub message: String,
-    pub expression: ExpressionIndex,
+    pub expression: Option<ExpressionIndex>,
   }
 
   impl ChimeraInnerCompileError {
-    pub fn copy_from_native(x: &mut hs::ch_compile_error) -> Result<Self, ChimeraRuntimeError> {
+    pub(crate) fn copy_from_native(
+      x: &mut hs::ch_compile_error,
+    ) -> Result<Self, ChimeraRuntimeError> {
       let hs::ch_compile_error {
         message,
         expression,
@@ -320,7 +328,11 @@ pub mod chimera {
         message: unsafe { CStr::from_ptr(*message) }
           .to_string_lossy()
           .to_string(),
-        expression: ExpressionIndex(*expression as c_uint),
+        expression: if *expression < 0 {
+          None
+        } else {
+          Some(ExpressionIndex(*expression as c_uint))
+        },
       };
       ChimeraRuntimeError::from_native(unsafe { hs::ch_free_compile_error(x) })?;
       Ok(ret)
