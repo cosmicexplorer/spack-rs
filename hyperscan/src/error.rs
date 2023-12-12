@@ -344,6 +344,16 @@ pub enum CompressionError {
   NoSpace(usize),
 }
 
+/// Wrapper for errors returned by
+/// [`Scratch::scan()`](crate::state::Scratch::scan) and other scanning methods.
+#[derive(Debug, Display, Error)]
+pub enum ScanError {
+  /// error from return value of `hs_scan*()`: {0}
+  ReturnValue(#[from] HyperscanRuntimeError),
+  /// task join error: {0}
+  Join(#[from] tokio::task::JoinError),
+}
+
 /// Top-level wrapper for errors returned by this library.
 #[derive(Debug, Display, Error)]
 #[ignore_extra_doc_attributes]
@@ -354,6 +364,8 @@ pub enum HyperscanError {
   #[cfg(feature = "compile")]
   #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   Compile(#[from] HyperscanCompileError),
+  /// error during scan: {0}
+  Scan(#[from] ScanError),
   /// error compressing stream: {0}
   Compression(#[from] CompressionError),
 }
