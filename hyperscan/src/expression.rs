@@ -43,11 +43,16 @@ use std::{
   ptr, str,
 };
 
-/// A `NULL`-terminated C-style wrapper for a single pattern string.
+/// Hyperscan regex pattern string.
 ///
 /// Hyperscan itself supports a subset of PCRE syntax in the pattern string; see
 /// [Pattern Support] for reference. The use of unsupported constructs will
 /// result in compilation errors.
+///
+/// Note that as the underlying hyperscan library interprets pattern strings as
+/// essentially null-terminated [`CStr`](std::ffi::CStr) pointers, null bytes
+/// are *not* supported within `Expression` strings. Use a [`Literal`] database
+/// if you need to match against patterns with null bytes.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -102,6 +107,19 @@ impl Expression {
   pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
   /// Produce a `NULL`-terminated C-style wrapper for the given pattern string.
+  ///
+  /// This will fail if the string contains any internal `NULL` bytes, as those
+  /// are not supported by the hyperscan regex compiler:
+  ///```
+  /// use hyperscan::{expression::*, error::*};
+  ///
+  /// let pat = "as\0df";
+  /// let e = match Expression::new(pat) {
+  ///    Err(HyperscanCompileError::NullByte(e)) => e,
+  ///    _ => unreachable!(),
+  /// };
+  /// assert_eq!(e.nul_position(), 2);
+  /// ```
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> {
     Ok(Self(CString::new(x)?))
   }
@@ -126,7 +144,9 @@ impl Expression {
   /// use hyperscan::{expression::*, flags::Flags};
   ///
   /// let expr: Expression = "(he)llo".parse()?;
+  ///
   /// let info = expr.info(Flags::default())?;
+  ///
   /// assert_eq!(info, ExprInfo {
   ///   min_width: ExprWidth::parse_min_width(5),
   ///   max_width: ExprWidth::parse_max_width(5),
@@ -180,8 +200,11 @@ impl Expression {
   /// use hyperscan::{expression::*, flags::Flags};
   ///
   /// let expr: Expression = ".*lo".parse()?;
+  ///
   /// let ext = ExprExt::from_min_length(4);
+  ///
   /// let info = expr.ext_info(Flags::default(), &ext)?;
+  ///
   /// assert_eq!(info, ExprInfo {
   ///   min_width: ExprWidth::parse_min_width(4),
   ///   max_width: None,
@@ -232,6 +255,31 @@ impl str::FromStr for Expression {
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
 
+/// A literal byte string.
+///
+/// Unlike for [`Expression`], [`Database::compile_literal()`] will parse the
+/// string content in a literal sense without any regular grammars. For example,
+/// the expression `abc?` simply means a char sequence of `a`, `b`, `c`,
+/// and `?`. The `?` here doesn't mean 0 or 1 quantifier under regular
+/// semantics.
+///
+/// Also unlike [`Expression`], the underlying hyperscan library interprets
+/// literal patterns with a pointer and a length instead of a `NULL`-terminated
+/// string. **Importantly, this allows it to contain `\0` or `NULL` bytes
+/// itself!**
+///
+/// Instances can be created equivalently with [`Self::new()`] or
+/// [`str::parse()`] via the [`str::FromStr`] impl:
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// use hyperscan::expression::Literal;
+///
+/// let e1: Literal = "as\0df".parse()?;
+/// let e2 = Literal::new("as\0df")?;
+/// assert_eq!(e1, e2);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Literal(Vec<u8>);
 
@@ -256,14 +304,28 @@ impl fmt::Display for Literal {
 }
 
 impl Literal {
+  /// Reference the underlying bytes. This wrapper does *not* allocate any null
+  /// terminator.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// let e = hyperscan::expression::Literal::new("as\0df")?;
+  /// assert_eq!(e.as_bytes(), b"as\0df");
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn as_bytes(&self) -> &[u8] { &self.0 }
 
   pub(crate) fn as_ptr(&self) -> *const c_char {
     unsafe { mem::transmute(self.as_bytes().as_ptr()) }
   }
 
+  /// Wrap a byte slice to be interpreted literally. This does *not* allocate
+  /// any null terminator.
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
 
+  /// Call [`Database::compile_literal()`] with the result of
+  /// [`Platform::get()`].
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile_literal(self, flags, mode, Platform::get())
   }
@@ -388,11 +450,11 @@ impl ExprWidth {
 )]
 #[repr(i8)]
 pub enum UnorderedMatchBehavior {
-  /// Disallow matches that are not returned in order.
+  /// Disallows matches that are not returned in order.
   #[num_enum(default)]
   OnlyOrdered = 0,
-  /// Allow matches that are not returned in order.
-  AllowUnordered = 1,
+  /// Allows matches that are not returned in order.
+  AllowsUnordered = 1,
 }
 
 impl UnorderedMatchBehavior {
@@ -400,7 +462,7 @@ impl UnorderedMatchBehavior {
     if x == 0 {
       Self::OnlyOrdered
     } else {
-      Self::AllowUnordered
+      Self::AllowsUnordered
     }
   }
 }
@@ -408,11 +470,11 @@ impl UnorderedMatchBehavior {
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(i8)]
 pub enum MatchAtEndBehavior {
-  /// Disallow matching at EOD.
+  /// Pattern will never match at EOD.
   WillNeverMatchAtEOD,
-  /// Allow matches at EOD.
+  /// Pattern may match at EOD.
   MayMatchAtEOD,
-  /// *Only* allow matches at EOD.
+  /// Pattern will *Only* match at EOD.
   WillOnlyMatchAtEOD,
 }
 
@@ -436,7 +498,7 @@ impl MatchAtEndBehavior {
 /// assert_eq!(info, ExprInfo {
 ///   min_width: ExprWidth::parse_min_width(5),
 ///   max_width: ExprWidth::parse_max_width(5),
-///   unordered_matches: UnorderedMatchBehavior::AllowUnordered,
+///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
 ///   matches_at_eod: MatchAtEndBehavior::WillOnlyMatchAtEOD,
 /// });
 /// # Ok(())
@@ -453,7 +515,7 @@ impl MatchAtEndBehavior {
 /// assert_eq!(info, ExprInfo {
 ///   min_width: ExprWidth::parse_min_width(4),
 ///   max_width: None,
-///   unordered_matches: UnorderedMatchBehavior::AllowUnordered,
+///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
 ///   matches_at_eod: MatchAtEndBehavior::MayMatchAtEOD,
 /// });
 /// # Ok(())
