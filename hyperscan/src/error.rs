@@ -11,6 +11,7 @@ use thiserror::Error;
 #[cfg(feature = "compile")]
 use std::{
   ffi::{CStr, NulError},
+  fmt,
   os::raw::c_uint,
 };
 
@@ -134,14 +135,145 @@ impl HyperscanRuntimeError {
   }
 }
 
-/// compile error(@{expression:?}): {message}
+/// Error details returned by the pattern compiler.
+///
+/// This is returned by the compile calls
+/// ([`Database::compile()`](crate::database::Database::compile) and
+/// [`Database::compile_multi()`](crate::database::Database::compile_multi)) on
+/// failure. The caller may inspect the values returned in this type to
+/// determine the cause of failure.
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
-#[derive(Debug, Display, Error)]
-#[ignore_extra_doc_attributes]
+#[derive(Debug, Error)]
 pub struct CompileError {
+  /// A human-readable error message describing the error.
+  ///
+  /// # Common Errors
+  /// Common errors generated during the compile process include:
+  ///
+  /// - *Invalid parameter:* An invalid argument was specified in the compile
+  ///   call.
+  ///
+  /// - *Unrecognised flag:* An unrecognised value was passed in the flags
+  ///   argument.
+  ///
+  /// - *Pattern matches empty buffer:* By default, Hyperscan only supports
+  ///   patterns that will *always* consume at least one byte of input. Patterns
+  ///   that do not have this property (such as `/(abc)?/`) will produce this
+  ///   error unless the [`Flags::ALLOWEMPTY`](crate::flags::Flags::ALLOWEMPTY)
+  ///   flag is supplied. Note that such patterns will produce a match for
+  ///   *every* byte when scanned.
+  ///
+  /// - *Embedded anchors not supported:* Hyperscan only supports the use of
+  ///   anchor meta-characters (such as `^` and `$`) in patterns where they
+  ///   could *only* match at the start or end of a buffer. A pattern containing
+  ///   an embedded anchor, such as `/abc^def/`, can never match, as there is no
+  ///   way for `abc` to precede the start of the data stream.
+  ///
+  /// - *Bounded repeat is too large:* The pattern contains a repeated construct
+  ///   with very large finite bounds.
+  ///
+  /// - *Unsupported component type:* An unsupported PCRE construct was used in
+  ///   the pattern. Consider using [`chimera`](crate::expression::chimera) for
+  ///   full PCRE support.
+  ///
+  /// - *Unable to generate bytecode:* This error indicates that Hyperscan was
+  ///   unable to compile a pattern that is syntactically valid. The most common
+  ///   cause is a pattern that is very long and complex or contains a large
+  ///   repeated subpattern.
+  ///
+  /// - *Unable to allocate memory:* The library was unable to allocate
+  ///   temporary storage used during compilation time.
+  ///
+  /// - *Allocator returned misaligned memory:* The memory allocator (either
+  ///   [`libc::malloc()`] or the allocator set with
+  ///   [`set_db_allocator()`](crate::alloc::set_db_allocator)) did not
+  ///   correctly return memory suitably aligned for the largest representable
+  ///   data type on this platform.
+  ///
+  /// - *Internal error:* An unexpected error occurred: if this error is
+  ///   reported, please contact the Hyperscan team with a description of the
+  ///   situation.
   pub message: String,
+  /// The zero-based number of the expression that caused the error (if this
+  /// can be determined). For a database with a single expression, this value
+  /// will be `0`:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, error::*, matchers::*, flags::*};
+  ///
+  /// let expr: Expression = "as(df".parse()?;
+  /// let index = match expr.compile(Flags::default(), Mode::BLOCK) {
+  ///   Err(HyperscanCompileError::Compile(CompileError { expression, .. })) => expression,
+  ///   _ => unreachable!(),
+  /// };
+  /// assert_eq!(index, Some(ExpressionIndex(0)));
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  /// Note that while this uses the same [`ExpressionIndex`] type as in
+  /// [`Match`](crate::matchers::contiguous_slice::Match), the value is *not*
+  /// calculated from any [`ExprId`](crate::expression::ExprId) instances
+  /// provided to
+  /// [`ExpressionSet::with_ids()`](crate::expression::ExpressionSet::with_ids),
+  /// but instead just from the expression's index in the set:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, error::*, matchers::*, flags::*};
+  ///
+  /// let e1: Expression = "aa".parse()?;
+  /// let e2: Expression = "as(df".parse()?;
+  /// let set = ExpressionSet::from_exprs([&e1, &e2]).with_ids([ExprId(2), ExprId(3)]);
+  /// let index = match set.compile(Mode::BLOCK) {
+  ///   Err(HyperscanCompileError::Compile(CompileError { expression, .. })) => expression,
+  ///   _ => unreachable!(),
+  /// };
+  /// assert_eq!(index, Some(ExpressionIndex(1)));
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  /// If the error is not specific to an expression, then this value will be
+  /// [`None`]:
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, error::*, flags::*, alloc};
+  /// use std::{alloc::{GlobalAlloc, Layout}, ptr};
+  ///
+  /// // Create a broken allocator:
+  /// struct S;
+  /// unsafe impl GlobalAlloc for S {
+  ///   unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { ptr::null_mut() }
+  ///   unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+  /// }
+  /// // Set it as the db compile allocator:
+  /// assert!(alloc::set_db_allocator(alloc::LayoutTracker::new(S.into())).unwrap().is_none());
+  ///
+  /// let expr: Expression = "a".parse()?;
+  /// let CompileError { message, expression } = match expr.compile(Flags::default(), Mode::BLOCK) {
+  ///   Err(HyperscanCompileError::Compile(err)) => err,
+  ///   _ => unreachable!(),
+  /// };
+  /// assert_eq!(expression, None);
+  /// assert_eq!(&message, "Could not allocate memory for bytecode.");
+  /// # Ok(())
+  /// # }
+  /// ```
   pub expression: Option<ExpressionIndex>,
+}
+
+#[cfg(feature = "compile")]
+impl fmt::Display for CompileError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(
+      f,
+      "compile error(@{:?}): {}",
+      &self.expression, &self.message
+    )
+  }
 }
 
 #[cfg(feature = "compile")]
@@ -308,11 +440,35 @@ pub mod chimera {
     }
   }
 
-  /// compile error(@{expression:?}): {message}
-  #[derive(Debug, Display, Error)]
+  /// Error details returned by the pattern compiler.
+  ///
+  /// This is returned by the compile calls
+  /// ([`ChimeraDb::compile()`](crate::database::chimera::ChimeraDb::compile)
+  /// and [`ChimeraDb::compile_multi()`](crate::database::chimera::ChimeraDb::compile_multi)) on
+  /// failure. The caller may inspect the values returned in this type to
+  /// determine the cause of failure.
+  #[derive(Debug, Error)]
   pub struct ChimeraInnerCompileError {
+    /// A human-readable error message describing the error.
+    ///
+    /// Common errors are the same as for the base hyperscan library's
+    /// [`CompileError::message`], except that PCRE constructs are fully supported and will not
+    /// cause errors.
     pub message: String,
+    /// The zero-based number of the expression that caused the error (if this
+    /// can be determined). This value's behavior is the same as for the base
+    /// hyperscan library's [`CompileError::expression`].
     pub expression: Option<ExpressionIndex>,
+  }
+
+  impl fmt::Display for ChimeraInnerCompileError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(
+        f,
+        "chimera compile error(@{:?}): {}",
+        &self.expression, &self.message
+      )
+    }
   }
 
   impl ChimeraInnerCompileError {
