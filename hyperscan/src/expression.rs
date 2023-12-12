@@ -52,8 +52,9 @@ use std::{
 ///
 /// Note that as the underlying hyperscan library interprets pattern strings as
 /// essentially null-terminated [`CStr`] pointers, null bytes
-/// are *not* supported within `Expression` strings. Use a [`Literal`] database
-/// if you need to match against patterns with null bytes.
+/// are *not* supported within `Expression` strings. Use a [`Literal`] or
+/// [`LiteralSet`] database if you need to match against patterns with null
+/// bytes.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -344,6 +345,14 @@ impl str::FromStr for Literal {
 #[repr(transparent)]
 pub struct ExprId(pub c_uint);
 
+/// Collection of regular expressions.
+///
+/// This is the entry point to hyperscan's main functionality: matching against
+/// sets of patterns at once, which is typically poorly supported or less
+/// featureful than single-pattern matching in many other regex engines. This
+/// struct provides an immutable (returning `Self`) builder interface
+/// to attach additional configuration to the initial set of patterns
+/// constructed with [`Self::from_exprs()`].
 #[derive(Clone)]
 pub struct ExpressionSet<'a> {
   ptrs: Vec<*const c_char>,
@@ -373,6 +382,20 @@ impl<'a> fmt::Debug for ExpressionSet<'a> {
 }
 
 impl<'a> ExpressionSet<'a> {
+  /// Construct a pattern set from references to parsed expressions.
+  ///
+  /// The length of this initial `exprs` argument is returned by
+  /// [`Self::len()`], and all subsequent configuration methods are checked to
+  /// provide iterators of the same length:
+  ///
+  ///```should_panic
+  /// use hyperscan::expression::*;
+  ///
+  /// let a: Expression = "a+".parse().unwrap();
+  /// // Fails due to argument length mismatch:
+  /// ExpressionSet::from_exprs([&a])
+  ///   .with_flags([]);
+  /// ```
   pub fn from_exprs(exprs: impl IntoIterator<Item=&'a Expression>) -> Self {
     Self {
       ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
@@ -383,16 +406,100 @@ impl<'a> ExpressionSet<'a> {
     }
   }
 
+  /// Provide flags which modify the behavior of each expression.
+  ///
+  /// The length of `flags` is checked to be the same as [`Self::len()`].
+  ///
+  /// If this builder method is not used, [`Flags::default()`] will be assigned
+  /// to all patterns.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  ///
+  /// // Create two expressions to demonstrate separate flags for each pattern:
+  /// let a: Expression = "a+[^a]".parse()?;
+  /// let b: Expression = "b+[^b]".parse()?;
+  ///
+  /// // Get the start of match for one pattern, but not the other:
+  /// let db = ExpressionSet::from_exprs([&a, &b])
+  ///   .with_flags([Flags::default(), Flags::SOM_LEFTMOST])
+  ///   .compile(Mode::BLOCK)?;
+  ///
+  /// let mut scratch = db.allocate_scratch()?;
+  ///
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch.scan_sync(&db, "aardvark imbibbe".into(), |m| {
+  ///   matches.push(unsafe { m.source.as_str() });
+  ///   MatchResult::Continue
+  /// })?;
+  /// // Start of match is preserved for only one pattern:
+  /// assert_eq!(&matches, &["aar", "aardvar", "bi", "bbe"]);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn with_flags(mut self, flags: impl IntoIterator<Item=Flags>) -> Self {
     let flags: Vec<_> = flags.into_iter().collect();
-    assert_eq!(self.ptrs.len(), flags.len());
+    assert_eq!(self.len(), flags.len());
     self.flags = Some(flags);
     self
   }
 
+  /// Assign an ID number to each pattern.
+  ///
+  /// The length of `ids` is checked to be the same as [`Self::len()`]. Multiple
+  /// patterns can be assigned the same ID.
+  ///
+  /// If this builder method is not used, hyperscan will assign them all the ID
+  /// number 0:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*};
+  ///
+  /// // Create two expressions to demonstrate multiple pattern IDs.
+  /// let a: Expression = "a+[^a]".parse()?;
+  /// let b: Expression = "b+[^b]".parse()?;
+  ///
+  /// // Create one db with ID numbers, and one without.
+  /// let set1 = ExpressionSet::from_exprs([&a, &b]).compile(Mode::BLOCK)?;
+  /// let set2 = ExpressionSet::from_exprs([&a, &b])
+  ///   .with_ids([ExprId(300), ExprId(12)])
+  ///   .compile(Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::new();
+  /// scratch.setup_for_db(&set1)?;
+  /// scratch.setup_for_db(&set2)?;
+  ///
+  /// let msg: ByteSlice = "aardvark imbibbe".into();
+  ///
+  /// // The first db doesn't differentiate matches by ID number:
+  /// let mut matches1: Vec<ExpressionIndex> = Vec::new();
+  /// scratch.scan_sync(&set1, msg, |m| {
+  ///   matches1.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(
+  ///   &matches1,
+  ///   &[ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0)],
+  /// );
+  ///
+  /// // The second db returns corresponding ExpressionIndex instances:
+  /// let mut matches2: Vec<ExpressionIndex> = Vec::new();
+  /// scratch.scan_sync(&set2, msg, |m| {
+  ///   matches2.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(
+  ///   &matches2,
+  ///   &[ExpressionIndex(300), ExpressionIndex(300), ExpressionIndex(12), ExpressionIndex(12)],
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
     let ids: Vec<_> = ids.into_iter().collect();
-    assert_eq!(self.ptrs.len(), ids.len());
+    assert_eq!(self.len(), ids.len());
     self.ids = Some(ids);
     self
   }
@@ -405,7 +512,7 @@ impl<'a> ExpressionSet<'a> {
           .unwrap_or(ptr::null())
       })
       .collect();
-    assert_eq!(self.ptrs.len(), exts.len());
+    assert_eq!(self.len(), exts.len());
     self.exts = Some(exts);
     self
   }
@@ -415,8 +522,10 @@ impl<'a> ExpressionSet<'a> {
     Database::compile_multi(&self, mode, Platform::get())
   }
 
+  /// The number of patterns in this set.
   pub fn len(&self) -> usize { self.ptrs.len() }
 
+  /// Whether this set contains any patterns.
   pub fn is_empty(&self) -> bool { self.len() == 0 }
 
   pub(crate) fn num_elements(&self) -> c_uint { self.len() as c_uint }
@@ -771,14 +880,14 @@ impl<'a> LiteralSet<'a> {
 
   pub fn with_flags(mut self, flags: impl IntoIterator<Item=Flags>) -> Self {
     let flags: Vec<_> = flags.into_iter().collect();
-    assert_eq!(self.ptrs.len(), flags.len());
+    assert_eq!(self.len(), flags.len());
     self.flags = Some(flags.to_vec());
     self
   }
 
   pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
     let ids: Vec<_> = ids.into_iter().collect();
-    assert_eq!(self.ptrs.len(), ids.len());
+    assert_eq!(self.len(), ids.len());
     self.ids = Some(ids.to_vec());
     self
   }
@@ -1002,14 +1111,14 @@ pub mod chimera {
 
     pub fn with_flags(mut self, flags: impl IntoIterator<Item=ChimeraFlags>) -> Self {
       let flags: Vec<_> = flags.into_iter().collect();
-      assert_eq!(self.ptrs.len(), flags.len());
+      assert_eq!(self.len(), flags.len());
       self.flags = Some(flags);
       self
     }
 
     pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
       let ids: Vec<_> = ids.into_iter().collect();
-      assert_eq!(self.ptrs.len(), ids.len());
+      assert_eq!(self.len(), ids.len());
       self.ids = Some(ids);
       self
     }
