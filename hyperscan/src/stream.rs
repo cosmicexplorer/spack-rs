@@ -159,22 +159,21 @@ unsafe extern "C" fn match_slice_stream(
   result.into_native()
 }
 
-/* TODO: expose hs::hs_stream like we do for Database and Scratch! We don't
- * currently do that but it's very easy to do once we have a use case for
- * separating LiveStream, StreamSink, and Streamer. */
 #[derive(Debug)]
 #[repr(transparent)]
-pub(crate) struct LiveStream(*mut hs::hs_stream);
+pub struct LiveStream(*mut hs::hs_stream);
 
 unsafe impl Send for LiveStream {}
 unsafe impl Sync for LiveStream {}
 
+pub type NativeStream = hs::hs_stream;
+
 impl LiveStream {
-  pub(crate) const unsafe fn from_native(p: *mut hs::hs_stream) -> Self { Self(p) }
+  pub const unsafe fn from_native(p: *mut NativeStream) -> Self { Self(p) }
 
-  pub(crate) fn as_ref_native(&self) -> &hs::hs_stream { unsafe { &*self.0 } }
+  pub fn as_ref_native(&self) -> &NativeStream { unsafe { &*self.0 } }
 
-  pub(crate) fn as_mut_native(&mut self) -> &mut hs::hs_stream { unsafe { &mut *self.0 } }
+  pub fn as_mut_native(&mut self) -> &mut NativeStream { unsafe { &mut *self.0 } }
 
   pub fn try_open(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut ret = ptr::null_mut();
@@ -226,8 +225,8 @@ impl ops::Drop for LiveStream {
   }
 }
 
-pub(crate) struct StreamSink {
-  live: LiveStream,
+pub struct StreamSink {
+  pub live: LiveStream,
   scratch: Arc<Scratch>,
   matcher: StreamMatcher,
   #[allow(clippy::type_complexity)]
@@ -380,6 +379,17 @@ impl Clone for StreamSink {
   fn clone_from(&mut self, source: &Self) { self.try_clone_from(source).unwrap(); }
 }
 
+impl std::io::Write for StreamSink {
+  fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    self
+      .scan_sync(ByteSlice::from_slice(buf))
+      .map(|_| buf.len())
+      .map_err(io::Error::other)
+  }
+
+  fn flush(&mut self) -> io::Result<()> { Ok(()) }
+}
+
 impl AsyncWrite for StreamSink {
   fn poll_write(
     mut self: Pin<&mut Self>,
@@ -495,8 +505,8 @@ impl AsyncWrite for StreamSink {
 /// # })}
 /// ```
 pub struct Streamer {
-  sink: StreamSink,
-  rx: mpsc::UnboundedReceiver<StreamMatch>,
+  pub sink: StreamSink,
+  pub rx: mpsc::UnboundedReceiver<StreamMatch>,
 }
 
 impl Streamer {
@@ -736,6 +746,17 @@ impl Clone for Streamer {
   fn clone(&self) -> Self { self.try_clone().unwrap() }
 
   fn clone_from(&mut self, source: &Self) { self.try_clone_from(source).unwrap(); }
+}
+
+impl std::io::Write for Streamer {
+  fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    self
+      .scan_sync(ByteSlice::from_slice(buf))
+      .map(|_| buf.len())
+      .map_err(io::Error::other)
+  }
+
+  fn flush(&mut self) -> io::Result<()> { Ok(()) }
 }
 
 impl AsyncWrite for Streamer {

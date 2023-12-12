@@ -336,8 +336,9 @@ pub mod chimera {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan::<TrivialChimeraScanner>(&db, "hello".into())
+  /// let m = |_: &_| ChimeraMatchResult::Continue;
+  /// let e = |_: &_| ChimeraMatchResult::Continue;
+  /// let matches: Vec<&str> = scratch.scan(&db, "hello".into(), m, e)
   ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;

@@ -708,11 +708,12 @@ pub mod chimera {
     /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS, Platform::get())?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
-    /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
-    ///   &db,
-    ///   "aardvark imbibbe".into(),
-    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-    ///  .try_collect().await?;
+    /// let m = |_: &_| ChimeraMatchResult::Continue;
+    /// let e = |_: &_| ChimeraMatchResult::Continue;
+    /// let matches: Vec<&str> = scratch.scan(&db, "aardvark imbibbe".into(), m, e)
+    ///  .and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
+    ///  .try_collect()
+    ///  .await?;
     /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
     /// # Ok(())
     /// # })}

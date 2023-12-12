@@ -3,11 +3,16 @@
 
 use crate::{
   database::Database,
-  error::HyperscanRuntimeError,
+  error::{HyperscanRuntimeError, ScanError},
   hs,
   matchers::{
-    contiguous_slice::{match_slice_ref, Match, SliceMatcher},
-    vectored_slice::{match_slice_vectored_ref, VectoredMatch, VectoredSliceMatcher},
+    contiguous_slice::{
+      match_slice_ref, match_slice_ref_sync, Match, SliceMatcher, SyncSliceMatcher,
+    },
+    vectored_slice::{
+      match_slice_vectored_ref, match_slice_vectored_ref_sync, SyncVectoredSliceMatcher,
+      VectoredMatch, VectoredSliceMatcher,
+    },
     ByteSlice, MatchResult, VectoredByteSlices,
   },
 };
@@ -112,6 +117,56 @@ impl Scratch {
   }
 
   ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  ///
+  /// let a_expr: Expression = "a+".parse()?;
+  /// let b_expr: Expression = "b+".parse()?;
+  /// let flags = Flags::SOM_LEFTMOST;
+  /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///   .with_flags([flags, flags])
+  ///   .with_ids([ExprId(1), ExprId(2)]);
+  /// let db = expr_set.compile(Mode::BLOCK)?;
+  /// let mut scratch = db.allocate_scratch()?;
+  ///
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// {
+  ///   let mut f = |Match { source, .. }| {
+  ///     matches.push(unsafe { source.as_str() });
+  ///     MatchResult::Continue
+  ///   };
+  ///   scratch.scan_sync(&db, "aardvark".into(), &mut f)?;
+  ///   scratch.scan_sync(&db, "imbibbe".into(), &mut f)?;
+  /// }
+  /// assert_eq!(&matches, &["a", "aa", "a", "b", "b", "bb"]);
+  ///
+  /// let ret = scratch.scan_sync(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching);
+  /// assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn scan_sync<'data>(
+    &mut self,
+    db: &Database,
+    data: ByteSlice<'data>,
+    mut f: impl FnMut(Match<'data>) -> MatchResult,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let mut matcher = SyncSliceMatcher::new(data, &mut f);
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_scan(
+        db.as_ref_native(),
+        matcher.parent_slice().as_ptr(),
+        matcher.parent_slice().native_len(),
+        /* NB: ignoring flags for now! */
+        0,
+        self.as_mut_native().unwrap(),
+        Some(match_slice_ref_sync),
+        mem::transmute(&mut matcher),
+      )
+    })
+  }
+
+  ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
   /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   /// use futures_util::TryStreamExt;
@@ -143,16 +198,16 @@ impl Scratch {
   ///   .scan(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
   ///   .try_for_each(|_| async { Ok(()) })
   ///   .await;
-  /// assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
+  /// assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan<'data, F: FnMut(&Match<'data>) -> MatchResult+'data>(
+  pub fn scan<'data>(
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-    mut f: F,
-  ) -> impl Stream<Item=Result<Match<'data>, HyperscanRuntimeError>>+'data {
+    mut f: impl FnMut(&Match<'data>) -> MatchResult,
+  ) -> impl Stream<Item=Result<Match<'data>, ScanError>> {
     let (matcher, mut matches_rx) = SliceMatcher::new(data, &mut f);
 
     let ctx = Self::into_slice_ctx(matcher);
@@ -182,8 +237,31 @@ impl Scratch {
       while let Some(m) = matches_rx.recv().await {
         yield m;
       }
-      scan_task.await.unwrap()?;
+      scan_task.await??;
     }
+  }
+
+  pub fn scan_vectored_sync<'data>(
+    &mut self,
+    db: &Database,
+    data: VectoredByteSlices<'data>,
+    mut f: impl FnMut(VectoredMatch<'data>) -> MatchResult,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let mut matcher = SyncVectoredSliceMatcher::new(data, &mut f);
+    let (data_pointers, lengths) = matcher.parent_slices().pointers_and_lengths();
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_scan_vector(
+        db.as_ref_native(),
+        data_pointers.as_ptr(),
+        lengths.as_ptr(),
+        matcher.parent_slices().native_len(),
+        /* NB: ignoring flags for now! */
+        0,
+        self.as_mut_native().unwrap(),
+        Some(match_slice_vectored_ref_sync),
+        mem::transmute(&mut matcher),
+      )
+    })
   }
 
   ///```
@@ -231,12 +309,12 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan_vectored<'data, F: FnMut(&VectoredMatch<'data>) -> MatchResult+'data>(
+  pub fn scan_vectored<'data>(
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data>,
-    mut f: F,
-  ) -> impl Stream<Item=Result<VectoredMatch<'data>, HyperscanRuntimeError>>+'data {
+    mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult,
+  ) -> impl Stream<Item=Result<VectoredMatch<'data>, ScanError>> {
     /* NB: while static arrays take up no extra runtime space, a ref to a
     slice
     * takes up more than pointer space! */
@@ -276,7 +354,7 @@ impl Scratch {
       while let Some(m) = matches_rx.recv().await {
         yield m;
       }
-      scan_task.await.unwrap()?;
+      scan_task.await??;
     }
   }
 
@@ -450,31 +528,77 @@ pub mod chimera {
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// # tokio_test::block_on(async {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
-    /// use futures_util::TryStreamExt;
     ///
-    /// let expr: ChimeraExpression = "a+".parse()?;
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// let expr: ChimeraExpression = "a+(.)".parse()?;
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::GROUPS)?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
-    /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
-    ///   &db,
-    ///   "aardvark".into(),
-    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-    ///  .try_collect()
-    ///  .await?;
-    /// assert_eq!(&matches, &["aa", "a"]);
+    /// let mut matches: Vec<(&str, &str)> = Vec::new();
+    /// scratch.scan_sync(&db, "aardvark".into(),
+    ///   |ChimeraMatch { source, captures, .. }| {
+    ///     matches.push(unsafe { (source.as_str(), captures[1].unwrap().as_str()) });
+    ///     ChimeraMatchResult::Continue
+    ///   },
+    ///   |_| ChimeraMatchResult::Continue,
+    ///  )?;
+    /// assert_eq!(&matches, &[("aar", "r"), ("ar", "r")]);
     /// # Ok(())
-    /// # })}
+    /// # }
     /// ```
-    pub fn scan<'data, S: ChimeraScanner<'data>>(
+    pub fn scan_sync<'data>(
       &mut self,
       db: &ChimeraDb,
       data: ByteSlice<'data>,
-    ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>>+'data {
-      let mut s = S::new();
-      let (matcher, mut matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut s);
+      mut m: impl FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult,
+      mut e: impl FnMut(ChimeraMatchError) -> ChimeraMatchResult,
+    ) -> Result<(), ChimeraRuntimeError> {
+      let mut matcher = ChimeraSyncSliceMatcher::new(data, &mut m, &mut e);
+      ChimeraRuntimeError::from_native(unsafe {
+        hs::ch_scan(
+          db.as_ref_native(),
+          matcher.parent_slice().as_ptr(),
+          matcher.parent_slice().native_len(),
+          /* NB: ignoring flags for now! */
+          0,
+          self.as_mut_native().unwrap(),
+          Some(match_chimera_slice_sync),
+          Some(error_callback_chimera_sync),
+          mem::transmute(&mut matcher),
+        )
+      })
+    }
+
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// # tokio_test::block_on(async {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, error::chimera::*};
+    /// use futures_util::TryStreamExt;
+    ///
+    /// let expr: ChimeraExpression = "a+(.)".parse()?;
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::GROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let m = |_: &ChimeraMatch| ChimeraMatchResult::Continue;
+    /// let e = |_: &ChimeraMatchError| ChimeraMatchResult::Continue;
+    /// let matches: Vec<(&str, &str)> = scratch.scan(&db, "aardvark".into(), m, e)
+    ///  .and_then(|ChimeraMatch { source, captures, .. }| async move {
+    ///    Ok(unsafe { (source.as_str(), captures[1].unwrap().as_str()) })
+    ///  })
+    ///  .try_collect()
+    ///  .await?;
+    /// assert_eq!(&matches, &[("aar", "r"), ("ar", "r")]);
+    /// # Ok(())
+    /// # })}
+    /// ```
+    pub fn scan<'data>(
+      &mut self,
+      db: &ChimeraDb,
+      data: ByteSlice<'data>,
+      mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult,
+      mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult,
+    ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>> {
+      let (matcher, mut matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut m, &mut e);
 
       let ctx = Self::into_ctx(matcher);
       let scratch = Self::into_scratch(self);
