@@ -33,14 +33,15 @@ use crate::{
 };
 
 use displaydoc::Display;
+use itertools::Itertools;
 
 use std::{
-  ffi::CString,
+  ffi::{CStr, CString},
   fmt,
   marker::PhantomData,
   mem, ops,
   os::raw::{c_char, c_uint, c_ulonglong},
-  ptr, str,
+  ptr, slice, str,
 };
 
 /// Hyperscan regex pattern string.
@@ -69,18 +70,8 @@ use std::{
 /// ```
 ///
 /// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/compilation.html#pattern-support
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expression(CString);
-
-impl fmt::Debug for Expression {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let b = self.as_bytes();
-    match str::from_utf8(b) {
-      Ok(s) => write!(f, "Expression({:?})", s),
-      Err(_) => write!(f, "Expression({:?})", b),
-    }
-  }
-}
 
 impl fmt::Display for Expression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -341,7 +332,6 @@ impl str::FromStr for Literal {
 #[repr(transparent)]
 pub struct ExprId(pub c_uint);
 
-/* TODO: Debug impl!! */
 #[derive(Clone)]
 pub struct ExpressionSet<'a> {
   ptrs: Vec<*const c_char>,
@@ -349,6 +339,25 @@ pub struct ExpressionSet<'a> {
   ids: Option<Vec<ExprId>>,
   exts: Option<Vec<*const hs::hs_expr_ext>>,
   _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> fmt::Debug for ExpressionSet<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let exprs: Vec<&'a CStr> = self
+      .ptrs
+      .iter()
+      .map(|p| unsafe { CStr::from_ptr(*p) })
+      .collect();
+    let exts: Option<&[Option<&ExprExt>]> = self
+      .exts
+      .as_ref()
+      .map(|exts| unsafe { slice::from_raw_parts(mem::transmute(exts.as_ptr()), exprs.len()) });
+    write!(
+      f,
+      "ExpressionSet(exprs={:?}, flags={:?}, ids={:?}, exts={:?})",
+      exprs, &self.flags, &self.ids, exts,
+    )
+  }
 }
 
 impl<'a> ExpressionSet<'a> {
@@ -393,7 +402,11 @@ impl<'a> ExpressionSet<'a> {
     Database::compile_multi(&self, mode, Platform::get())
   }
 
-  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+  pub fn len(&self) -> usize { self.ptrs.len() }
+
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  pub(crate) fn num_elements(&self) -> c_uint { self.len() as c_uint }
 
   pub(crate) fn exts_ptr(&self) -> Option<*const *const hs::hs_expr_ext> {
     self.exts.as_ref().map(|e| e.as_ptr())
@@ -691,7 +704,6 @@ impl ops::BitOrAssign for ExprExt {
   }
 }
 
-/* TODO: Debug impl!! */
 #[derive(Clone)]
 pub struct LiteralSet<'a> {
   ptrs: Vec<*const c_char>,
@@ -699,6 +711,30 @@ pub struct LiteralSet<'a> {
   flags: Option<Vec<Flags>>,
   ids: Option<Vec<ExprId>>,
   _ph: PhantomData<&'a u8>,
+}
+
+impl<'a> fmt::Debug for LiteralSet<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let exprs: Vec<&'a [u8]> = self
+      .ptrs
+      .iter()
+      .zip(self.lens.iter())
+      .map(|(p, n)| unsafe { slice::from_raw_parts(*p as *const u8, *n) })
+      .collect();
+    let joined_exprs: String = exprs
+      .into_iter()
+      .map(|s| {
+        str::from_utf8(s)
+          .map(|s| format!("{:?}", s))
+          .unwrap_or_else(|_| format!("(non-utf8: {:?})", s))
+      })
+      .join(", ");
+    write!(
+      f,
+      "LiteralSet(exprs=[{}], flags={:?}, ids={:?})",
+      joined_exprs, &self.flags, &self.ids
+    )
+  }
 }
 
 impl<'a> LiteralSet<'a> {
@@ -738,7 +774,11 @@ impl<'a> LiteralSet<'a> {
     Database::compile_multi_literal(&self, mode, Platform::get())
   }
 
-  pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+  pub fn len(&self) -> usize { self.ptrs.len() }
+
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  pub(crate) fn num_elements(&self) -> c_uint { self.len() as c_uint }
 
   pub(crate) fn literals_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
 
@@ -800,7 +840,7 @@ pub mod chimera {
   };
 
   use std::{
-    ffi::CString,
+    ffi::{CStr, CString},
     fmt,
     marker::PhantomData,
     mem,
@@ -910,7 +950,6 @@ pub mod chimera {
     pub match_limit_recursion: c_ulong,
   }
 
-  /* TODO: Debug impl!! */
   #[derive(Clone)]
   pub struct ChimeraExpressionSet<'a> {
     ptrs: Vec<*const c_char>,
@@ -918,6 +957,21 @@ pub mod chimera {
     ids: Option<Vec<ExprId>>,
     limits: Option<ChimeraMatchLimits>,
     _ph: PhantomData<&'a u8>,
+  }
+
+  impl<'a> fmt::Debug for ChimeraExpressionSet<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      let exprs: Vec<&'a CStr> = self
+        .ptrs
+        .iter()
+        .map(|p| unsafe { CStr::from_ptr(*p) })
+        .collect();
+      write!(
+        f,
+        "ChimeraExpressionSet(exprs={:?}, flags={:?}, ids={:?}, limits={:?})",
+        exprs, &self.flags, &self.ids, &self.limits
+      )
+    }
   }
 
   impl<'a> ChimeraExpressionSet<'a> {
@@ -954,9 +1008,13 @@ pub mod chimera {
       ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
 
+    pub fn len(&self) -> usize { self.ptrs.len() }
+
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
+
     pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
 
-    pub(crate) fn num_elements(&self) -> c_uint { self.ptrs.len() as c_uint }
+    pub(crate) fn num_elements(&self) -> c_uint { self.len() as c_uint }
 
     pub(crate) fn expressions_ptr(&self) -> *const *const c_char { self.ptrs.as_ptr() }
 
