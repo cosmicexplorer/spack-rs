@@ -6,24 +6,18 @@ use crate::{
   error::{HyperscanRuntimeError, ScanError},
   hs,
   matchers::{
-    contiguous_slice::{
-      match_slice_ref, match_slice_ref_sync, Match, SliceMatcher, SyncSliceMatcher,
-    },
-    vectored_slice::{
-      match_slice_vectored_ref, match_slice_vectored_ref_sync, SyncVectoredSliceMatcher,
-      VectoredMatch, VectoredSliceMatcher,
-    },
+    contiguous_slice::{match_slice_ref_sync, Match, SyncSliceMatcher},
+    vectored_slice::{match_slice_vectored_ref_sync, SyncVectoredSliceMatcher, VectoredMatch},
     ByteSlice, MatchResult, VectoredByteSlices,
   },
 };
 
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use tokio::task;
+use tokio::{sync::mpsc, task};
 
 use std::{
   mem, ops,
-  pin::Pin,
   ptr::{self, NonNull},
 };
 
@@ -80,24 +74,6 @@ impl Scratch {
 
   pub fn as_mut_native(&mut self) -> Option<&mut NativeScratch> {
     self.0.map(|mut p| unsafe { p.as_mut() })
-  }
-
-  fn into_slice_ctx(m: SliceMatcher) -> usize {
-    let ctx: *mut SliceMatcher = Box::into_raw(Box::new(m));
-    ctx as usize
-  }
-
-  fn from_slice_ctx<'data, 'code>(ctx: usize) -> Pin<Box<SliceMatcher<'data, 'code>>> {
-    Box::into_pin(unsafe { Box::from_raw(ctx as *mut SliceMatcher) })
-  }
-
-  fn into_vectored_ctx(m: VectoredSliceMatcher) -> usize {
-    let ctx: *mut VectoredSliceMatcher = Box::into_raw(Box::new(m));
-    ctx as usize
-  }
-
-  fn from_vectored_ctx<'data, 'code>(ctx: usize) -> Pin<Box<VectoredSliceMatcher<'data, 'code>>> {
-    Box::into_pin(unsafe { Box::from_raw(ctx as *mut VectoredSliceMatcher) })
   }
 
   fn into_db(db: &Database) -> usize {
@@ -206,30 +182,24 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-    mut f: impl FnMut(&Match<'data>) -> MatchResult,
+    mut f: impl FnMut(&Match<'data>) -> MatchResult+Send+Sync,
   ) -> impl Stream<Item=Result<Match<'data>, ScanError>> {
-    let (matcher, mut matches_rx) = SliceMatcher::new(data, &mut f);
-
-    let ctx = Self::into_slice_ctx(matcher);
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
+    let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
+    let f: &mut (dyn FnMut(&Match<'data>) -> MatchResult+Send+Sync) = &mut f;
+    let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
 
+    let f: &'static mut (dyn FnMut(&Match<'static>) -> MatchResult+Send+Sync) =
+      unsafe { mem::transmute(f) };
+    let matches_tx: mpsc::UnboundedSender<Match<'static>> = unsafe { mem::transmute(matches_tx) };
     let scan_task = task::spawn_blocking(move || {
       let scratch: &mut Self = Self::from_scratch(scratch);
       let db: &Database = Self::from_db(db);
-      let mut matcher: Pin<Box<SliceMatcher>> = Self::from_slice_ctx(ctx);
-      let parent_slice = matcher.parent_slice();
-      HyperscanRuntimeError::from_native(unsafe {
-        hs::hs_scan(
-          db.as_ref_native(),
-          parent_slice.as_ptr(),
-          parent_slice.native_len(),
-          /* NB: ignoring flags for now! */
-          0,
-          scratch.as_mut_native().unwrap(),
-          Some(match_slice_ref),
-          mem::transmute(matcher.as_mut().get_mut()),
-        )
+      scratch.scan_sync(db, data, |m| {
+        let result = f(&m);
+        matches_tx.send(m).unwrap();
+        result
       })
     });
 
@@ -313,7 +283,7 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data>,
-    mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult,
+    mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, ScanError>> {
     /* NB: while static arrays take up no extra runtime space, a ref to a
     slice
@@ -323,30 +293,23 @@ impl Scratch {
     static_assertions::assert_eq_size!(&[u8; 4], *const u8);
     static_assertions::const_assert!(mem::size_of::<&[u8]>() > mem::size_of::<*const u8>());
 
-    let (matcher, mut matches_rx) = VectoredSliceMatcher::new(data, &mut f);
-
-    let ctx = Self::into_vectored_ctx(matcher);
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
+    let data: VectoredByteSlices<'static> = unsafe { mem::transmute(data) };
+    let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync) = &mut f;
+    let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
 
+    let f: &'static mut (dyn FnMut(&VectoredMatch<'static>) -> MatchResult+Send+Sync) =
+      unsafe { mem::transmute(f) };
+    let matches_tx: mpsc::UnboundedSender<VectoredMatch<'static>> =
+      unsafe { mem::transmute(matches_tx) };
     let scan_task = task::spawn_blocking(move || {
       let scratch: &mut Self = Self::from_scratch(scratch);
       let db: &Database = Self::from_db(db);
-      let mut matcher: Pin<Box<VectoredSliceMatcher>> = Self::from_vectored_ctx(ctx);
-      let parent_slices = matcher.parent_slices();
-      let (data_pointers, lengths) = parent_slices.pointers_and_lengths();
-      HyperscanRuntimeError::from_native(unsafe {
-        hs::hs_scan_vector(
-          db.as_ref_native(),
-          data_pointers.as_ptr(),
-          lengths.as_ptr(),
-          parent_slices.native_len(),
-          /* NB: ignoring flags for now! */
-          0,
-          scratch.as_mut_native().unwrap(),
-          Some(match_slice_vectored_ref),
-          mem::transmute(matcher.as_mut().get_mut()),
-        )
+      scratch.scan_vectored_sync(db, data, |m| {
+        let result = f(&m);
+        matches_tx.send(m).unwrap();
+        result
       })
     });
 
@@ -501,15 +464,6 @@ pub mod chimera {
       self.0.map(|mut p| unsafe { p.as_mut() })
     }
 
-    fn into_ctx(m: ChimeraSliceMatcher) -> usize {
-      let ctx: *mut ChimeraSliceMatcher = Box::into_raw(Box::new(m));
-      ctx as usize
-    }
-
-    fn from_ctx<'data, 'code>(ctx: usize) -> Pin<Box<ChimeraSliceMatcher<'data, 'code>>> {
-      Box::into_pin(unsafe { Box::from_raw(ctx as *mut ChimeraSliceMatcher) })
-    }
-
     fn into_db(db: &ChimeraDb) -> usize {
       let db: *const ChimeraDb = db;
       db as usize
@@ -595,33 +549,40 @@ pub mod chimera {
       &mut self,
       db: &ChimeraDb,
       data: ByteSlice<'data>,
-      mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult,
-      mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult,
+      mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync,
+      mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync,
     ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>> {
-      let (matcher, mut matches_rx, mut errors_rx) = ChimeraSliceMatcher::new(data, &mut m, &mut e);
-
-      let ctx = Self::into_ctx(matcher);
       let scratch = Self::into_scratch(self);
       let db = Self::into_db(db);
+      let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
+      let m: &mut (dyn FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync) = &mut m;
+      let e: &mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) = &mut e;
+      let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
+      let (errors_tx, mut errors_rx) = mpsc::unbounded_channel();
 
+      let m: &'static mut (dyn FnMut(&ChimeraMatch<'static>) -> ChimeraMatchResult+Send+Sync) =
+        unsafe { mem::transmute(m) };
+      let e: &'static mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) =
+        unsafe { mem::transmute(e) };
+      let matches_tx: mpsc::UnboundedSender<ChimeraMatch<'static>> =
+        unsafe { mem::transmute(matches_tx) };
       let scan_task = task::spawn_blocking(move || {
         let scratch: &mut Self = Self::from_scratch(scratch);
         let db: &ChimeraDb = Self::from_db(db);
-        let mut matcher: Pin<Box<ChimeraSliceMatcher>> = Self::from_ctx(ctx);
-        let parent_slice = matcher.parent_slice();
-        ChimeraRuntimeError::from_native(unsafe {
-          hs::ch_scan(
-            db.as_ref_native(),
-            parent_slice.as_ptr(),
-            parent_slice.native_len(),
-            /* NB: ignoring flags for now! */
-            0,
-            scratch.as_mut_native().unwrap(),
-            Some(match_chimera_slice),
-            Some(error_callback_chimera),
-            mem::transmute(matcher.as_mut().get_mut()),
-          )
-        })
+        scratch.scan_sync(
+          db,
+          data,
+          |cm| {
+            let result = m(&cm);
+            matches_tx.send(cm).unwrap();
+            result
+          },
+          |ce| {
+            let result = e(&ce);
+            errors_tx.send(ce).unwrap();
+            result
+          },
+        )
       });
 
       /* Need to use stream! instead of try_stream! in order to yield an Err inside

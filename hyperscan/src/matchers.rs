@@ -2,7 +2,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 use displaydoc::Display;
-use tokio::sync::mpsc;
 
 use std::{
   cmp, mem, ops,
@@ -302,58 +301,6 @@ pub mod contiguous_slice {
 
   /* TODO: only available on nightly! */
   /* pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult; */
-
-  pub(crate) struct SliceMatcher<'data, 'code> {
-    parent_slice: ByteSlice<'data>,
-    matches_tx: mpsc::UnboundedSender<Match<'data>>,
-    handler: &'code mut (dyn FnMut(&Match<'data>) -> MatchResult),
-  }
-
-  impl<'data, 'code> SliceMatcher<'data, 'code> {
-    pub fn new<F: FnMut(&Match<'data>) -> MatchResult>(
-      parent_slice: ByteSlice<'data>,
-      f: &'code mut F,
-    ) -> (Self, mpsc::UnboundedReceiver<Match<'data>>) {
-      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
-      let s = Self {
-        parent_slice,
-        matches_tx,
-        handler: f,
-      };
-      (s, matches_rx)
-    }
-
-    pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
-
-    pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
-      self.parent_slice.index_range(range).unwrap()
-    }
-
-    pub fn push_new_match(&self, m: Match<'data>) { self.matches_tx.send(m).unwrap(); }
-
-    pub fn handle_match(&mut self, m: &Match<'data>) -> MatchResult { (self.handler)(m) }
-  }
-
-  pub(crate) unsafe extern "C" fn match_slice_ref(
-    id: c_uint,
-    from: c_ulonglong,
-    to: c_ulonglong,
-    flags: c_uint,
-    context: *mut c_void,
-  ) -> c_int {
-    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-    let mut slice_matcher: Pin<&mut SliceMatcher> =
-      MatchEvent::extract_context::<'_, SliceMatcher>(context).unwrap();
-    let matched_substring = slice_matcher.index_range(range);
-    let m = Match {
-      id,
-      source: matched_substring,
-    };
-
-    let result = slice_matcher.handle_match(&m);
-    slice_matcher.push_new_match(m);
-    result.into_native()
-  }
 }
 
 pub mod vectored_slice {
@@ -413,58 +360,6 @@ pub mod vectored_slice {
   /* TODO: only available on nightly! */
   /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
    * MatchResult; */
-
-  pub(crate) struct VectoredSliceMatcher<'data, 'code> {
-    parent_slices: VectoredByteSlices<'data>,
-    matches_tx: mpsc::UnboundedSender<VectoredMatch<'data>>,
-    handler: &'code mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult),
-  }
-
-  impl<'data, 'code> VectoredSliceMatcher<'data, 'code> {
-    pub fn new<F: FnMut(&VectoredMatch<'data>) -> MatchResult>(
-      parent_slices: VectoredByteSlices<'data>,
-      f: &'code mut F,
-    ) -> (Self, mpsc::UnboundedReceiver<VectoredMatch<'data>>) {
-      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
-      let s = Self {
-        parent_slices,
-        matches_tx,
-        handler: f,
-      };
-      (s, matches_rx)
-    }
-
-    pub fn parent_slices(&self) -> VectoredByteSlices<'data> { self.parent_slices }
-
-    pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
-      self.parent_slices.index_range(range).unwrap()
-    }
-
-    pub fn push_new_match(&mut self, m: VectoredMatch<'data>) { self.matches_tx.send(m).unwrap(); }
-
-    pub fn handle_match(&mut self, m: &VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
-  }
-
-  pub(crate) unsafe extern "C" fn match_slice_vectored_ref(
-    id: c_uint,
-    from: c_ulonglong,
-    to: c_ulonglong,
-    flags: c_uint,
-    context: *mut c_void,
-  ) -> c_int {
-    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-    let mut slice_matcher: Pin<&mut VectoredSliceMatcher> =
-      MatchEvent::extract_context::<'_, VectoredSliceMatcher>(context).unwrap();
-    let matched_substring = slice_matcher.index_range(range);
-    let m = VectoredMatch {
-      id,
-      source: matched_substring,
-    };
-
-    let result = slice_matcher.handle_match(&m);
-    slice_matcher.push_new_match(m);
-    result.into_native()
-  }
 }
 
 #[cfg(feature = "chimera")]
@@ -667,112 +562,6 @@ pub mod chimera {
     };
 
     let result = matcher.handle_error(e);
-    result.into_native()
-  }
-
-  pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
-    parent_slice: ByteSlice<'data>,
-    matches_tx: mpsc::UnboundedSender<ChimeraMatch<'data>>,
-    errors_tx: mpsc::UnboundedSender<ChimeraMatchError>,
-    match_handler: &'code mut (dyn FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult),
-    error_handler: &'code mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult),
-  }
-
-  impl<'data, 'code> ChimeraSliceMatcher<'data, 'code> {
-    pub fn new(
-      parent_slice: ByteSlice<'data>,
-      matcher: &'code mut impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult,
-      error: &'code mut impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult,
-    ) -> (
-      Self,
-      mpsc::UnboundedReceiver<ChimeraMatch<'data>>,
-      mpsc::UnboundedReceiver<ChimeraMatchError>,
-    ) {
-      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
-      let (errors_tx, errors_rx) = mpsc::unbounded_channel();
-      let s = Self {
-        parent_slice,
-        matches_tx,
-        errors_tx,
-        match_handler: matcher,
-        error_handler: error,
-      };
-      (s, matches_rx, errors_rx)
-    }
-
-    pub fn parent_slice(&self) -> ByteSlice<'data> { self.parent_slice }
-
-    pub fn index_range(&self, range: ops::Range<usize>) -> ByteSlice<'data> {
-      self.parent_slice.index_range(range).unwrap()
-    }
-
-    pub fn push_new_match(&self, m: ChimeraMatch<'data>) { self.matches_tx.send(m).unwrap(); }
-
-    pub fn handle_match(&mut self, m: &ChimeraMatch<'data>) -> ChimeraMatchResult {
-      (self.match_handler)(m)
-    }
-
-    pub fn push_new_error(&self, e: ChimeraMatchError) { self.errors_tx.send(e).unwrap(); }
-
-    pub fn handle_error(&mut self, e: &ChimeraMatchError) -> ChimeraMatchResult {
-      (self.error_handler)(e)
-    }
-  }
-
-  pub(crate) unsafe extern "C" fn match_chimera_slice(
-    id: c_uint,
-    from: c_ulonglong,
-    to: c_ulonglong,
-    flags: c_uint,
-    size: c_uint,
-    captured: *const hs::ch_capture,
-    context: *mut c_void,
-  ) -> hs::ch_callback_t {
-    let ChimeraMatchEvent {
-      id,
-      range,
-      captures,
-      context,
-    } = ChimeraMatchEvent::coerce_args(id, from, to, flags, size, captured, context);
-    let mut matcher: Pin<&mut ChimeraSliceMatcher> =
-      ChimeraMatchEvent::extract_context::<'_, ChimeraSliceMatcher>(context).unwrap();
-    let matched_substring = matcher.index_range(range);
-    let m = ChimeraMatch {
-      id,
-      source: matched_substring,
-      captures: captures
-        .into_iter()
-        .map(|c| c.index(matcher.parent_slice()))
-        .collect(),
-    };
-
-    let result = matcher.handle_match(&m);
-    /* TODO: do we want to make configurable whether SkipPattern still forwards
-     * the match to the channel? */
-    matcher.push_new_match(m);
-    result.into_native()
-  }
-
-  pub(crate) unsafe extern "C" fn error_callback_chimera(
-    error_type: hs::ch_error_event_t,
-    id: c_uint,
-    info: *mut c_void,
-    ctx: *mut c_void,
-  ) -> hs::ch_callback_t {
-    let error_type = ChimeraMatchErrorType::from_native(error_type);
-    let id = ExpressionIndex(id);
-    let info = ptr::NonNull::new(info);
-    let ctx = ptr::NonNull::new(ctx);
-    let mut matcher: Pin<&mut ChimeraSliceMatcher<'_, '_>> =
-      ChimeraMatchEvent::extract_context::<'_, ChimeraSliceMatcher<'_, '_>>(ctx).unwrap();
-    let e = ChimeraMatchError {
-      error_type,
-      id,
-      info,
-    };
-
-    let result = matcher.handle_error(&e);
-    matcher.push_new_error(e);
     result.into_native()
   }
 }
