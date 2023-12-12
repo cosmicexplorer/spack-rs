@@ -1,6 +1,8 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Errors returned by methods in this library.
+
 use crate::hs;
 #[cfg(feature = "compile")]
 use crate::matchers::ExpressionIndex;
@@ -259,7 +261,7 @@ pub struct CompileError {
   /// [`None`]:
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, error::*, flags::*, alloc};
+  /// use hyperscan::{expression::*, error::*, flags::*, alloc::*};
   /// use std::{alloc::{GlobalAlloc, Layout}, ptr};
   ///
   /// // Create a broken allocator:
@@ -269,7 +271,7 @@ pub struct CompileError {
   ///   unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
   /// }
   /// // Set it as the db compile allocator:
-  /// assert!(alloc::set_db_allocator(alloc::LayoutTracker::new(S.into())).unwrap().is_none());
+  /// assert!(set_db_allocator(LayoutTracker::new(S.into())).unwrap().is_none());
   ///
   /// let expr: Expression = "a".parse()?;
   /// let CompileError { message, expression } = match expr.compile(Flags::default(), Mode::BLOCK) {
@@ -320,6 +322,7 @@ impl CompileError {
   }
 }
 
+/// Wrapper for errors returned when parsing or compiling expressions.
 #[cfg(feature = "compile")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 #[derive(Debug, Display, Error)]
@@ -332,6 +335,7 @@ pub enum HyperscanCompileError {
   NullByte(#[from] NulError),
 }
 
+/// Failure to compress a stream into a buffer.
 #[derive(Debug, Display, Error)]
 pub enum CompressionError {
   /// other error: {0}
@@ -340,6 +344,7 @@ pub enum CompressionError {
   NoSpace(usize),
 }
 
+/// Top-level wrapper for errors returned by this library.
 #[derive(Debug, Display, Error)]
 #[ignore_extra_doc_attributes]
 pub enum HyperscanError {
@@ -353,12 +358,13 @@ pub enum HyperscanError {
   Compression(#[from] CompressionError),
 }
 
+/// Errors returned by methods in the chimera library.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
 
-  use std::{os::raw::c_void, ptr};
+  use std::{fmt, os::raw::c_void, ptr};
 
   /// Native error code from the underlying chimera library.
   #[derive(
@@ -526,6 +532,7 @@ pub mod chimera {
     }
   }
 
+  /// Wrapper for errors returned when parsing or compiling expressions.
   #[derive(Debug, Display, Error)]
   pub enum ChimeraCompileError {
     /// non-compilation error: {0}
@@ -536,6 +543,9 @@ pub mod chimera {
     NullByte(#[from] NulError),
   }
 
+  /// Native error code for non-fatal match errors from PCRE execution.
+  ///
+  /// Currently these errors correspond to resource limits on PCRE backtracking.
   #[derive(
     Debug,
     Display,
@@ -552,9 +562,9 @@ pub mod chimera {
   )]
   #[repr(u8)]
   pub enum ChimeraMatchErrorType {
-    /// PCRE hits its match limit and reports PCRE_ERROR_MATCHLIMIT.
+    /// PCRE hits its match limit and reports `PCRE_ERROR_MATCHLIMIT`.
     MatchLimit = hs::CH_ERROR_MATCHLIMIT,
-    /// PCRE hits its recursion limit and reports PCRE_ERROR_RECURSIONLIMIT.
+    /// PCRE hits its recursion limit and reports `PCRE_ERROR_RECURSIONLIMIT`.
     RecursionLimit = hs::CH_ERROR_RECURSIONLIMIT,
   }
 
@@ -562,27 +572,40 @@ pub mod chimera {
     pub(crate) fn from_native(x: hs::ch_error_event_t) -> Self { (x as u8).try_into().unwrap() }
   }
 
-  /// {error_type}@{id}(info={info:?})
-  #[derive(Debug, Display, Error)]
+  /// Error type for non-fatal match errors from PCRE execution during
+  /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan).
+  #[derive(Debug, Error)]
   pub struct ChimeraMatchError {
+    /// The type of error that occurred.
     #[source]
     pub error_type: ChimeraMatchErrorType,
+    /// The ID number of the expression that failed.
     pub id: ExpressionIndex,
+    /// Event-specific data, for future use. Currently unused.
     pub info: Option<ptr::NonNull<c_void>>,
+  }
+
+  impl fmt::Display for ChimeraMatchError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(f, "{}@{}(info={:?})", self.error_type, self.id, self.info)
+    }
   }
 
   unsafe impl Send for ChimeraMatchError {}
 
+  /// Wrapper for errors returned by
+  /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan).
   #[derive(Debug, Display, Error)]
   pub enum ChimeraScanError {
-    /// error from return value of ch_scan: {0}
+    /// error from return value of `ch_scan()`: {0}
     ReturnValue(#[from] ChimeraRuntimeError),
-    /// streaming pcre error: {0}
+    /// non-fatal match error: {0}
     MatchError(#[from] ChimeraMatchError),
-    /// join error: {0}
+    /// task join error: {0}
     Join(#[from] tokio::task::JoinError),
   }
 
+  /// Top-level wrapper for errors returned by the chimera library.
   #[derive(Debug, Display, Error)]
   pub enum ChimeraError {
     /// error from chimera runtime: {0}
