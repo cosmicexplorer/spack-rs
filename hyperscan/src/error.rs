@@ -15,6 +15,7 @@ use std::{
   os::raw::c_uint,
 };
 
+/// Native error code from the underlying hyperscan library.
 #[derive(
   Debug,
   Display,
@@ -43,8 +44,9 @@ pub enum HyperscanRuntimeError {
   /// The engine was terminated by callback.
   ///
   /// This return value indicates that the target buffer was partially scanned,
-  /// but that the callback function requested that scanning cease after a match
-  /// was located.
+  /// but that the callback function returned
+  /// [`MatchResult::CeaseMatching`](crate::matchers::MatchResult::CeaseMatching)
+  /// after a match was located.
   ScanTerminated = hs::HS_SCAN_TERMINATED,
   /// The pattern compiler failed, and the [`CompileError`] should be
   /// inspected for more detail.
@@ -62,25 +64,35 @@ pub enum HyperscanRuntimeError {
   BadAlign = hs::HS_BAD_ALIGN,
   /// The memory allocator returned incorrectly aligned memory.
   ///
-  /// The memory allocator (either `malloc()` or the allocator set with @ref
-  /// hs_set_allocator()) did not correctly return memory suitably aligned for
-  /// the largest representable data type on this platform.
+  /// The memory allocator (either [`libc::malloc()`] or the allocator set with
+  /// [`crate::alloc::set_allocator()`]) did not
+  /// correctly return memory suitably aligned for the largest representable
+  /// data type on this platform.
   BadAlloc = hs::HS_BAD_ALLOC,
   /// The scratch region was already in use.
   ///
   /// This error is returned when Hyperscan is able to detect that the scratch
   /// region given is already in use by another Hyperscan API call.
   ///
-  /// A separate scratch region, allocated with @ref hs_alloc_scratch() or @ref
-  /// hs_clone_scratch(), is required for every concurrent caller of the
-  /// Hyperscan API.
+  /// A separate scratch region, allocated with
+  /// [`Scratch::setup_for_db()`](crate::state::Scratch::setup_for_db) or
+  /// [`Scratch::try_clone()`](crate::state::Scratch::try_clone), is required
+  /// for every concurrent caller of the Hyperscan API.
   ///
-  /// For example, this error might be returned when @ref hs_scan() has been
-  /// called inside a callback delivered by a currently-executing @ref hs_scan()
-  /// call using the same scratch region.
+  /// For example, this error might be returned when
+  /// [`scan()`](crate::state::Scratch::scan) has been
+  /// called inside a callback delivered by a currently-executing
+  /// [`scan()`](crate::state::Scratch::scan) call using the same scratch
+  /// region.
   ///
   /// Note: Not all concurrent uses of scratch regions may be detected. This
   /// error is intended as a best-effort debugging tool, not a guarantee.
+  ///
+  /// Note: safe Rust code should never see this error;
+  /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way to
+  /// avoid this while preserving the ergonomics of a [`Clone`] and [`Send`]
+  /// reference type. This approach is used in this library's
+  /// [`stream`](crate::stream) module.
   ScratchInUse = hs::HS_SCRATCH_IN_USE,
   /// Unsupported CPU architecture.
   ///
@@ -98,6 +110,13 @@ pub enum HyperscanRuntimeError {
   /// Note: in this situation, it is normal for the amount of space required to
   /// be returned in the same manner as the used space would have been
   /// returned if the call was successful.
+  ///
+  /// This value is referenced internally in
+  /// [`Streamer::compress()`](crate::stream::Streamer) when requesting the
+  /// amount of memory to allocate for a compressed stream. Users of this
+  /// library should never see this error when using the
+  /// [`CompressReserveBehavior`](crate::stream::CompressReserveBehavior)
+  /// interface.
   InsufficientSpace = hs::HS_INSUFFICIENT_SPACE,
   /// Unexpected internal error.
   ///
@@ -341,6 +360,7 @@ pub mod chimera {
 
   use std::{os::raw::c_void, ptr};
 
+  /// Native error code from the underlying chimera library.
   #[derive(
     Debug,
     Display,
@@ -365,11 +385,12 @@ pub mod chimera {
     /// The engine was terminated by callback.
     ///
     /// This return value indicates that the target buffer was partially
-    /// scanned, but that the callback function requested that scanning
-    /// cease after a match was located.
+    /// scanned, but that the callback function returned
+    /// [`ChimeraMatchResult::Terminate`](crate::matchers::chimera::ChimeraMatchResult::Terminate)
+    /// after a match was located.
     ScanTerminated = hs::CH_SCAN_TERMINATED,
-    /// The pattern compiler failed, and the @ref ch_compile_error_t should be
-    /// inspected for more detail.
+    /// The pattern compiler failed, and the [`ChimeraInnerCompileError`] should
+    /// be inspected for more detail.
     CompilerError = hs::CH_COMPILER_ERROR,
     /// The given database was built for a different version of the Chimera
     /// matcher.
@@ -391,16 +412,25 @@ pub mod chimera {
     /// This error is returned when Chimera is able to detect that the scratch
     /// region given is already in use by another Chimera API call.
     ///
-    /// A separate scratch region, allocated with @ref ch_alloc_scratch() or
-    /// @ref ch_clone_scratch(), is required for every concurrent caller of
-    /// the Chimera API.
+    /// A separate scratch region, allocated with
+    /// [`ChimeraScratch::setup_for_db()`](crate::state::chimera::ChimeraScratch::setup_for_db)
+    /// or [`ChimeraScratch::try_clone()`](crate::state::chimera::ChimeraScratch::try_clone), is
+    /// required for every concurrent caller of the Chimera API.
     ///
-    /// For example, this error might be returned when @ref ch_scan() has been
-    /// called inside a callback delivered by a currently-executing @ref
-    /// ch_scan() call using the same scratch region.
+    /// For example, this error might be returned when
+    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan)
+    /// has been called inside a callback delivered by a currently-executing
+    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan)
+    /// call using the same scratch region.
     ///
     /// Note: Not all concurrent uses of scratch regions may be detected. This
     /// error is intended as a best-effort debugging tool, not a guarantee.
+    ///
+    /// Note: safe Rust code should never see this error;
+    /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way
+    /// to avoid this while preserving the ergonomics of a [`Clone`] and
+    /// [`Send`] reference type. This approach is used in this library's
+    /// [`stream`](crate::stream) module.
     ScratchInUse = hs::CH_SCRATCH_IN_USE,
     /// Unexpected internal error from Hyperscan.
     ///
@@ -410,7 +440,8 @@ pub mod chimera {
     #[num_enum(default)]
     UnknownError = hs::CH_UNKNOWN_HS_ERROR,
     /// Returned when pcre_exec (called for some expressions internally from
-    /// @ref ch_scan) failed due to a fatal error.
+    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan))
+    /// failed due to a fatal error.
     FailInternal = hs::CH_FAIL_INTERNAL,
   }
 
@@ -452,8 +483,8 @@ pub mod chimera {
     /// A human-readable error message describing the error.
     ///
     /// Common errors are the same as for the base hyperscan library's
-    /// [`CompileError::message`], except that PCRE constructs are fully supported and will not
-    /// cause errors.
+    /// [`CompileError::message`], except that PCRE constructs are fully
+    /// supported and will not cause errors.
     pub message: String,
     /// The zero-based number of the expression that caused the error (if this
     /// can be determined). This value's behavior is the same as for the base

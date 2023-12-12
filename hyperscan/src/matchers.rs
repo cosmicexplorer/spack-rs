@@ -199,26 +199,17 @@ pub enum MatchResult {
   /// Immediately cease matching.
   ///
   /// If scanning is performed in streaming mode and this value is returned, any
-  /// subsequent calls to @ref hs_scan_stream() for the same stream will
-  /// immediately return with
-  /// [`SCAN_TERMINATED`](crate::error::HyperscanRuntimeError::ScanTerminated).
+  /// subsequent calls to [`Streamer::scan()`](crate::stream::Streamer::scan)
+  /// for the same stream will immediately return with
+  /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
   CeaseMatching = 1,
 }
 
 impl MatchResult {
-  /* FIXME: update num_enum so they work with const fn too!!! */
-  #[allow(dead_code)]
-  pub(crate) const fn from_native(x: c_int) -> Self {
-    if x == 0 {
-      Self::Continue
-    } else {
-      Self::CeaseMatching
-    }
-  }
-
   pub(crate) const fn into_native(self) -> c_int {
     match self {
       Self::Continue => 0,
+      /* This is documented to be just any non-zero value at the moment. */
       Self::CeaseMatching => 1,
     }
   }
