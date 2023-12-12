@@ -51,7 +51,7 @@ use std::{
 /// result in compilation errors.
 ///
 /// Note that as the underlying hyperscan library interprets pattern strings as
-/// essentially null-terminated [`CStr`](std::ffi::CStr) pointers, null bytes
+/// essentially null-terminated [`CStr`] pointers, null bytes
 /// are *not* supported within `Expression` strings. Use a [`Literal`] database
 /// if you need to match against patterns with null bytes.
 ///
@@ -328,6 +328,18 @@ impl str::FromStr for Literal {
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
 
+/// The ID number to associate with a pattern match in an expression set.
+///
+/// When provided to an expression set, this value is converted into an
+/// [`ExpressionIndex`](crate::matchers::ExpressionIndex) in a
+/// [`Match`](crate::matchers::contiguous_slice::Match),
+/// [`VectoredMatch`](crate::matchers::vectored_slice::VectoredMatch), or
+/// [`ChimeraMatch`](crate::matchers::chimera::ChimeraMatch) upon matching the
+/// given pattern.
+///
+/// This ID is used in [`ExpressionSet::with_ids()`],
+/// [`LiteralSet::with_ids()`], and
+/// [`ChimeraExpressionSet::with_ids()`](chimera::ChimeraExpressionSet::with_ids).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ExprId(pub c_uint);
@@ -771,7 +783,8 @@ impl<'a> LiteralSet<'a> {
     self
   }
 
-  /// Call [`Database::compile_multi_literal()`] with the result of [`Platform::get()`].
+  /// Call [`Database::compile_multi_literal()`] with the result of
+  /// [`Platform::get()`].
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile_multi_literal(&self, mode, Platform::get())
   }
@@ -853,7 +866,7 @@ pub mod chimera {
   /// Chimera (PCRE) pattern string.
   ///
   /// Note that as the underlying chimera library interprets pattern strings
-  /// as essentially null-terminated [`CStr`](std::ffi::CStr) pointers, null
+  /// as essentially null-terminated [`CStr`] pointers, null
   /// bytes are *not* supported within `ChimeraExpression` strings (or by the
   /// chimera library in general).
   ///
@@ -1006,7 +1019,8 @@ pub mod chimera {
       self
     }
 
-    /// Call [`ChimeraDb::compile_multi()`] with the result of [`Platform::get()`].
+    /// Call [`ChimeraDb::compile_multi()`] with the result of
+    /// [`Platform::get()`].
     pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
       ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
