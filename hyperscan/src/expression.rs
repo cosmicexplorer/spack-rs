@@ -398,6 +398,7 @@ impl<'a> ExpressionSet<'a> {
     self
   }
 
+  /// Call [`Database::compile_multi()`] with the result of [`Platform::get()`].
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile_multi(&self, mode, Platform::get())
   }
@@ -770,6 +771,7 @@ impl<'a> LiteralSet<'a> {
     self
   }
 
+  /// Call [`Database::compile_multi_literal()`] with the result of [`Platform::get()`].
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile_multi_literal(&self, mode, Platform::get())
   }
@@ -1004,6 +1006,7 @@ pub mod chimera {
       self
     }
 
+    /// Call [`ChimeraDb::compile_multi()`] with the result of [`Platform::get()`].
     pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
       ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
