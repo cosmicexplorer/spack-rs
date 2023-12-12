@@ -49,13 +49,13 @@ impl Scratch {
   /// let s: ByteSlice = "ababaabb".into();
   /// let matches: Vec<&str> = scratch
   ///   .scan(&a_db, s, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "a", "a", "aa"]);
   /// let matches: Vec<&str> = scratch
   ///   .scan(&b_db, s, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["b", "b", "b", "bb"]);
@@ -127,14 +127,14 @@ impl Scratch {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "imbibbe".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["b", "b", "bb"]);
@@ -210,7 +210,10 @@ impl Scratch {
   /// let matches: Vec<(u32, String)> = scratch
   ///   .scan_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
   ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
-  ///     let joined = source.into_iter().map(|s| s.as_str()).collect::<Vec<_>>().concat();
+  ///     let joined = source.into_iter()
+  ///       .map(|s| unsafe { s.as_str() })
+  ///       .collect::<Vec<_>>()
+  ///       .concat();
   ///     Ok((id, joined))
   ///   })
   ///   .try_collect()
@@ -351,7 +354,7 @@ mod test {
     /* Operate on the clone. */
     let matches: Vec<&str> = s2
       .scan(&db, "asdf".into(), |_| MatchResult::Continue)
-      .and_then(|m| async move { Ok(m.source.as_str()) })
+      .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
 
@@ -377,7 +380,7 @@ mod test {
     /* Operate on the result of Arc::make_mut(). */
     let matches: Vec<&str> = Arc::make_mut(&mut s2)
       .scan(&db, "asdf".into(), |_| MatchResult::Continue)
-      .and_then(|m| async move { Ok(m.source.as_str()) })
+      .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
 
@@ -458,7 +461,7 @@ pub mod chimera {
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
     ///   &db,
     ///   "aardvark".into(),
-    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
+    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
     ///  .try_collect()
     ///  .await?;
     /// assert_eq!(&matches, &["aa", "a"]);

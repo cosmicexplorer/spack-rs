@@ -26,7 +26,7 @@ impl<'a> ByteSlice<'a> {
 
   pub const fn as_slice(&self) -> &'a [u8] { unsafe { mem::transmute(self.0) } }
 
-  pub const fn as_str(&self) -> &'a str { unsafe { str::from_utf8_unchecked(self.as_slice()) } }
+  pub const unsafe fn as_str(&self) -> &'a str { str::from_utf8_unchecked(self.as_slice()) }
 
   pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 

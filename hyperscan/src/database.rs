@@ -57,7 +57,7 @@ impl Database {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "hello".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["hell"]);
@@ -102,7 +102,7 @@ impl Database {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "he\0llo".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["he\0ll"]);
@@ -158,14 +158,14 @@ impl Database {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "imbibe".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(m.source.as_str()) })
+  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
@@ -231,7 +231,7 @@ impl Database {
   /// let matches: Vec<(u32, &str)> = scratch
   ///   .scan(&db, "he\0llo".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
-  ///     Ok((id, source.as_str()))
+  ///     Ok((id, unsafe { source.as_str() }))
   ///   })
   ///   .try_collect()
   ///   .await?;
@@ -240,7 +240,7 @@ impl Database {
   /// let matches: Vec<(u32, &str)> = scratch
   ///   .scan(&db, "fr\0e\0edom".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
-  ///     Ok((id, source.as_str()))
+  ///     Ok((id, unsafe { source.as_str() }))
   ///   })
   ///   .try_collect()
   ///   .await?;
@@ -335,7 +335,7 @@ impl Database {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "a"]);
@@ -575,7 +575,7 @@ impl<'a> SerializedDb<'a> {
   ///
   /// let matches: Vec<&str> = scratch
   ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(source.as_str()) })
+  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "a"]);
@@ -710,7 +710,7 @@ pub mod chimera {
     /// let matches: Vec<&str> = scratch.scan::<TrivialChimeraScanner>(
     ///   &db,
     ///   "aardvark imbibbe".into(),
-    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(source.as_str()) })
+    /// ).and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
     ///  .try_collect().await?;
     /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
     /// # Ok(())

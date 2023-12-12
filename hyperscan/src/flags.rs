@@ -104,11 +104,16 @@ impl Flags {
   /// This flag instructs Hyperscan to parse this expression as logical
   /// combination syntax.
   /// Logical constraints consist of operands, operators and parentheses.
-  /// The operands are expression indices, and operators can be
-  /// '!'(NOT), '&'(AND) or '|'(OR).
+  /// The operands are expression indices, and operators can be:
+  /// - `!` (NOT),
+  /// - `&` (AND), or
+  /// - `|` (OR).
+  ///
   /// For example:
-  ///     (101&102&103)|(104&!105)
-  ///     ((301|302)&303)&(304|305)
+  ///```c
+  /// (101&102&103)|(104&!105)
+  /// ((301|302)&303)&(304|305)
+  /// ```
   pub const COMBINATION: Self = Self(hs::HS_FLAG_COMBINATION as c_uint);
   /// Compile pattern in prefiltering mode.
   ///
