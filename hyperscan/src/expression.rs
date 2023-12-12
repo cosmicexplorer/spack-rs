@@ -131,7 +131,7 @@ impl Expression {
   ///   min_width: ExprWidth::parse_min_width(5),
   ///   max_width: ExprWidth::parse_max_width(5),
   ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
-  ///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+  ///   matches_at_eod: MatchAtEndBehavior::WillNeverMatchAtEOD,
   /// });
   /// # Ok(())
   /// # }
@@ -186,7 +186,7 @@ impl Expression {
   ///   min_width: ExprWidth::parse_min_width(4),
   ///   max_width: None,
   ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
-  ///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+  ///   matches_at_eod: MatchAtEndBehavior::WillNeverMatchAtEOD,
   /// });
   /// # Ok(())
   /// # }
@@ -409,24 +409,56 @@ impl UnorderedMatchBehavior {
 #[repr(i8)]
 pub enum MatchAtEndBehavior {
   /// Disallow matching at EOD.
-  NoMatchAtEOD,
+  WillNeverMatchAtEOD,
   /// Allow matches at EOD.
-  AllowMatchAtEOD,
+  MayMatchAtEOD,
   /// *Only* allow matches at EOD.
-  OnlyMatchAtEOD,
+  WillOnlyMatchAtEOD,
 }
 
 impl MatchAtEndBehavior {
-  pub const fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
+  pub fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
     match (matches_at_eod, matches_only_at_eod) {
-      (0, 0) => Self::NoMatchAtEOD,
-      (1, 0) => Self::AllowMatchAtEOD,
-      (0, 1) => Self::OnlyMatchAtEOD,
-      _ => unreachable!(),
+      (0, 0) => Self::WillNeverMatchAtEOD,
+      (x, 0) if x != 0 => Self::MayMatchAtEOD,
+      (_, x) if x != 0 => Self::WillOnlyMatchAtEOD,
+      x => unreachable!("unreachable pattern: {:?}", x),
     }
   }
 }
 
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// use hyperscan::{expression::*, flags::Flags};
+///
+/// let expr: Expression = "(he)llo$".parse()?;
+/// let info = expr.info(Flags::default())?;
+/// assert_eq!(info, ExprInfo {
+///   min_width: ExprWidth::parse_min_width(5),
+///   max_width: ExprWidth::parse_max_width(5),
+///   unordered_matches: UnorderedMatchBehavior::AllowUnordered,
+///   matches_at_eod: MatchAtEndBehavior::WillOnlyMatchAtEOD,
+/// });
+/// # Ok(())
+/// # }
+/// ```
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// use hyperscan::{expression::*, flags::Flags};
+///
+/// let expr: Expression = ".*lo($)?".parse()?;
+/// let ext = ExprExt::from_min_length(4);
+/// let info = expr.ext_info(Flags::default(), &ext)?;
+/// assert_eq!(info, ExprInfo {
+///   min_width: ExprWidth::parse_min_width(4),
+///   max_width: None,
+///   unordered_matches: UnorderedMatchBehavior::AllowUnordered,
+///   matches_at_eod: MatchAtEndBehavior::MayMatchAtEOD,
+/// });
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExprInfo {
   pub min_width: ExprWidth,
@@ -445,7 +477,7 @@ pub struct ExprInfo {
 }
 
 impl ExprInfo {
-  pub(crate) const fn from_native(x: hs::hs_expr_info) -> Self {
+  pub(crate) fn from_native(x: hs::hs_expr_info) -> Self {
     let hs::hs_expr_info {
       min_width,
       max_width,
