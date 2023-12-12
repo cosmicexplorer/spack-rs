@@ -1,6 +1,30 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! FFI wrappers for different types of pattern strings.
+//!
+//! Creating instances of these structs performs no pattern compilation itself,
+//! which is instead performed in a subsequent step by e.g.
+//! [`Database::compile()`]. Instances of these structs can be reused multiple
+//! times to create multiple databases without re-allocating the underlying
+//! pattern string data:
+//!
+//!```
+//! # #[allow(unused_variables)]
+//! # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//! use hyperscan::{expression::*, flags::*};
+//!
+//! let a: Expression = "a+".parse()?;
+//! let b: Expression = "b+".parse()?;
+//! let c: Expression = "c+".parse()?;
+//!
+//! let ab_db = ExpressionSet::from_exprs([&a, &b]).compile(Mode::BLOCK)?;
+//! let bc_db = ExpressionSet::from_exprs([&b, &c]).compile(Mode::BLOCK)?;
+//! let ca_db = ExpressionSet::from_exprs([&c, &a]).compile(Mode::BLOCK)?;
+//! # Ok(())
+//! # }
+//! ```
+
 use crate::{
   database::{Database, Platform},
   error::{HyperscanCompileError, HyperscanRuntimeError},
@@ -19,30 +43,28 @@ use std::{
   ptr, str,
 };
 
+/// A `NULL`-terminated C-style wrapper for a single pattern string.
+///
+/// Hyperscan itself supports a subset of PCRE syntax in the pattern string; see
+/// [Pattern Support] for reference. The use of unsupported constructs will
+/// result in compilation errors.
+///
+/// Instances can be created equivalently with [`Self::new()`] or
+/// [`str::parse()`] via the [`str::FromStr`] impl:
+///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::{expression::*, flags::Flags};
+/// use hyperscan::expression::Expression;
 ///
-/// let expr: Expression = "(he)llo".parse()?;
-/// let info = expr.info(Flags::default())?;
-/// assert_eq!(info, ExprInfo {
-///   min_width: ExprWidth::parse_min_width(0),
-///   max_width: ExprWidth::parse_max_width(0),
-///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
-///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
-/// });
-/// let ext = ExprExt::from_min_length(2);
-/// let info = expr.ext_info(Flags::default(), &ext)?;
-/// assert_eq!(info, ExprInfo {
-///   min_width: ExprWidth::parse_min_width(0),
-///   max_width: ExprWidth::parse_max_width(0),
-///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
-///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
-/// });
+/// let e1: Expression = "asdf+".parse()?;
+/// let e2 = Expression::new("asdf+")?;
+/// assert_eq!(e1, e2);
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+///
+/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/compilation.html#pattern-support
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expression(CString);
 
 impl fmt::Debug for Expression {
@@ -55,56 +77,150 @@ impl fmt::Debug for Expression {
   }
 }
 
+impl fmt::Display for Expression {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_bytes();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "{}", s),
+      Err(_) => write!(f, "(non-utf8: {:?})", b),
+    }
+  }
+}
+
 impl Expression {
+  /// Reference the underlying bytes, *without* the trailing null terminator.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// let e = hyperscan::expression::Expression::new("asdf")?;
+  /// assert_eq!(e.as_bytes(), b"asdf");
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
 
   pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
+  /// Produce a `NULL`-terminated C-style wrapper for the given pattern string.
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> {
     Ok(Self(CString::new(x)?))
   }
 
+  /// Utility function providing information about a regular expression. The
+  /// information provided in [`ExprInfo`] includes the minimum and
+  /// maximum width of a pattern match.
+  ///
+  /// Note: successful analysis of an expression with this function does not
+  /// imply that compilation of the same expression (via
+  /// [`Database::compile()`] or [`Database::compile_multi()`]) would succeed.
+  /// This function may return [`Ok`] for regular expressions that
+  /// Hyperscan cannot compile.
+  ///
+  /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
+  /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
+  /// affect the properties returned in the [`ExprInfo`] structure,
+  /// they will not affect the outcome of this function.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::Flags};
+  ///
+  /// let expr: Expression = "(he)llo".parse()?;
+  /// let info = expr.info(Flags::default())?;
+  /// assert_eq!(info, ExprInfo {
+  ///   min_width: ExprWidth::parse_min_width(5),
+  ///   max_width: ExprWidth::parse_max_width(5),
+  ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
+  ///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+  /// });
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
-    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
-    let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
+    let mut info = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_info(
           self.as_ptr(),
           flags.into_native(),
-          &mut info.as_mut_ptr() as *mut *mut hs::hs_expr_info,
-          &mut compile_err.as_mut_ptr() as *mut *mut hs::hs_compile_error,
+          &mut info,
+          &mut compile_err,
         )
       },
-      compile_err.as_mut_ptr(),
+      compile_err,
     )?;
-    let info = ExprInfo::from_native(unsafe { info.assume_init() });
-    Ok(info)
+
+    let ret = ExprInfo::from_native(unsafe { *info });
+
+    unsafe {
+      crate::free_misc(info as *mut u8);
+    }
+
+    Ok(ret)
   }
 
+  /// Utility function providing information about a regular expression, with
+  /// extended parameter support. The information provided in [`ExprInfo`]
+  /// includes the minimum and maximum width of a pattern match.
+  ///
+  /// Note: successful analysis of an expression with this function does not
+  /// imply that compilation of the same expression (via
+  /// [`Database::compile()`] or [`Database::compile_multi()`]) would succeed.
+  /// This function may return [`Ok`] for regular expressions that
+  /// Hyperscan cannot compile.
+  ///
+  /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
+  /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
+  /// affect the properties returned in the [`ExprInfo`] structure,
+  /// they will not affect the outcome of this function.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::Flags};
+  ///
+  /// let expr: Expression = ".*lo".parse()?;
+  /// let ext = ExprExt::from_min_length(4);
+  /// let info = expr.ext_info(Flags::default(), &ext)?;
+  /// assert_eq!(info, ExprInfo {
+  ///   min_width: ExprWidth::parse_min_width(4),
+  ///   max_width: None,
+  ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
+  ///   matches_at_eod: MatchAtEndBehavior::NoMatchAtEOD,
+  /// });
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn ext_info(
     &self,
     flags: Flags,
     ext_flags: &ExprExt,
   ) -> Result<ExprInfo, HyperscanCompileError> {
-    let mut info = mem::MaybeUninit::<hs::hs_expr_info>::zeroed();
-    let mut compile_err = mem::MaybeUninit::<hs::hs_compile_error>::uninit();
+    let mut info = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_ext_info(
           self.as_ptr(),
           flags.into_native(),
           ext_flags.as_ref_native(),
-          &mut info.as_mut_ptr() as *mut *mut hs::hs_expr_info,
-          &mut compile_err.as_mut_ptr() as *mut *mut hs::hs_compile_error,
+          &mut info,
+          &mut compile_err,
         )
       },
-      compile_err.as_mut_ptr(),
+      compile_err,
     )?;
-    let info = ExprInfo::from_native(unsafe { info.assume_init() });
-    Ok(info)
+
+    let ret = ExprInfo::from_native(unsafe { *info });
+
+    unsafe {
+      crate::free_misc(info as *mut u8);
+    }
+
+    Ok(ret)
   }
 
+  /// Call [`Database::compile()`] with the result of [`Platform::get()`].
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
     Database::compile(self, flags, mode, Platform::get())
   }
@@ -116,7 +232,7 @@ impl str::FromStr for Expression {
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Literal(Vec<u8>);
 
 impl fmt::Debug for Literal {
@@ -125,6 +241,16 @@ impl fmt::Debug for Literal {
     match str::from_utf8(b) {
       Ok(s) => write!(f, "Literal({:?})", s),
       Err(_) => write!(f, "Literal({:?})", b),
+    }
+  }
+}
+
+impl fmt::Display for Literal {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_bytes();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "{}", s),
+      Err(_) => write!(f, "(non-utf8 literal: {:?})", b),
     }
   }
 }
@@ -153,7 +279,8 @@ impl str::FromStr for Literal {
 #[repr(transparent)]
 pub struct ExprId(pub c_uint);
 
-#[derive(Debug, Clone)]
+/* TODO: Debug impl!! */
+#[derive(Clone)]
 pub struct ExpressionSet<'a> {
   ptrs: Vec<*const c_char>,
   flags: Option<Vec<Flags>>,
@@ -470,7 +597,8 @@ impl ops::BitOrAssign for ExprExt {
   }
 }
 
-#[derive(Debug, Clone)]
+/* TODO: Debug impl!! */
+#[derive(Clone)]
 pub struct LiteralSet<'a> {
   ptrs: Vec<*const c_char>,
   lens: Vec<usize>,
@@ -558,7 +686,7 @@ pub mod chimera {
     ptr, str,
   };
 
-  #[derive(Clone)]
+  #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ChimeraExpression(CString);
 
   impl fmt::Debug for ChimeraExpression {
@@ -567,6 +695,16 @@ pub mod chimera {
       match str::from_utf8(b) {
         Ok(s) => write!(f, "ChimeraExpression({:?})", s),
         Err(_) => write!(f, "ChimeraExpression({:?})", b),
+      }
+    }
+  }
+
+  impl fmt::Display for ChimeraExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      let b = self.as_bytes();
+      match str::from_utf8(b) {
+        Ok(s) => write!(f, "{}", s),
+        Err(_) => write!(f, "(non-utf8: {:?})", b),
       }
     }
   }
@@ -605,7 +743,8 @@ pub mod chimera {
     pub match_limit_recursion: c_ulong,
   }
 
-  #[derive(Debug, Clone)]
+  /* TODO: Debug impl!! */
+  #[derive(Clone)]
   pub struct ChimeraExpressionSet<'a> {
     ptrs: Vec<*const c_char>,
     flags: Option<Vec<ChimeraFlags>>,

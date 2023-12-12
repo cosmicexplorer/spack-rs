@@ -28,6 +28,17 @@ pub mod matchers;
 pub mod state;
 pub mod stream;
 
+unsafe fn free_misc(p: *mut u8) {
+  let p = p as *mut std::os::raw::c_void;
+  cfg_if::cfg_if! {
+    if #[cfg(feature = "static")] {
+      alloc::misc_free_func(p);
+    } else {
+      libc::free(p);
+    }
+  }
+}
+
 /// Utility function to test the current system architecture.
 ///
 /// Hyperscan requires the Supplemental Streaming SIMD Extensions 3 instruction

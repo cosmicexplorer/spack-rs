@@ -1,8 +1,6 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-#[cfg(feature = "static")]
-use crate::alloc;
 #[cfg(feature = "compile")]
 use crate::{
   error::HyperscanCompileError,
@@ -11,7 +9,6 @@ use crate::{
 };
 use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 
-use cfg_if::cfg_if;
 #[cfg(feature = "compile")]
 use once_cell::sync::Lazy;
 
@@ -22,7 +19,7 @@ use std::{
   ffi::CStr,
   mem::{self, MaybeUninit},
   ops,
-  os::raw::{c_char, c_void},
+  os::raw::c_char,
   slice, str,
 };
 
@@ -384,15 +381,7 @@ impl MiscAllocation {
     unsafe { slice::from_raw_parts_mut(self.data, self.len) }
   }
 
-  pub unsafe fn free(&mut self) {
-    cfg_if! {
-      if #[cfg(feature = "static")] {
-        alloc::misc_free_func(self.data as *mut c_void);
-      } else {
-        libc::free(self.data as *mut c_void);
-      }
-    }
-  }
+  pub unsafe fn free(&mut self) { crate::free_misc(self.data) }
 }
 
 impl ops::Drop for MiscAllocation {
@@ -407,12 +396,14 @@ impl ops::Drop for MiscAllocation {
 pub struct DbInfo(pub MiscAllocation);
 
 impl DbInfo {
+  const fn without_null(&self) -> impl slice::SliceIndex<[u8], Output=[u8]> { ..(self.0.len() - 1) }
+
   pub fn as_str(&self) -> &str {
-    unsafe { str::from_utf8_unchecked(&self.0.as_slice()[..(self.0.len() - 1)]) }
+    unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
   }
 
   pub fn as_mut_str(&mut self) -> &mut str {
-    let without_null = ..(self.0.len() - 1);
+    let without_null = self.without_null();
     unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
   }
 
@@ -471,23 +462,34 @@ impl<'a> DbAllocation<'a> {
   pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
 }
 
+impl DbAllocation<'static> {
+  pub fn from_cloned_data(s: &DbAllocation) -> Self {
+    let newly_allocated: Vec<u8> = s.as_slice().to_vec();
+    Self::Rust(Cow::Owned(newly_allocated))
+  }
+}
+
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct SerializedDb<'a>(pub DbAllocation<'a>);
 
 impl SerializedDb<'static> {
   pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
-    let mut data: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
-    let mut len: MaybeUninit<usize> = MaybeUninit::uninit();
+    let mut data = ptr::null_mut();
+    let mut len: usize = 0;
 
     HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_serialize_database(db.as_ref_native(), data.as_mut_ptr(), len.as_mut_ptr())
+      hs::hs_serialize_database(db.as_ref_native(), &mut data, &mut len)
     })?;
 
-    let data: *mut u8 = unsafe { mem::transmute(data.assume_init()) };
-    let len = unsafe { len.assume_init() };
+    let data = data as *mut u8;
 
     Ok(Self(DbAllocation::Misc(MiscAllocation { data, len })))
+  }
+
+  pub fn from_cloned_data(s: &SerializedDb) -> Self {
+    let SerializedDb(ref s) = s;
+    Self(DbAllocation::from_cloned_data(s))
   }
 }
 
@@ -504,16 +506,15 @@ impl<'a> SerializedDb<'a> {
   /// # }
   /// ```
   pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
-    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    let mut info = ptr::null_mut();
     HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_serialized_database_info(self.as_ptr(), self.len(), info.as_mut_ptr())
+      hs::hs_serialized_database_info(self.as_ptr(), self.len(), &mut info)
     })?;
-    let info = unsafe { info.assume_init() };
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
     assert!(len > 0);
 
     let ret = MiscAllocation {
-      data: unsafe { mem::transmute(info) },
+      data: info as *mut u8,
       len,
     };
 
