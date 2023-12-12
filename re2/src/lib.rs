@@ -24,7 +24,8 @@
 //! - `"hello\\s+world"`      -- `\s` matches any whitespace character
 //! - `"\\b(\\w+)\\b"`        -- `\b` matches non-empty string at word boundary
 //! - `"(?i)hello"`           -- `(?i)` turns on case-insensitive matching
-//! - `"/\\*(.*?)\\*/"`       -- `.*?` matches . minimum no. of times possible
+//! - `"/\\*(.*?)\\*/"`       -- `.*?` matches `.` minimum number of times
+//!   possible
 //!
 //! The double backslashes are needed when writing string literals.
 //! However, they should NOT be used when writing raw string literals:
@@ -35,7 +36,8 @@
 //! - `r"(\b(\w+)\b)"`          -- `\b` matches non-empty string at word
 //!   boundary
 //! - `r"((?i)hello)"`          -- `(?i)` turns on case-insensitive matching
-//! - `r"(/\*(.*?)\*/)"`        -- `.*?` matches . minimum no. of times possible
+//! - `r"(/\*(.*?)\*/)"`        -- `.*?` matches `.` minimum number of times
+//!   possible
 //!
 //! When using UTF-8 encoding, case-insensitive matching will perform
 //! simple case folding, not full case folding.
