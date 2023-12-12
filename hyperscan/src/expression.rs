@@ -5,7 +5,7 @@
 //!
 //! Creating instances of these structs performs no pattern compilation itself,
 //! which is instead performed in a subsequent step by e.g.
-//! [`Database::compile()`]. Instances of these structs can be reused multiple
+//! [`Database::compile()`]. References to these structs can be reused multiple
 //! times to create multiple databases without re-allocating the underlying
 //! pattern string data:
 //!
@@ -761,6 +761,34 @@ impl<'a> LiteralSet<'a> {
   }
 }
 
+/// Pattern strings for the chimera library.
+///
+/// As per [Pattern Support], chimera has full support for PCRE.
+///
+/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/chimera.html#pattern-support
+///
+/// As chimera focuses mainly on supporting PCRE compatibility and group
+/// matching support, this interface is less full-featured than the standard
+/// hyperscan library [`super::expression`]. However, the same idioms apply:
+/// creating expression instances performs no pattern compilation itself, and
+/// references to these structs can be reused without re-allocating the
+/// underlying pattern string data:
+///
+///```
+/// # #[allow(unused_variables)]
+/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+/// use hyperscan::{expression::chimera::*, flags::chimera::*};
+///
+/// let a: ChimeraExpression = "a+".parse()?;
+/// let b: ChimeraExpression = "b+".parse()?;
+/// let c: ChimeraExpression = "c+".parse()?;
+///
+/// let ab_db = ChimeraExpressionSet::from_exprs([&a, &b]).compile(ChimeraMode::NOGROUPS)?;
+/// let bc_db = ChimeraExpressionSet::from_exprs([&b, &c]).compile(ChimeraMode::NOGROUPS)?;
+/// let ca_db = ChimeraExpressionSet::from_exprs([&c, &a]).compile(ChimeraMode::NOGROUPS)?;
+/// # Ok(())
+/// # }
+/// ```
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
@@ -780,6 +808,26 @@ pub mod chimera {
     ptr, str,
   };
 
+  /// Chimera (PCRE) pattern string.
+  ///
+  /// Note that as the underlying chimera library interprets pattern strings
+  /// as essentially null-terminated [`CStr`](std::ffi::CStr) pointers, null
+  /// bytes are *not* supported within `ChimeraExpression` strings (or by the
+  /// chimera library in general).
+  ///
+  /// Instances can be created equivalently with [`Self::new()`] or
+  /// [`str::parse()`] via the [`str::FromStr`] impl:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+  /// use hyperscan::expression::chimera::ChimeraExpression;
+  ///
+  /// let e1: ChimeraExpression = "asd(f+)".parse()?;
+  /// let e2 = ChimeraExpression::new("asd(f+)")?;
+  /// assert_eq!(e1, e2);
+  /// # Ok(())
+  /// # }
+  /// ```
   #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ChimeraExpression(CString);
 
@@ -804,14 +852,39 @@ pub mod chimera {
   }
 
   impl ChimeraExpression {
+    /// Reference the underlying bytes, *without* the trailing null terminator.
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// let e = hyperscan::expression::chimera::ChimeraExpression::new("asd(f+)")?;
+    /// assert_eq!(e.as_bytes(), b"asd(f+)");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
 
     pub(crate) fn as_ptr(&self) -> *const c_char { self.0.as_c_str().as_ptr() }
 
+    /// Produce a `NULL`-terminated C-style wrapper for the given pattern
+    /// string.
+    ///
+    /// This will fail if the string contains any internal `NULL` bytes, as
+    /// those are not supported by the chimera library:
+    ///```
+    /// use hyperscan::{expression::chimera::*, error::chimera::*};
+    ///
+    /// let pat = "as\0df";
+    /// let e = match ChimeraExpression::new(pat) {
+    ///    Err(ChimeraCompileError::NullByte(e)) => e,
+    ///    _ => unreachable!(),
+    /// };
+    /// assert_eq!(e.nul_position(), 2);
+    /// ```
     pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, ChimeraCompileError> {
       Ok(Self(CString::new(x)?))
     }
 
+    /// Call [`ChimeraDb::compile()`] with the result of [`Platform::get()`].
     pub fn compile(
       &self,
       flags: ChimeraFlags,
