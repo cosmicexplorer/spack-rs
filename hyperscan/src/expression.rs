@@ -1245,6 +1245,14 @@ pub mod chimera {
     pub match_limit_recursion: c_ulong,
   }
 
+  /// Collection of regular expressions.
+  ///
+  /// This is the analogue to [`ExpressionSet`] for [`ChimeraExpression`]
+  /// instances.
+  ///
+  /// This struct provides an immutable (returning `Self`) builder interface
+  /// to attach additional configuration to the initial set of patterns
+  /// constructed with [`Self::from_exprs()`].
   #[derive(Clone)]
   pub struct ChimeraExpressionSet<'a> {
     ptrs: Vec<*const c_char>,
@@ -1270,6 +1278,20 @@ pub mod chimera {
   }
 
   impl<'a> ChimeraExpressionSet<'a> {
+    /// Construct a pattern set from references to parsed expressions.
+    ///
+    /// The length of this initial `exprs` argument is returned by
+    /// [`Self::len()`], and all subsequent configuration methods are checked to
+    /// provide iterators of the same length:
+    ///
+    ///```should_panic
+    /// use hyperscan::expression::chimera::*;
+    ///
+    /// let a: ChimeraExpression = "a+".parse().unwrap();
+    /// // Fails due to argument length mismatch:
+    /// ChimeraExpressionSet::from_exprs([&a])
+    ///   .with_flags([]);
+    /// ```
     pub fn from_exprs(exprs: impl IntoIterator<Item=&'a ChimeraExpression>) -> Self {
       Self {
         ptrs: exprs.into_iter().map(|e| e.as_ptr()).collect(),
@@ -1280,6 +1302,38 @@ pub mod chimera {
       }
     }
 
+    /// Provide flags which modify the behavior of each expression.
+    ///
+    /// The length of `flags` is checked to be the same as [`Self::len()`].
+    ///
+    /// If this builder method is not used, [`Flags::default()`] will be
+    /// assigned to all patterns.
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+    ///
+    /// // Create two expressions to demonstrate separate flags for each pattern:
+    /// let a: ChimeraExpression = "a+[^a]".parse()?;
+    /// let b: ChimeraExpression = "b+[^b]".parse()?;
+    ///
+    /// // Get the start of match for one pattern, but not the other:
+    /// let db = ChimeraExpressionSet::from_exprs([&a, &b])
+    ///   .with_flags([ChimeraFlags::default(), ChimeraFlags::SINGLEMATCH])
+    ///   .compile(ChimeraMode::NOGROUPS)?;
+    ///
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// scratch.scan_sync(&db, "aardvark imbibbe".into(), |m| {
+    ///   matches.push(unsafe { m.source.as_str() });
+    ///   ChimeraMatchResult::Continue
+    /// }, |_| ChimeraMatchResult::Continue)?;
+    /// // SINGLEMATCH is preserved for only one pattern:
+    /// assert_eq!(&matches, &["aar", "ar", "bi"]);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_flags(mut self, flags: impl IntoIterator<Item=ChimeraFlags>) -> Self {
       let flags: Vec<_> = flags.into_iter().collect();
       assert_eq!(self.len(), flags.len());
@@ -1287,6 +1341,58 @@ pub mod chimera {
       self
     }
 
+    /// Assign an ID number to each pattern.
+    ///
+    /// The length of `ids` is checked to be the same as [`Self::len()`].
+    /// Multiple patterns can be assigned the same ID.
+    ///
+    /// If this builder method is not used, hyperscan will assign them all the
+    /// ID number 0:
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}};
+    ///
+    /// // Create two expressions to demonstrate multiple pattern IDs.
+    /// let a: ChimeraExpression = "a+[^a]".parse()?;
+    /// let b: ChimeraExpression = "b+[^b]".parse()?;
+    ///
+    /// // Create one db with ID numbers, and one without.
+    /// let set1 = ChimeraExpressionSet::from_exprs([&a, &b]).compile(ChimeraMode::NOGROUPS)?;
+    /// let set2 = ChimeraExpressionSet::from_exprs([&a, &b])
+    ///   .with_ids([ExprId(300), ExprId(12)])
+    ///   .compile(ChimeraMode::NOGROUPS)?;
+    ///
+    /// let mut scratch = ChimeraScratch::new();
+    /// scratch.setup_for_db(&set1)?;
+    /// scratch.setup_for_db(&set2)?;
+    ///
+    /// let msg: ByteSlice = "aardvark imbibbe".into();
+    ///
+    /// // The first db doesn't differentiate matches by ID number:
+    /// let mut matches1: Vec<ExpressionIndex> = Vec::new();
+    /// scratch.scan_sync(&set1, msg, |m| {
+    ///   matches1.push(m.id);
+    ///   ChimeraMatchResult::Continue
+    /// }, |_| ChimeraMatchResult::Continue)?;
+    /// assert_eq!(
+    ///   &matches1,
+    ///   &[ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0)],
+    /// );
+    ///
+    /// // The second db returns corresponding ExpressionIndex instances:
+    /// let mut matches2: Vec<ExpressionIndex> = Vec::new();
+    /// scratch.scan_sync(&set2, msg, |m| {
+    ///   matches2.push(m.id);
+    ///   ChimeraMatchResult::Continue
+    /// }, |_| ChimeraMatchResult::Continue)?;
+    /// assert_eq!(
+    ///   &matches2,
+    ///   &[ExpressionIndex(300), ExpressionIndex(300), ExpressionIndex(12), ExpressionIndex(12)],
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
       let ids: Vec<_> = ids.into_iter().collect();
       assert_eq!(self.len(), ids.len());
