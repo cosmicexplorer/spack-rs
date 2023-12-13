@@ -47,13 +47,13 @@ impl Scratch {
   ///
   /// let s: ByteSlice = "ababaabb".into();
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&a_db, s, |_| MatchResult::Continue)
+  ///   .scan_stream(&a_db, s, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "a", "a", "aa"]);
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&b_db, s, |_| MatchResult::Continue)
+  ///   .scan_stream(&b_db, s, |_| MatchResult::Continue)
   ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
@@ -157,28 +157,28 @@ impl Scratch {
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "aardvark".into(), |_| MatchResult::Continue)
+  ///   .scan_stream(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   /// let matches: Vec<&str> = scratch
-  ///   .scan(&db, "imbibbe".into(), |_| MatchResult::Continue)
+  ///   .scan_stream(&db, "imbibbe".into(), |_| MatchResult::Continue)
   ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///   .try_collect()
   ///   .await?;
   /// assert_eq!(&matches, &["b", "b", "bb"]);
   ///
   /// let ret = scratch
-  ///   .scan(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
+  ///   .scan_stream(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
   ///   .try_for_each(|_| async { Ok(()) })
   ///   .await;
   /// assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan<'data>(
+  pub fn scan_stream<'data>(
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
@@ -256,7 +256,7 @@ impl Scratch {
   ///   "dfeg".into(),
   /// ];
   /// let matches: Vec<(u32, String)> = scratch
-  ///   .scan_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
+  ///   .scan_vectored_stream(&db, data.as_ref().into(), |_| MatchResult::Continue)
   ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
   ///     let joined = source.into_iter()
   ///       .map(|s| unsafe { s.as_str() })
@@ -279,7 +279,7 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
-  pub fn scan_vectored<'data>(
+  pub fn scan_vectored_stream<'data>(
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data>,
@@ -394,7 +394,7 @@ mod test {
 
     /* Operate on the clone. */
     let matches: Vec<&str> = s2
-      .scan(&db, "asdf".into(), |_| MatchResult::Continue)
+      .scan_stream(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
@@ -420,7 +420,7 @@ mod test {
 
     /* Operate on the result of Arc::make_mut(). */
     let matches: Vec<&str> = Arc::make_mut(&mut s2)
-      .scan(&db, "asdf".into(), |_| MatchResult::Continue)
+      .scan_stream(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
@@ -537,7 +537,7 @@ pub mod chimera {
     ///
     /// let m = |_: &ChimeraMatch| ChimeraMatchResult::Continue;
     /// let e = |_: &ChimeraMatchError| ChimeraMatchResult::Continue;
-    /// let matches: Vec<(&str, &str)> = scratch.scan(&db, "aardvark".into(), m, e)
+    /// let matches: Vec<(&str, &str)> = scratch.scan_stream(&db, "aardvark".into(), m, e)
     ///  .and_then(|ChimeraMatch { source, captures, .. }| async move {
     ///    Ok(unsafe { (source.as_str(), captures[1].unwrap().as_str()) })
     ///  })
@@ -547,7 +547,7 @@ pub mod chimera {
     /// # Ok(())
     /// # })}
     /// ```
-    pub fn scan<'data>(
+    pub fn scan_stream<'data>(
       &mut self,
       db: &ChimeraDb,
       data: ByteSlice<'data>,

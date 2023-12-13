@@ -153,7 +153,7 @@ allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 /// // Despite having reset the allocator, our previous db is still valid and can be used for
 /// // matching:
 /// let mut scratch = db.allocate_scratch()?;
-/// let matches: Vec<&str> = scratch.scan(&db, "asdf asdf".into(), |_| MatchResult::Continue)
+/// let matches: Vec<&str> = scratch.scan_stream(&db, "asdf asdf".into(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
 ///   .try_collect()
 ///   .await?;
@@ -169,7 +169,7 @@ allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 ///
 /// // Reuse the same database object now:
 /// let mut scratch = db.allocate_scratch()?;
-/// let matches: Vec<&str> = scratch.scan(&db, "hello hello".into(), |_| MatchResult::Continue)
+/// let matches: Vec<&str> = scratch.scan_stream(&db, "hello hello".into(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
 ///   .try_collect()
 ///   .await?;
@@ -242,7 +242,7 @@ pub fn set_stream_allocator(
 /// let mut scratch = db.allocate_scratch()?;
 ///
 /// let matches: Vec<&str> = scratch
-///   .scan(&db, "hello".into(), |_| MatchResult::Continue)
+///   .scan_stream(&db, "hello".into(), |_| MatchResult::Continue)
 ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
 ///   .try_collect()
 ///   .await?;
@@ -338,7 +338,7 @@ pub mod chimera {
   ///
   /// let m = |_: &_| ChimeraMatchResult::Continue;
   /// let e = |_: &_| ChimeraMatchResult::Continue;
-  /// let matches: Vec<&str> = scratch.scan(&db, "hello".into(), m, e)
+  /// let matches: Vec<&str> = scratch.scan_stream(&db, "hello".into(), m, e)
   ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
   ///   .try_collect()
   ///   .await?;

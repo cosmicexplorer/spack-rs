@@ -8,11 +8,12 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["static", "compile"]
+default                 = ["static", "compile", "async"]
 static                  = ["hyperscan-async-sys/static"]
 compile                 = ["hyperscan-async-sys/compile"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["hyperscan-async-sys/chimera"]
+async                   = []
 
 [lib]
 name                    = "hyperscan"
