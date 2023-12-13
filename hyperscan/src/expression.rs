@@ -1235,6 +1235,7 @@ pub mod chimera {
     fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
   }
 
+  /// Extended configuration for the PCRE matching phase of chimera.
   #[derive(Debug, Copy, Clone)]
   pub struct ChimeraMatchLimits {
     /// A limit from pcre_extra on the amount of match function called in PCRE
@@ -1247,7 +1248,7 @@ pub mod chimera {
 
   /// Collection of regular expressions.
   ///
-  /// This is the analogue to [`ExpressionSet`] for [`ChimeraExpression`]
+  /// This is the analogue to [`super::ExpressionSet`] for [`ChimeraExpression`]
   /// instances.
   ///
   /// This struct provides an immutable (returning `Self`) builder interface
@@ -1306,7 +1307,7 @@ pub mod chimera {
     ///
     /// The length of `flags` is checked to be the same as [`Self::len()`].
     ///
-    /// If this builder method is not used, [`Flags::default()`] will be
+    /// If this builder method is not used, [`ChimeraFlags::default()`] will be
     /// assigned to all patterns.
     ///
     ///```
@@ -1400,6 +1401,51 @@ pub mod chimera {
       self
     }
 
+    /// Assign extended PCRE configuration to the entire pattern set.
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}, error::chimera::*};
+    ///
+    /// // Create one db with backtracking match limits, and one without.
+    /// let a: ChimeraExpression = r"(asdf?)hey\1".parse()?;
+    /// let set1 = ChimeraExpressionSet::from_exprs([&a]).compile(ChimeraMode::GROUPS)?;
+    /// let set2 = ChimeraExpressionSet::from_exprs([&a])
+    ///   .with_limits(ChimeraMatchLimits { match_limit: 1, match_limit_recursion: 1 })
+    ///   .compile(ChimeraMode::GROUPS)?;
+    ///
+    /// let mut scratch = ChimeraScratch::new();
+    /// scratch.setup_for_db(&set1)?;
+    /// scratch.setup_for_db(&set2)?;
+    ///
+    /// let msg: ByteSlice = "asdfheyasdf".into();
+    ///
+    /// // The first db doesn't stop the matching engine:
+    /// let mut matches1: Vec<&str> = Vec::new();
+    /// scratch.scan_sync(&set1, msg, |m| {
+    ///   matches1.push(unsafe { m.captures[1].unwrap().as_str() });
+    ///   ChimeraMatchResult::Continue
+    /// }, |_| ChimeraMatchResult::Terminate)?;
+    /// assert_eq!(&matches1, &["asdf"]);
+    ///
+    /// // The second db imposes a match limit, which triggers the second callback to return
+    /// // `ChimeraMatchResult::Terminate`.
+    /// let mut matches2: Vec<ChimeraMatchError> = Vec::new();
+    /// let result = scratch.scan_sync(
+    ///   &set2,
+    ///   msg,
+    ///   |_| unreachable!(),
+    ///   |e| {
+    ///     matches2.push(e);
+    ///     ChimeraMatchResult::Terminate
+    ///   },
+    /// );
+    /// assert!(matches![result, Err(ChimeraRuntimeError::ScanTerminated)]);
+    /// assert_eq!(matches2.len(), 1);
+    /// assert_eq!(matches2[0].error_type, ChimeraMatchErrorType::MatchLimit);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_limits(mut self, limits: ChimeraMatchLimits) -> Self {
       self.limits = Some(limits);
       self
@@ -1411,8 +1457,10 @@ pub mod chimera {
       ChimeraDb::compile_multi(&self, mode, Platform::get())
     }
 
+    /// The number of patterns in this set.
     pub fn len(&self) -> usize { self.ptrs.len() }
 
+    /// Whether this set contains any patterns.
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 
     pub(crate) fn limits(&self) -> Option<ChimeraMatchLimits> { self.limits }
