@@ -57,6 +57,11 @@ impl Flags {
   /// generally execute very slowly; the default behaviour is to return an
   /// error when an attempt to compile one is made. Using this flag will force
   /// the compiler to allow such an expression.
+  ///
+  /// Also consider
+  /// [`ExprExt::from_min_length()`](crate::expression::ExprExt::from_min_length)
+  /// to bound the minimum match length instead of forcing hyperscan to accept
+  /// possibly slow match behavior.
   pub const ALLOWEMPTY: Self = Self(hs::HS_FLAG_ALLOWEMPTY as c_uint);
   /// Enable UTF-8 mode for this expression.
   ///

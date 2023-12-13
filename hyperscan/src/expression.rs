@@ -131,7 +131,7 @@ impl Expression {
   }
 
   /// Utility function providing information about a regular expression. The
-  /// information provided in [`ExprInfo`] includes the minimum and
+  /// information provided in [`info::ExprInfo`] includes the minimum and
   /// maximum width of a pattern match.
   ///
   /// Note: successful analysis of an expression with this function does not
@@ -142,12 +142,12 @@ impl Expression {
   ///
   /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
   /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
-  /// affect the properties returned in the [`ExprInfo`] structure,
+  /// affect the properties returned in the [`info::ExprInfo`] structure,
   /// they will not affect the outcome of this function.
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::Flags};
+  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = "(he)llo".parse()?;
   ///
@@ -162,7 +162,7 @@ impl Expression {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn info(&self, flags: Flags) -> Result<ExprInfo, HyperscanCompileError> {
+  pub fn info(&self, flags: Flags) -> Result<info::ExprInfo, HyperscanCompileError> {
     let mut info = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
@@ -177,7 +177,7 @@ impl Expression {
       compile_err,
     )?;
 
-    let ret = ExprInfo::from_native(unsafe { *info });
+    let ret = info::ExprInfo::from_native(unsafe { *info });
 
     unsafe {
       crate::free_misc(info as *mut u8);
@@ -187,7 +187,7 @@ impl Expression {
   }
 
   /// Utility function providing information about a regular expression, with
-  /// extended parameter support. The information provided in [`ExprInfo`]
+  /// extended parameter support. The information provided in [`info::ExprInfo`]
   /// includes the minimum and maximum width of a pattern match.
   ///
   /// Note: successful analysis of an expression with this function does not
@@ -198,12 +198,12 @@ impl Expression {
   ///
   /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
   /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
-  /// affect the properties returned in the [`ExprInfo`] structure,
+  /// affect the properties returned in the [`info::ExprInfo`] structure,
   /// they will not affect the outcome of this function.
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::Flags};
+  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = ".*lo".parse()?;
   ///
@@ -224,7 +224,7 @@ impl Expression {
     &self,
     flags: Flags,
     ext_flags: &ExprExt,
-  ) -> Result<ExprInfo, HyperscanCompileError> {
+  ) -> Result<info::ExprInfo, HyperscanCompileError> {
     let mut info = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     HyperscanRuntimeError::copy_from_native_compile_error(
@@ -240,7 +240,7 @@ impl Expression {
       compile_err,
     )?;
 
-    let ret = ExprInfo::from_native(unsafe { *info });
+    let ret = info::ExprInfo::from_native(unsafe { *info });
 
     unsafe {
       crate::free_misc(info as *mut u8);
@@ -534,7 +534,7 @@ impl<'a> ExpressionSet<'a> {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, matchers::*};
   ///
-  /// // Apply extended configuration to one pattern, but not the other:
+  /// // Apply extended configuration to one version of the pattern, but not the other:
   /// let a: Expression = "a.*b".parse()?;
   /// let a_ext = ExprExt::from_min_length(4);
   /// let set = ExpressionSet::from_exprs([&a, &a])
@@ -610,148 +610,193 @@ impl<'a> ExpressionSet<'a> {
   }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct ExprWidth(usize);
+pub mod info {
+  use super::*;
 
-impl ExprWidth {
-  pub const fn parse_min_width(x: c_uint) -> Self { Self(x as usize) }
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[repr(transparent)]
+  pub struct ExprWidth(usize);
 
-  pub const fn parse_max_width(x: c_uint) -> Option<Self> {
-    if x == c_uint::MAX {
-      None
-    } else {
-      Some(Self(x as usize))
+  impl ExprWidth {
+    pub const fn parse_min_width(x: c_uint) -> Self { Self(x as usize) }
+
+    pub const fn parse_max_width(x: c_uint) -> Option<Self> {
+      if x == c_uint::MAX {
+        None
+      } else {
+        Some(Self(x as usize))
+      }
     }
   }
-}
 
+  #[derive(
+    Debug,
+    Display,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    num_enum::IntoPrimitive,
+    num_enum::FromPrimitive,
+  )]
+  #[repr(i8)]
+  pub enum UnorderedMatchBehavior {
+    /// Disallows matches that are not returned in order.
+    #[num_enum(default)]
+    OnlyOrdered = 0,
+    /// Allows matches that are not returned in order.
+    AllowsUnordered = 1,
+  }
 
-#[derive(
-  Debug,
-  Display,
-  Copy,
-  Clone,
-  PartialEq,
-  Eq,
-  PartialOrd,
-  Ord,
-  Hash,
-  num_enum::IntoPrimitive,
-  num_enum::FromPrimitive,
-)]
-#[repr(i8)]
-pub enum UnorderedMatchBehavior {
-  /// Disallows matches that are not returned in order.
-  #[num_enum(default)]
-  OnlyOrdered = 0,
-  /// Allows matches that are not returned in order.
-  AllowsUnordered = 1,
-}
-
-impl UnorderedMatchBehavior {
-  pub const fn from_native(x: c_char) -> Self {
-    if x == 0 {
-      Self::OnlyOrdered
-    } else {
-      Self::AllowsUnordered
+  impl UnorderedMatchBehavior {
+    pub const fn from_native(x: c_char) -> Self {
+      if x == 0 {
+        Self::OnlyOrdered
+      } else {
+        Self::AllowsUnordered
+      }
     }
   }
-}
 
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(i8)]
-pub enum MatchAtEndBehavior {
-  /// Pattern will never match at EOD.
-  WillNeverMatchAtEOD,
-  /// Pattern may match at EOD.
-  MayMatchAtEOD,
-  /// Pattern will *Only* match at EOD.
-  WillOnlyMatchAtEOD,
-}
+  #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[repr(i8)]
+  pub enum MatchAtEndBehavior {
+    /// Pattern will never match at EOD.
+    WillNeverMatchAtEOD,
+    /// Pattern may match at EOD.
+    MayMatchAtEOD,
+    /// Pattern will *Only* match at EOD.
+    WillOnlyMatchAtEOD,
+  }
 
-impl MatchAtEndBehavior {
-  pub fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
-    match (matches_at_eod, matches_only_at_eod) {
-      (0, 0) => Self::WillNeverMatchAtEOD,
-      (x, 0) if x != 0 => Self::MayMatchAtEOD,
-      (_, x) if x != 0 => Self::WillOnlyMatchAtEOD,
-      x => unreachable!("unreachable pattern: {:?}", x),
+  impl MatchAtEndBehavior {
+    pub fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
+      match (matches_at_eod, matches_only_at_eod) {
+        (0, 0) => Self::WillNeverMatchAtEOD,
+        (x, 0) if x != 0 => Self::MayMatchAtEOD,
+        (_, x) if x != 0 => Self::WillOnlyMatchAtEOD,
+        x => unreachable!("unreachable pattern: {:?}", x),
+      }
     }
   }
-}
 
-///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::{expression::*, flags::Flags};
-///
-/// let expr: Expression = "(he)llo$".parse()?;
-/// let info = expr.info(Flags::default())?;
-/// assert_eq!(info, ExprInfo {
-///   min_width: ExprWidth::parse_min_width(5),
-///   max_width: ExprWidth::parse_max_width(5),
-///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
-///   matches_at_eod: MatchAtEndBehavior::WillOnlyMatchAtEOD,
-/// });
-/// # Ok(())
-/// # }
-/// ```
-///
-///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::{expression::*, flags::Flags};
-///
-/// let expr: Expression = ".*lo($)?".parse()?;
-/// let ext = ExprExt::from_min_length(4);
-/// let info = expr.ext_info(Flags::default(), &ext)?;
-/// assert_eq!(info, ExprInfo {
-///   min_width: ExprWidth::parse_min_width(4),
-///   max_width: None,
-///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
-///   matches_at_eod: MatchAtEndBehavior::MayMatchAtEOD,
-/// });
-/// # Ok(())
-/// # }
-/// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExprInfo {
-  pub min_width: ExprWidth,
-  pub max_width: Option<ExprWidth>,
-  /// Whether this expression can produce matches that are not returned in
-  /// order, such as those produced by assertions.
-  pub unordered_matches: UnorderedMatchBehavior,
-  /// Whether this expression can produce matches at end of data (EOD). In
-  /// streaming mode, EOD matches are raised during @ref hs_close_stream(),
-  /// since it is only when @ref hs_close_stream() is called that the EOD
-  /// location is known.
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
   ///
-  /// Note: trailing `\b` word boundary assertions may also result in EOD
-  /// matches as end-of-data can act as a word boundary.
-  pub matches_at_eod: MatchAtEndBehavior,
-}
+  /// let expr: Expression = "(he)llo$".parse()?;
+  /// let info = expr.info(Flags::default())?;
+  /// assert_eq!(info, ExprInfo {
+  ///   min_width: ExprWidth::parse_min_width(5),
+  ///   max_width: ExprWidth::parse_max_width(5),
+  ///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
+  ///   matches_at_eod: MatchAtEndBehavior::WillOnlyMatchAtEOD,
+  /// });
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
+  ///
+  /// let expr: Expression = ".*lo($)?".parse()?;
+  /// let ext = ExprExt::from_min_length(4);
+  /// let info = expr.ext_info(Flags::default(), &ext)?;
+  /// assert_eq!(info, ExprInfo {
+  ///   min_width: ExprWidth::parse_min_width(4),
+  ///   max_width: None,
+  ///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
+  ///   matches_at_eod: MatchAtEndBehavior::MayMatchAtEOD,
+  /// });
+  /// # Ok(())
+  /// # }
+  /// ```
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct ExprInfo {
+    pub min_width: ExprWidth,
+    pub max_width: Option<ExprWidth>,
+    /// Whether this expression can produce matches that are not returned in
+    /// order, such as those produced by assertions.
+    pub unordered_matches: UnorderedMatchBehavior,
+    /// Whether this expression can produce matches at end of data (EOD). In
+    /// streaming mode, EOD matches are raised during @ref hs_close_stream(),
+    /// since it is only when @ref hs_close_stream() is called that the EOD
+    /// location is known.
+    ///
+    /// Note: trailing `\b` word boundary assertions may also result in EOD
+    /// matches as end-of-data can act as a word boundary.
+    pub matches_at_eod: MatchAtEndBehavior,
+  }
 
-impl ExprInfo {
-  pub(crate) fn from_native(x: hs::hs_expr_info) -> Self {
-    let hs::hs_expr_info {
-      min_width,
-      max_width,
-      unordered_matches,
-      matches_at_eod,
-      matches_only_at_eod,
-    } = x;
-    let min_width = ExprWidth::parse_min_width(min_width);
-    let max_width = ExprWidth::parse_max_width(max_width);
-    let unordered_matches = UnorderedMatchBehavior::from_native(unordered_matches);
-    let matches_at_eod = MatchAtEndBehavior::from_native(matches_at_eod, matches_only_at_eod);
-    Self {
-      min_width,
-      max_width,
-      unordered_matches,
-      matches_at_eod,
+  impl ExprInfo {
+    pub(crate) fn from_native(x: hs::hs_expr_info) -> Self {
+      let hs::hs_expr_info {
+        min_width,
+        max_width,
+        unordered_matches,
+        matches_at_eod,
+        matches_only_at_eod,
+      } = x;
+      let min_width = ExprWidth::parse_min_width(min_width);
+      let max_width = ExprWidth::parse_max_width(max_width);
+      let unordered_matches = UnorderedMatchBehavior::from_native(unordered_matches);
+      let matches_at_eod = MatchAtEndBehavior::from_native(matches_at_eod, matches_only_at_eod);
+      Self {
+        min_width,
+        max_width,
+        unordered_matches,
+        matches_at_eod,
+      }
     }
   }
 }
 
+/// Configuration for extended hyperscan parameters.
+///
+/// These parameters cover various types of fuzzy search as well as input
+/// subsetting features. See [Extended Parameters] for a further reference.
+///
+/// [Extended Parameters]: https://intel.github.io/hyperscan/dev-reference/compilation.html#extparam
+///
+/// This structure may be passed in when building a database with
+/// [`ExpressionSet::with_exts()`], or used to interrogate a single expression
+/// with [`Expression::ext_info()`].
+///
+/// Like many other flags arguments, this struct also supports [`ops::BitOr`]
+/// and the `|` operator for composition:
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/// use hyperscan::{expression::*, flags::*, matchers::*};
+///
+/// // Apply extended configuration to one version of the pattern, but not the other:
+/// let a: Expression = "ab".parse()?;
+/// let ext = ExprExt::from_min_offset(3) | ExprExt::from_max_offset(15);
+/// let set = ExpressionSet::from_exprs([&a, &a])
+///   .with_exts([Some(&ext), None])
+///   .with_ids([ExprId(1), ExprId(2)])
+///   .compile(Mode::BLOCK)?;
+/// let mut scratch = set.allocate_scratch()?;
+///
+/// let msg: ByteSlice = "ab   ab                ab".into();
+///
+/// let mut matches: Vec<ExpressionIndex> = Vec::new();
+/// scratch.scan_sync(&set, msg, |m| {
+///   matches.push(m.id);
+///   MatchResult::Continue
+/// })?;
+///
+/// // The configured pattern misses out on the first and last match of "ab":
+/// assert_eq!(&matches, &[
+///   ExpressionIndex(2), ExpressionIndex(1), ExpressionIndex(2), ExpressionIndex(2),
+/// ]);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct ExprExt(hs::hs_expr_ext);
@@ -761,8 +806,11 @@ impl Default for ExprExt {
 }
 
 impl ExprExt {
-  pub fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
+  /// Generate an empty instance with all features disabled.
+  pub const fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
 
+  /// The minimum end offset in the data stream at which this expression should
+  /// match successfully.
   pub fn from_min_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_OFFSET;
     let mut s = Self::zeroed();
@@ -771,6 +819,8 @@ impl ExprExt {
     s
   }
 
+  /// The maximum end offset in the data stream at which this expression should
+  /// match successfully.
   pub fn from_max_offset(x: usize) -> Self {
     let ext_flags = ExtFlags::MAX_OFFSET;
     let mut s = Self::zeroed();
@@ -779,6 +829,38 @@ impl ExprExt {
     s
   }
 
+  /// The minimum match length (from start to end) required to successfully
+  /// match this expression.
+  ///
+  /// This is one alternative to the use of [`Flags::ALLOWEMPTY`].
+  ///
+  /// This does not require [`Flags::SOM_LEFTMOST`]:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  ///
+  /// let a: Expression = "a.*b".parse()?;
+  /// let ext = ExprExt::from_min_length(4);
+  /// let set = ExpressionSet::from_exprs([&a])
+  ///   .with_exts([Some(&ext)])
+  ///   .compile(Mode::BLOCK)?;
+  /// let mut scratch = set.allocate_scratch()?;
+  ///
+  /// let msg: ByteSlice = "   ab   ab   ".into();
+  ///
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch.scan_sync(&set, msg, |m| {
+  ///   matches.push(unsafe { m.source.as_str() });
+  ///   MatchResult::Continue
+  /// })?;
+  ///
+  /// // `SOM_LEFTMOST` is disabled, so we don't know the match start,
+  /// // but the min_length property is correctly applied regardless:
+  /// assert_eq!(&matches, &["   ab   ab"]);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn from_min_length(x: usize) -> Self {
     let ext_flags = ExtFlags::MIN_LENGTH;
     let mut s = Self::zeroed();
@@ -787,6 +869,8 @@ impl ExprExt {
     s
   }
 
+  /// Allow patterns to approximately match within this edit (Levenshtein)
+  /// distance.
   pub fn from_edit_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::EDIT_DISTANCE;
     let mut s = Self::zeroed();
@@ -796,6 +880,7 @@ impl ExprExt {
     s
   }
 
+  /// Allow patterns to approximately match within this Hamming distance.
   pub fn from_hamming_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::HAMMING_DISTANCE;
     let mut s = Self::zeroed();
@@ -805,8 +890,10 @@ impl ExprExt {
     s
   }
 
-  fn ext_flags(&self) -> ExtFlags { ExtFlags::from_native(self.0.flags) }
+  const fn ext_flags(&self) -> ExtFlags { ExtFlags::from_native(self.0.flags) }
 
+  /// Get the min_offset value that will be provided to hyperscan, or [`None`]
+  /// if not activated.
   pub fn min_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_offset() {
       Some(self.0.min_offset)
@@ -815,6 +902,8 @@ impl ExprExt {
     }
   }
 
+  /// Get the max_offset value that will be provided to hyperscan, or [`None`]
+  /// if not activated.
   pub fn max_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_max_offset() {
       Some(self.0.max_offset)
@@ -823,6 +912,8 @@ impl ExprExt {
     }
   }
 
+  /// Get the min_length value that will be provided to hyperscan, or [`None`]
+  /// if not activated.
   pub fn min_length(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_length() {
       Some(self.0.min_length)
@@ -831,6 +922,8 @@ impl ExprExt {
     }
   }
 
+  /// Get the edit_distance value that will be provided to hyperscan, or
+  /// [`None`] if not activated.
   pub fn edit_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_edit_distance() {
       Some(self.0.edit_distance)
@@ -839,6 +932,8 @@ impl ExprExt {
     }
   }
 
+  /// Get the hamming_distance value that will be provided to hyperscan, or
+  /// [`None`] if not activated.
   pub fn hamming_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_hamming_distance() {
       Some(self.0.hamming_distance)
@@ -1236,6 +1331,9 @@ pub mod chimera {
   }
 
   /// Extended configuration for the PCRE matching phase of chimera.
+  ///
+  /// The only entry point to configuring this is
+  /// [`ChimeraExpressionSet::with_limits()`].
   #[derive(Debug, Copy, Clone)]
   pub struct ChimeraMatchLimits {
     /// A limit from pcre_extra on the amount of match function called in PCRE
@@ -1402,6 +1500,9 @@ pub mod chimera {
     }
 
     /// Assign extended PCRE configuration to the entire pattern set.
+    ///
+    /// This is the only entry point to configuring PCRE match limits (i.e. the
+    /// single-pattern compiler does not support match limits).
     ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
