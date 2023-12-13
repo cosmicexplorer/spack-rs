@@ -96,9 +96,9 @@ impl Flags {
   /// match over the lifetime of the stream, rather than reporting every match
   /// as per standard Hyperscan semantics. In block mode or vectored mode,
   /// only the first match for each invocation of
-  /// [`scan()`](crate::state::Scratch::scan) or
-  /// [`scan_vectored()`](crate::state::Scratch::scan_vectored) will be
-  /// returned.
+  /// [`scan_sync()`](crate::state::Scratch::scan_sync) or
+  /// [`scan_vectored_sync()`](crate::state::Scratch::scan_vectored_sync) will
+  /// be returned.
   ///
   /// If multiple expressions in the database share the same match ID, then they
   /// either must all specify `SINGLEMATCH` or none of them specify

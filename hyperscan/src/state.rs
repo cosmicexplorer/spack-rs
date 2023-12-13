@@ -12,9 +12,12 @@ use crate::{
   },
 };
 
-use async_stream::try_stream;
-use futures_core::stream::Stream;
-use tokio::{sync::mpsc, task};
+#[cfg(feature = "async")]
+use {
+  async_stream::try_stream,
+  futures_core::stream::Stream,
+  tokio::{sync::mpsc, task},
+};
 
 use std::{
   mem, ops,
@@ -178,6 +181,8 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "async")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub fn scan_stream<'data>(
     &mut self,
     db: &Database,
@@ -279,6 +284,8 @@ impl Scratch {
   /// # Ok(())
   /// # })}
   /// ```
+  #[cfg(feature = "async")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub fn scan_vectored_stream<'data>(
     &mut self,
     db: &Database,
@@ -547,6 +554,8 @@ pub mod chimera {
     /// # Ok(())
     /// # })}
     /// ```
+    #[cfg(feature = "async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     pub fn scan_stream<'data>(
       &mut self,
       db: &ChimeraDb,

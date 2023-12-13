@@ -82,10 +82,10 @@ pub enum HyperscanRuntimeError {
   /// for every concurrent caller of the Hyperscan API.
   ///
   /// For example, this error might be returned when
-  /// [`scan()`](crate::state::Scratch::scan) has been
+  /// [`scan_sync()`](crate::state::Scratch::scan_sync) has been
   /// called inside a callback delivered by a currently-executing
-  /// [`scan()`](crate::state::Scratch::scan) call using the same scratch
-  /// region.
+  /// [`scan_sync()`](crate::state::Scratch::scan_sync) call using the same
+  /// scratch region.
   ///
   /// Note: Not all concurrent uses of scratch regions may be detected. This
   /// error is intended as a best-effort debugging tool, not a guarantee.
@@ -345,7 +345,10 @@ pub enum CompressionError {
 }
 
 /// Wrapper for errors returned by
-/// [`Scratch::scan()`](crate::state::Scratch::scan) and other scanning methods.
+/// [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream) and other
+/// async scanning methods.
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 #[derive(Debug, Display, Error)]
 pub enum ScanError {
   /// error from return value of `hs_scan*()`: {0}
@@ -365,6 +368,8 @@ pub enum HyperscanError {
   #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
   Compile(#[from] HyperscanCompileError),
   /// error during scan: {0}
+  #[cfg(feature = "async")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   Scan(#[from] ScanError),
   /// error compressing stream: {0}
   Compression(#[from] CompressionError),
@@ -436,9 +441,9 @@ pub mod chimera {
     /// required for every concurrent caller of the Chimera API.
     ///
     /// For example, this error might be returned when
-    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan)
+    /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync)
     /// has been called inside a callback delivered by a currently-executing
-    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan)
+    /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync)
     /// call using the same scratch region.
     ///
     /// Note: Not all concurrent uses of scratch regions may be detected. This
@@ -458,7 +463,7 @@ pub mod chimera {
     #[num_enum(default)]
     UnknownError = hs::CH_UNKNOWN_HS_ERROR,
     /// Returned when pcre_exec (called for some expressions internally from
-    /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan))
+    /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync))
     /// failed due to a fatal error.
     FailInternal = hs::CH_FAIL_INTERNAL,
   }
@@ -585,7 +590,7 @@ pub mod chimera {
   }
 
   /// Error type for non-fatal match errors from PCRE execution during
-  /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan).
+  /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync).
   #[derive(Debug, Error)]
   pub struct ChimeraMatchError {
     /// The type of error that occurred.
@@ -606,7 +611,9 @@ pub mod chimera {
   unsafe impl Send for ChimeraMatchError {}
 
   /// Wrapper for errors returned by
-  /// [`ChimeraScratch::scan()`](crate::state::chimera::ChimeraScratch::scan).
+  /// [`ChimeraScratch::scan_stream()`](crate::state::chimera::ChimeraScratch::scan_stream).
+  #[cfg(feature = "async")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   #[derive(Debug, Display, Error)]
   pub enum ChimeraScanError {
     /// error from return value of `ch_scan()`: {0}
@@ -625,6 +632,8 @@ pub mod chimera {
     /// compile error: {0}
     Compile(#[from] ChimeraCompileError),
     /// error during chimera scan: {0}
+    #[cfg(feature = "async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     Scan(#[from] ChimeraScanError),
   }
 }

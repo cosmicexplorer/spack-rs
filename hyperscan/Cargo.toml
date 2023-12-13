@@ -8,12 +8,14 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["static", "compile", "async"]
+default                 = ["static", "compile", "async", "alloc"]
 static                  = ["hyperscan-async-sys/static"]
 compile                 = ["hyperscan-async-sys/compile"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["hyperscan-async-sys/chimera"]
 async                   = []
+# async                   = ["dep:futures-core", "dep:futures-util", "dep:tokio", "dep:tokio-stream"]
+alloc                   = ["dep:parking_lot"]
 
 [lib]
 name                    = "hyperscan"
@@ -25,17 +27,21 @@ async-stream.workspace  = true
 cfg-if                  = "1"
 displaydoc.workspace    = true
 futures-core.workspace  = true
+# futures-core            = { workspace = true, optional = true }
 futures-util.workspace  = true
+# futures-util            = { workspace = true, optional = true }
 indexmap.workspace      = true
 itertools.workspace     = true
 libc.workspace          = true
 num_enum.workspace      = true
 once_cell.workspace     = true
-parking_lot.workspace   = true
+parking_lot             = { workspace = true, optional = true }
 static_assertions.workspace = true
 thiserror.workspace     = true
 tokio                   = { workspace = true, features = ["rt", "sync", "io-util", "macros"] }
+# tokio                   = { workspace = true, features = ["rt", "sync", "io-util", "macros"], optional = true }
 tokio-stream            = "0.1.14"
+# tokio-stream            = { version = "0.1.14", optional = true }
 
 [dev-dependencies]
 eyre.workspace          = true

@@ -18,4 +18,7 @@ fn main() {
       unreachable!("hyperscan-async-sys dep should have populated cargo:joined_rpath!");
     }
   }
+  if cfg!(feature = "alloc") {
+    assert!(cfg!(feature = "static"), "alloc requires static");
+  }
 }

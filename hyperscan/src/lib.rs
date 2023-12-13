@@ -13,8 +13,8 @@
 
 pub(crate) use hyperscan_sys::hs;
 
-#[cfg(feature = "static")]
-#[cfg_attr(docsrs, doc(cfg(feature = "static")))]
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod alloc;
 pub mod database;
 pub mod error;
