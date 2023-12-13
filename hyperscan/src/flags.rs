@@ -97,7 +97,7 @@ impl Flags {
   /// as per standard Hyperscan semantics. In block mode or vectored mode,
   /// only the first match for each invocation of
   /// [`scan_sync()`](crate::state::Scratch::scan_sync) or
-  /// [`scan_vectored_sync()`](crate::state::Scratch::scan_vectored_sync) will
+  /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) will
   /// be returned.
   ///
   /// If multiple expressions in the database share the same match ID, then they

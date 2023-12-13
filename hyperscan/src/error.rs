@@ -345,7 +345,7 @@ pub enum CompressionError {
 }
 
 /// Wrapper for errors returned by
-/// [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream) and other
+/// [`Scratch::scan_channel()`](crate::state::Scratch::scan_channel) and other
 /// async scanning methods.
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
@@ -611,7 +611,7 @@ pub mod chimera {
   unsafe impl Send for ChimeraMatchError {}
 
   /// Wrapper for errors returned by
-  /// [`ChimeraScratch::scan_stream()`](crate::state::chimera::ChimeraScratch::scan_stream).
+  /// [`ChimeraScratch::scan_channel()`](crate::state::chimera::ChimeraScratch::scan_channel).
   #[cfg(feature = "async")]
   #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   #[derive(Debug, Display, Error)]

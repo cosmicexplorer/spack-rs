@@ -254,12 +254,12 @@ pub mod contiguous_slice {
     pub source: ByteSlice<'a>,
   }
 
-  pub(crate) struct SyncSliceMatcher<'data, 'code> {
+  pub(crate) struct SliceMatcher<'data, 'code> {
     parent_slice: ByteSlice<'data>,
     handler: &'code mut (dyn FnMut(Match<'data>) -> MatchResult),
   }
 
-  impl<'data, 'code> SyncSliceMatcher<'data, 'code> {
+  impl<'data, 'code> SliceMatcher<'data, 'code> {
     pub fn new<F: FnMut(Match<'data>) -> MatchResult>(
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
@@ -279,7 +279,7 @@ pub mod contiguous_slice {
     pub fn handle_match(&mut self, m: Match<'data>) -> MatchResult { (self.handler)(m) }
   }
 
-  pub(crate) unsafe extern "C" fn match_slice_ref_sync(
+  pub(crate) unsafe extern "C" fn match_slice(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -287,7 +287,7 @@ pub mod contiguous_slice {
     context: *mut c_void,
   ) -> c_int {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-    let mut sync_slice_matcher: Pin<&mut SyncSliceMatcher> =
+    let mut sync_slice_matcher: Pin<&mut SliceMatcher> =
       MatchEvent::extract_context(context).unwrap();
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = Match {
@@ -312,12 +312,12 @@ pub mod vectored_slice {
     pub source: Vec<ByteSlice<'a>>,
   }
 
-  pub(crate) struct SyncVectoredSliceMatcher<'data, 'code> {
+  pub(crate) struct VectoredMatcher<'data, 'code> {
     parent_slices: VectoredByteSlices<'data>,
     handler: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult),
   }
 
-  impl<'data, 'code> SyncVectoredSliceMatcher<'data, 'code> {
+  impl<'data, 'code> VectoredMatcher<'data, 'code> {
     pub fn new<F: FnMut(VectoredMatch<'data>) -> MatchResult>(
       parent_slices: VectoredByteSlices<'data>,
       f: &'code mut F,
@@ -337,7 +337,7 @@ pub mod vectored_slice {
     pub fn handle_match(&mut self, m: VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
   }
 
-  pub(crate) unsafe extern "C" fn match_slice_vectored_ref_sync(
+  pub(crate) unsafe extern "C" fn match_slice_vectored(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -345,7 +345,7 @@ pub mod vectored_slice {
     context: *mut c_void,
   ) -> c_int {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-    let mut sync_slice_matcher: Pin<&mut SyncVectoredSliceMatcher> =
+    let mut sync_slice_matcher: Pin<&mut VectoredMatcher> =
       MatchEvent::extract_context(context).unwrap();
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = VectoredMatch {
@@ -360,6 +360,203 @@ pub mod vectored_slice {
   /* TODO: only available on nightly! */
   /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
    * MatchResult; */
+}
+
+pub mod stream {
+  use super::*;
+
+  #[cfg(feature = "async")]
+  use tokio::sync::mpsc;
+
+  // ///```
+  // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  // tokio_test::block_on(async { /// use hyperscan::{expression::*,
+  // matchers::*, flags::*, stream::*}; /// use futures_util::StreamExt;
+  // ///
+  // /// let expr: Expression = r"\b\w+\b".parse()?;
+  // /// let db = expr.compile(
+  // ///   Flags::UTF8 | Flags::SOM_LEFTMOST,
+  // ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE,
+  // /// )?;
+  // /// let scratch = db.allocate_scratch()?;
+  // ///
+  // /// struct S;
+  // /// impl StreamScanner for S {
+  // ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult {
+  // MatchResult::Continue } ///   fn new() -> Self where Self: Sized { Self }
+  // ///   fn reset(&mut self) {}
+  // ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+  // /// }
+  // ///
+  // /// let mut s = Streamer::open::<S>(&db, scratch.into())?;
+  // ///
+  // /// let msg1 = "aardvark ";
+  // /// s.scan(msg1.as_bytes().into()).await?;
+  // ///
+  // /// let msg2 = "asdf was a friend ";
+  // /// s.scan(msg2.as_bytes().into()).await?;
+  // ///
+  // /// let msg3 = "after all";
+  // /// s.scan(msg3.as_bytes().into()).await?;
+  // /// s.flush_eod().await?;
+  // /// let rx = s.stream_results();
+  // ///
+  // /// let msgs: String = [msg1, msg2, msg3].concat();
+  // /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }|
+  // &msgs[range]).collect().await; /// assert_eq!(results, vec![
+  // ///   "aardvark",
+  // ///   "asdf",
+  // ///   "was",
+  // ///   "a",
+  // ///   "friend",
+  // ///   "after",
+  // ///   "all",
+  // /// ]);
+  // /// # Ok(())
+  // /// # })}
+  // /// ```
+  #[derive(Debug)]
+  pub struct StreamMatch {
+    pub id: ExpressionIndex,
+    pub range: ops::Range<usize>,
+  }
+
+  pub trait StreamHandler {
+    fn handle_match(&mut self, m: StreamMatch) -> MatchResult;
+
+    fn new() -> Self
+    where Self: Sized;
+
+    fn reset(&mut self);
+    fn boxed_clone(&self) -> Box<dyn StreamHandler>;
+  }
+
+  pub struct StreamMatcher {
+    handler: Box<dyn StreamHandler>,
+  }
+
+  impl StreamMatcher {
+    pub fn new<S: StreamHandler+'static>() -> Self {
+      Self {
+        handler: Box::new(S::new()),
+      }
+    }
+
+    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult { self.handler.handle_match(m) }
+
+    pub fn reset(&mut self) { self.handler.reset(); }
+  }
+
+  impl Clone for StreamMatcher {
+    fn clone(&self) -> Self {
+      Self {
+        handler: self.handler.boxed_clone(),
+      }
+    }
+  }
+
+  pub(crate) unsafe extern "C" fn match_slice_stream(
+    id: c_uint,
+    from: c_ulonglong,
+    to: c_ulonglong,
+    flags: c_uint,
+    context: *mut c_void,
+  ) -> c_int {
+    let MatchEvent {
+      id,
+      range,
+      context,
+      /* NB: ignore flags for now! */
+      ..
+    } = MatchEvent::coerce_args(id, from, to, flags, context);
+    let mut matcher: Pin<&mut StreamMatcher> = MatchEvent::extract_context(context).unwrap();
+
+    let m = StreamMatch { id, range };
+
+    let result = matcher.handle_match(m);
+    result.into_native()
+  }
+
+  #[cfg(feature = "async")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+  pub mod scan {
+    use super::*;
+
+    pub trait StreamScanner: Send+Sync {
+      fn scan_match(&mut self, m: &StreamMatch) -> MatchResult;
+
+      fn new() -> Self
+      where Self: Sized;
+
+      fn reset(&mut self);
+      fn boxed_clone(&self) -> Box<dyn StreamScanner>;
+    }
+
+    pub struct TrivialScanner;
+    impl StreamScanner for TrivialScanner {
+      fn scan_match(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
+
+      fn new() -> Self
+      where Self: Sized {
+        Self
+      }
+
+      fn reset(&mut self) {}
+      fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
+    }
+
+    pub struct StreamScanMatcher {
+      sender: mpsc::UnboundedSender<StreamMatch>,
+      scanner: Box<dyn StreamScanner>,
+    }
+
+    impl StreamScanMatcher {
+      pub fn new<S: StreamScanner+'static>(sender: mpsc::UnboundedSender<StreamMatch>) -> Self {
+        Self {
+          sender,
+          scanner: Box::new(S::new()),
+        }
+      }
+
+      pub fn scan_match(&mut self, m: &StreamMatch) -> MatchResult { self.scanner.scan_match(m) }
+
+      pub fn push_match(&mut self, m: StreamMatch) { self.sender.send(m).unwrap(); }
+
+      pub fn reset(&mut self) { self.scanner.reset(); }
+    }
+
+    impl Clone for StreamScanMatcher {
+      fn clone(&self) -> Self {
+        Self {
+          sender: self.sender.clone(),
+          scanner: self.scanner.boxed_clone(),
+        }
+      }
+    }
+
+    pub(crate) unsafe extern "C" fn scan_slice_stream(
+      id: c_uint,
+      from: c_ulonglong,
+      to: c_ulonglong,
+      flags: c_uint,
+      context: *mut c_void,
+    ) -> c_int {
+      let MatchEvent {
+        id,
+        range,
+        context,
+        /* NB: ignore flags for now! */
+        ..
+      } = MatchEvent::coerce_args(id, from, to, flags, context);
+      let mut matcher: Pin<&mut StreamScanMatcher> = MatchEvent::extract_context(context).unwrap();
+
+      let m = StreamMatch { id, range };
+
+      let result = matcher.scan_match(&m);
+      matcher.push_match(m);
+      result.into_native()
+    }
+  }
 }
 
 #[cfg(feature = "chimera")]
@@ -482,7 +679,7 @@ pub mod chimera {
     }
   }
 
-  pub(crate) unsafe extern "C" fn match_chimera_slice_sync(
+  pub(crate) unsafe extern "C" fn match_chimera_slice(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -521,7 +718,7 @@ pub mod chimera {
     result.into_native()
   }
 
-  pub(crate) unsafe extern "C" fn error_callback_chimera_sync(
+  pub(crate) unsafe extern "C" fn error_callback_chimera(
     error_type: hs::ch_error_event_t,
     id: c_uint,
     info: *mut c_void,
