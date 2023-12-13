@@ -3,6 +3,20 @@
 
 //! FFI wrappers for different types of pattern strings.
 //!
+//! Hyperscan supports 3 distinct types of pattern strings which can be formed
+//! to produce a database:
+//! - [`Expression`]: Hyperscan PCRE-like regex syntax (null-terminated
+//!   [`CString`]).
+//! - [`Literal`]: Literal byte string (`Vec<u8>`) which may contain nulls.
+//! - [`chimera::ChimeraExpression`]: PCRE regex syntax.
+//!
+//! Each hyperscan database only supports matching against *exactly one* type of
+//! these patterns, but each variant also has a `*Set` form, and all of these
+//! forms support the same interface to hyperscan's most powerful feature:
+//! multi-pattern matching, where patterns registered with [`ExprId`] in a set
+//! can be associated to [`ExpressionIndex`](crate::matchers::ExpressionIndex)
+//! instances when matched against.
+//!
 //! Creating instances of these structs performs no pattern compilation itself,
 //! which is instead performed in a subsequent step by e.g.
 //! [`Database::compile()`]. References to these structs can be reused multiple
@@ -347,10 +361,11 @@ pub struct ExprId(pub c_uint);
 
 /// Collection of regular expressions.
 ///
-/// This is the entry point to hyperscan's main functionality: matching against
-/// sets of patterns at once, which is typically poorly supported or less
-/// featureful than single-pattern matching in many other regex engines. This
-/// struct provides an immutable (returning `Self`) builder interface
+/// This is the main entry point to hyperscan's primary functionality: matching
+/// against sets of patterns at once, which is typically poorly supported or
+/// less featureful than single-pattern matching in many other regex engines.
+///
+/// This struct provides an immutable (returning `Self`) builder interface
 /// to attach additional configuration to the initial set of patterns
 /// constructed with [`Self::from_exprs()`].
 #[derive(Clone)]
@@ -868,6 +883,14 @@ impl ops::BitOrAssign for ExprExt {
   }
 }
 
+/// Collection of literals.
+///
+/// This is the analogue to [`ExpressionSet`] for [`Literal`] expressions, which
+/// cannot be combined with [`Expression`] patterns in the same database.
+///
+/// This struct provides an immutable (returning `Self`) builder interface
+/// to attach additional configuration to the initial set of patterns
+/// constructed with [`Self::from_lits()`].
 #[derive(Clone)]
 pub struct LiteralSet<'a> {
   ptrs: Vec<*const c_char>,
@@ -902,6 +925,20 @@ impl<'a> fmt::Debug for LiteralSet<'a> {
 }
 
 impl<'a> LiteralSet<'a> {
+  /// Construct a pattern set from references to parsed literals.
+  ///
+  /// The length of this initial `exprs` argument is returned by
+  /// [`Self::len()`], and all subsequent configuration methods are checked to
+  /// provide iterators of the same length:
+  ///
+  ///```should_panic
+  /// use hyperscan::expression::*;
+  ///
+  /// let a: Literal = "a\0b".parse().unwrap();
+  /// // Fails due to argument length mismatch:
+  /// LiteralSet::from_lits([&a])
+  ///   .with_flags([]);
+  /// ```
   pub fn from_lits(lits: impl IntoIterator<Item=&'a Literal>) -> Self {
     let mut ptrs: Vec<_> = Vec::new();
     let mut lens: Vec<_> = Vec::new();
@@ -920,6 +957,38 @@ impl<'a> LiteralSet<'a> {
     }
   }
 
+  /// Provide flags which modify the behavior of each expression.
+  ///
+  /// The length of `flags` is checked to be the same as [`Self::len()`].
+  ///
+  /// If this builder method is not used, [`Flags::default()`] will be assigned
+  /// to all patterns.
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  ///
+  /// // Create two expressions to demonstrate separate flags for each pattern:
+  /// let a: Literal = "a".parse()?;
+  /// let b: Literal = "b".parse()?;
+  ///
+  /// // Get the start of match for one pattern, but not the other:
+  /// let db = LiteralSet::from_lits([&a, &b])
+  ///   .with_flags([Flags::default(), Flags::SOM_LEFTMOST])
+  ///   .compile(Mode::BLOCK)?;
+  ///
+  /// let mut scratch = db.allocate_scratch()?;
+  ///
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch.scan_sync(&db, "aardvark imbibbe".into(), |m| {
+  ///   matches.push(unsafe { m.source.as_str() });
+  ///   MatchResult::Continue
+  /// })?;
+  /// // Start of match is preserved for only one pattern:
+  /// assert_eq!(&matches, &["a", "aa", "aardva", "b", "b", "b"]);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn with_flags(mut self, flags: impl IntoIterator<Item=Flags>) -> Self {
     let flags: Vec<_> = flags.into_iter().collect();
     assert_eq!(self.len(), flags.len());
@@ -927,6 +996,64 @@ impl<'a> LiteralSet<'a> {
     self
   }
 
+  /// Assign an ID number to each pattern.
+  ///
+  /// The length of `ids` is checked to be the same as [`Self::len()`]. Multiple
+  /// patterns can be assigned the same ID.
+  ///
+  /// If this builder method is not used, hyperscan will assign them all the ID
+  /// number 0:
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*};
+  ///
+  /// // Create two expressions to demonstrate multiple pattern IDs.
+  /// let a: Literal = "a".parse()?;
+  /// let b: Literal = "b".parse()?;
+  ///
+  /// // Create one db with ID numbers, and one without.
+  /// let set1 = LiteralSet::from_lits([&a, &b]).compile(Mode::BLOCK)?;
+  /// let set2 = LiteralSet::from_lits([&a, &b])
+  ///   .with_ids([ExprId(300), ExprId(12)])
+  ///   .compile(Mode::BLOCK)?;
+  ///
+  /// let mut scratch = Scratch::new();
+  /// scratch.setup_for_db(&set1)?;
+  /// scratch.setup_for_db(&set2)?;
+  ///
+  /// let msg: ByteSlice = "aardvark imbibbe".into();
+  ///
+  /// // The first db doesn't differentiate matches by ID number:
+  /// let mut matches1: Vec<ExpressionIndex> = Vec::new();
+  /// scratch.scan_sync(&set1, msg, |m| {
+  ///   matches1.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(
+  ///   &matches1,
+  ///   &[
+  ///      ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0), ExpressionIndex(0),
+  ///      ExpressionIndex(0), ExpressionIndex(0),
+  ///    ],
+  /// );
+  ///
+  /// // The second db returns corresponding ExpressionIndex instances:
+  /// let mut matches2: Vec<ExpressionIndex> = Vec::new();
+  /// scratch.scan_sync(&set2, msg, |m| {
+  ///   matches2.push(m.id);
+  ///   MatchResult::Continue
+  /// })?;
+  /// assert_eq!(
+  ///   &matches2,
+  ///   &[
+  ///      ExpressionIndex(300), ExpressionIndex(300), ExpressionIndex(300),
+  ///      ExpressionIndex(12), ExpressionIndex(12), ExpressionIndex(12),
+  ///    ],
+  /// );
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn with_ids(mut self, ids: impl IntoIterator<Item=ExprId>) -> Self {
     let ids: Vec<_> = ids.into_iter().collect();
     assert_eq!(self.len(), ids.len());
@@ -940,8 +1067,10 @@ impl<'a> LiteralSet<'a> {
     Database::compile_multi_literal(&self, mode, Platform::get())
   }
 
+  /// The number of literals in this set.
   pub fn len(&self) -> usize { self.ptrs.len() }
 
+  /// Whether this set contains any literals.
   pub fn is_empty(&self) -> bool { self.len() == 0 }
 
   pub(crate) fn num_elements(&self) -> c_uint { self.len() as c_uint }
