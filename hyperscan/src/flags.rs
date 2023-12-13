@@ -1,6 +1,8 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Integer bitsets used to configure pattern compilation.
+
 use crate::hs;
 
 use std::{
@@ -17,8 +19,11 @@ trait BitSet:
 
 /* NB: This MUST have the same representation as a c_uint in order to
  * mem::transmute a vector of these into a vector of c_uint! */
-/// Flags which modify the behaviour of each expression. Multiple flags may be
-/// used by ORing them together.
+/// Flags which modify the behaviour of individual expressions.
+///
+/// These flags are provided to every compiler method, although each method may
+/// only accept a subset of all flags. Multiple flags may be used by ORing them
+/// together.
 ///
 /// Note that flags may always be overridden by switches in the pattern string
 /// such as `(?i)` for case-insensitive matching.
@@ -289,116 +294,121 @@ impl ops::BitAndAssign for Mode {
   }
 }
 
-/// CPU feature support flags
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct CpuFeatures(u8);
+/// Flags used in [`Platform`](crate::database::Platform).
+pub mod platform {
+  use super::*;
 
-impl CpuFeatures {
-  /// Intel(R) Advanced Vector Extensions 2 (Intel(R) AVX2)
-  ///
-  /// Setting this flag indicates that the target platform supports AVX2
-  /// instructions.
-  pub const AVX2: Self = Self(hs::HS_CPU_FEATURES_AVX2);
-  /// Intel(R) Advanced Vector Extensions 512 (Intel(R) AVX512)
-  ///
-  /// Setting this flag indicates that the target platform supports AVX512
-  /// instructions, specifically AVX-512BW. Using AVX512 implies the use of
-  /// AVX2.
-  pub const AVX512: Self = Self(hs::HS_CPU_FEATURES_AVX512);
-  /// Intel(R) Advanced Vector Extensions 512 Vector Byte Manipulation
-  /// Instructions (Intel(R) AVX512VBMI)
-  ///
-  /// Setting this flag indicates that the target platform supports AVX512VBMI
-  /// instructions. Using AVX512VBMI implies the use of AVX512.
-  pub const AVX512VBMI: Self = Self(hs::HS_CPU_FEATURES_AVX512VBMI);
+  /// CPU feature support flags
+  #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[repr(transparent)]
+  pub struct CpuFeatures(u8);
 
-  pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
+  impl CpuFeatures {
+    /// Intel(R) Advanced Vector Extensions 2 (Intel(R) AVX2)
+    ///
+    /// Setting this flag indicates that the target platform supports AVX2
+    /// instructions.
+    pub const AVX2: Self = Self(hs::HS_CPU_FEATURES_AVX2);
+    /// Intel(R) Advanced Vector Extensions 512 (Intel(R) AVX512)
+    ///
+    /// Setting this flag indicates that the target platform supports AVX512
+    /// instructions, specifically AVX-512BW. Using AVX512 implies the use of
+    /// AVX2.
+    pub const AVX512: Self = Self(hs::HS_CPU_FEATURES_AVX512);
+    /// Intel(R) Advanced Vector Extensions 512 Vector Byte Manipulation
+    /// Instructions (Intel(R) AVX512VBMI)
+    ///
+    /// Setting this flag indicates that the target platform supports AVX512VBMI
+    /// instructions. Using AVX512VBMI implies the use of AVX512.
+    pub const AVX512VBMI: Self = Self(hs::HS_CPU_FEATURES_AVX512VBMI);
 
-  pub(crate) const fn from_native(x: c_ulonglong) -> Self { Self(x as u8) }
-}
+    pub(crate) const fn into_native(self) -> c_ulonglong { self.0 as c_ulonglong }
 
-impl BitSet for CpuFeatures {
-  fn nonzero(&self) -> bool { self.0 != 0 }
-}
-
-impl ops::BitOr for CpuFeatures {
-  type Output = Self;
-
-  fn bitor(self, other: Self) -> Self { Self(self.0.bitor(other.0)) }
-}
-
-impl ops::BitOrAssign for CpuFeatures {
-  fn bitor_assign(&mut self, rhs: Self) {
-    use ops::BitOr;
-    *self = self.bitor(rhs);
-  }
-}
-
-impl ops::BitAnd for CpuFeatures {
-  type Output = Self;
-
-  fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
-}
-
-impl ops::BitAndAssign for CpuFeatures {
-  fn bitand_assign(&mut self, rhs: Self) {
-    use ops::BitAnd;
-    *self = self.bitand(rhs);
-  }
-}
-
-/// Tuning flags
-#[derive(
-  Debug,
-  Copy,
-  Clone,
-  PartialEq,
-  Eq,
-  PartialOrd,
-  Ord,
-  Hash,
-  num_enum::FromPrimitive,
-  num_enum::IntoPrimitive,
-)]
-#[repr(u8)]
-pub enum TuneFamily {
-  /// Generic
-  ///
-  /// This indicates that the compiled database should not be tuned for any
-  /// particular target platform.
-  #[num_enum(default)]
-  Generic = hs::HS_TUNE_FAMILY_GENERIC,
-  /// Intel(R) microarchitecture code name Sandy Bridge
-  SandyBridge = hs::HS_TUNE_FAMILY_SNB,
-  /// Intel(R) microarchitecture code name Ivy Bridge
-  IvyBridge = hs::HS_TUNE_FAMILY_IVB,
-  /// Intel(R) microarchitecture code name Haswell
-  Haswell = hs::HS_TUNE_FAMILY_HSW,
-  /// Intel(R) microarchitecture code name Silvermont
-  Silvermont = hs::HS_TUNE_FAMILY_SLM,
-  /// Intel(R) microarchitecture code name Broadwell
-  Broadwell = hs::HS_TUNE_FAMILY_BDW,
-  /// Intel(R) microarchitecture code name Skylake
-  Skylake = hs::HS_TUNE_FAMILY_SKL,
-  /// Intel(R) microarchitecture code name Skylake Server
-  SkylakeServer = hs::HS_TUNE_FAMILY_SKX,
-  /// Intel(R) microarchitecture code name Goldmont
-  Goldmont = hs::HS_TUNE_FAMILY_GLM,
-  /// Intel(R) microarchitecture code name Icelake
-  Icelake = hs::HS_TUNE_FAMILY_ICL,
-  /// Intel(R) microarchitecture code name Icelake Server
-  IcelakeServer = hs::HS_TUNE_FAMILY_ICX,
-}
-
-impl TuneFamily {
-  /* FIXME: make num_enum support const fn! */
-  pub(crate) fn into_native(self) -> c_uint {
-    let x: u8 = self.into();
-    x as c_uint
+    pub(crate) const fn from_native(x: c_ulonglong) -> Self { Self(x as u8) }
   }
 
-  pub(crate) fn from_native(x: c_uint) -> Self { (x as u8).into() }
+  impl BitSet for CpuFeatures {
+    fn nonzero(&self) -> bool { self.0 != 0 }
+  }
+
+  impl ops::BitOr for CpuFeatures {
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self { Self(self.0.bitor(other.0)) }
+  }
+
+  impl ops::BitOrAssign for CpuFeatures {
+    fn bitor_assign(&mut self, rhs: Self) {
+      use ops::BitOr;
+      *self = self.bitor(rhs);
+    }
+  }
+
+  impl ops::BitAnd for CpuFeatures {
+    type Output = Self;
+
+    fn bitand(self, other: Self) -> Self { Self(self.0.bitand(other.0)) }
+  }
+
+  impl ops::BitAndAssign for CpuFeatures {
+    fn bitand_assign(&mut self, rhs: Self) {
+      use ops::BitAnd;
+      *self = self.bitand(rhs);
+    }
+  }
+
+  /// Tuning flags
+  #[derive(
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    num_enum::FromPrimitive,
+    num_enum::IntoPrimitive,
+  )]
+  #[repr(u8)]
+  pub enum TuneFamily {
+    /// Generic
+    ///
+    /// This indicates that the compiled database should not be tuned for any
+    /// particular target platform.
+    #[num_enum(default)]
+    Generic = hs::HS_TUNE_FAMILY_GENERIC,
+    /// Intel(R) microarchitecture code name Sandy Bridge
+    SandyBridge = hs::HS_TUNE_FAMILY_SNB,
+    /// Intel(R) microarchitecture code name Ivy Bridge
+    IvyBridge = hs::HS_TUNE_FAMILY_IVB,
+    /// Intel(R) microarchitecture code name Haswell
+    Haswell = hs::HS_TUNE_FAMILY_HSW,
+    /// Intel(R) microarchitecture code name Silvermont
+    Silvermont = hs::HS_TUNE_FAMILY_SLM,
+    /// Intel(R) microarchitecture code name Broadwell
+    Broadwell = hs::HS_TUNE_FAMILY_BDW,
+    /// Intel(R) microarchitecture code name Skylake
+    Skylake = hs::HS_TUNE_FAMILY_SKL,
+    /// Intel(R) microarchitecture code name Skylake Server
+    SkylakeServer = hs::HS_TUNE_FAMILY_SKX,
+    /// Intel(R) microarchitecture code name Goldmont
+    Goldmont = hs::HS_TUNE_FAMILY_GLM,
+    /// Intel(R) microarchitecture code name Icelake
+    Icelake = hs::HS_TUNE_FAMILY_ICL,
+    /// Intel(R) microarchitecture code name Icelake Server
+    IcelakeServer = hs::HS_TUNE_FAMILY_ICX,
+  }
+
+  impl TuneFamily {
+    /* FIXME: make num_enum support const fn! */
+    pub(crate) fn into_native(self) -> c_uint {
+      let x: u8 = self.into();
+      x as c_uint
+    }
+
+    pub(crate) fn from_native(x: c_uint) -> Self { (x as u8).into() }
+  }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -458,6 +468,7 @@ impl ops::BitAndAssign for ExtFlags {
   }
 }
 
+/// Integer bitsets for the chimera library.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
@@ -468,7 +479,11 @@ pub mod chimera {
 
   /* NB: This MUST have the same representation as a c_uint in order to
    * mem::transmute a vector of these into a vector of c_uint! */
-  /// Pattern flags
+  /// Flags which modify the behaviour of individual expressions.
+  ///
+  /// Multiple flags may be used by ORing them together. Note that flags may
+  /// always be overridden by switches in the pattern string such as `(?i)`
+  /// for case-insensitive matching.
   #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   #[repr(transparent)]
   pub struct ChimeraFlags(c_uint);
@@ -549,7 +564,7 @@ pub mod chimera {
     }
   }
 
-  /// Compile mode flags
+  /// Compiler mode flags that affect the database as a whole.
   ///
   /// The mode flags are used as values for the mode parameter of the various
   /// compile calls

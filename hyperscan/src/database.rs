@@ -5,7 +5,10 @@
 use crate::{
   error::HyperscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
-  flags::{CpuFeatures, Flags, Mode, TuneFamily},
+  flags::{
+    platform::{CpuFeatures, TuneFamily},
+    Flags, Mode,
+  },
 };
 use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 

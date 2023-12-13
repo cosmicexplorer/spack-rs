@@ -154,8 +154,8 @@ impl Expression {
   /// let info = expr.info(Flags::default())?;
   ///
   /// assert_eq!(info, ExprInfo {
-  ///   min_width: ExprWidth::parse_min_width(5),
-  ///   max_width: ExprWidth::parse_max_width(5),
+  ///   min_width: ExprWidth(5),
+  ///   max_width: Some(ExprWidth(5)),
   ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
   ///   matches_at_eod: MatchAtEndBehavior::WillNeverMatchAtEOD,
   /// });
@@ -212,7 +212,7 @@ impl Expression {
   /// let info = expr.ext_info(Flags::default(), &ext)?;
   ///
   /// assert_eq!(info, ExprInfo {
-  ///   min_width: ExprWidth::parse_min_width(4),
+  ///   min_width: ExprWidth(4),
   ///   max_width: None,
   ///   unordered_matches: UnorderedMatchBehavior::OnlyOrdered,
   ///   matches_at_eod: MatchAtEndBehavior::WillNeverMatchAtEOD,
@@ -610,17 +610,23 @@ impl<'a> ExpressionSet<'a> {
   }
 }
 
+/// Data produced by hyperscan to analyze a particular expression.
+///
+/// These structs cover the output of [`Expression::info()`] and
+/// [`Expression::ext_info()`].
 pub mod info {
   use super::*;
 
+  /// The upper or lower bound for the length of any matches returned by a
+  /// pattern.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   #[repr(transparent)]
-  pub struct ExprWidth(usize);
+  pub struct ExprWidth(pub usize);
 
   impl ExprWidth {
-    pub const fn parse_min_width(x: c_uint) -> Self { Self(x as usize) }
+    pub(crate) const fn parse_min_width(x: c_uint) -> Self { Self(x as usize) }
 
-    pub const fn parse_max_width(x: c_uint) -> Option<Self> {
+    pub(crate) const fn parse_max_width(x: c_uint) -> Option<Self> {
       if x == c_uint::MAX {
         None
       } else {
@@ -629,6 +635,8 @@ pub mod info {
     }
   }
 
+  /// Whether the expression can produce matches that are not returned in order,
+  /// such as those produced by assertions.
   #[derive(
     Debug,
     Display,
@@ -661,14 +669,23 @@ pub mod info {
     }
   }
 
+  /// Whether this expression can produce matches at end of data (EOD).
+  ///
+  /// In streaming mode, EOD matches are raised during
+  /// [`Streamer::flush_eod()`](crate::stream::Streamer::flush_eod), since it is
+  /// only when `flush_eod()` is called that the EOD location is
+  /// known.
+  ///
+  /// Note: trailing `\b` word boundary assertions may also result in EOD
+  /// matches as end-of-data can act as a word boundary.
   #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   #[repr(i8)]
   pub enum MatchAtEndBehavior {
     /// Pattern will never match at EOD.
     WillNeverMatchAtEOD,
-    /// Pattern may match at EOD.
+    /// Pattern *may* match at EOD.
     MayMatchAtEOD,
-    /// Pattern will *Only* match at EOD.
+    /// Pattern will *only* match at EOD.
     WillOnlyMatchAtEOD,
   }
 
@@ -683,6 +700,10 @@ pub mod info {
     }
   }
 
+  /// Data produced by hyperscan to analyze a particular expression.
+  ///
+  /// This struct is produced by [`Expression::info()`]:
+  ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::{*, info::*}, flags::Flags};
@@ -690,14 +711,16 @@ pub mod info {
   /// let expr: Expression = "(he)llo$".parse()?;
   /// let info = expr.info(Flags::default())?;
   /// assert_eq!(info, ExprInfo {
-  ///   min_width: ExprWidth::parse_min_width(5),
-  ///   max_width: ExprWidth::parse_max_width(5),
+  ///   min_width: ExprWidth(5),
+  ///   max_width: Some(ExprWidth(5)),
   ///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
   ///   matches_at_eod: MatchAtEndBehavior::WillOnlyMatchAtEOD,
   /// });
   /// # Ok(())
   /// # }
   /// ```
+  ///
+  /// as well as [`Expression::ext_info()`]:
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -707,7 +730,7 @@ pub mod info {
   /// let ext = ExprExt::from_min_length(4);
   /// let info = expr.ext_info(Flags::default(), &ext)?;
   /// assert_eq!(info, ExprInfo {
-  ///   min_width: ExprWidth::parse_min_width(4),
+  ///   min_width: ExprWidth(4),
   ///   max_width: None,
   ///   unordered_matches: UnorderedMatchBehavior::AllowsUnordered,
   ///   matches_at_eod: MatchAtEndBehavior::MayMatchAtEOD,
@@ -717,15 +740,31 @@ pub mod info {
   /// ```
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ExprInfo {
+    /// The minimum length in bytes of a match for the pattern. If the pattern
+    /// has an unbounded minimum length, this will be 0.
+    ///
+    /// Note: in some cases when using advanced features to suppress matches
+    /// (such as extended parameters or [`Flags::SINGLEMATCH`]) this
+    /// may represent a conservative lower bound for the true minimum length of
+    /// a match.
     pub min_width: ExprWidth,
+    /// The maximum length in bytes of a match for the pattern. If the pattern
+    /// has an unbounded maximum length, this will be [`None`].
+    ///
+    /// Note: in some cases when using advanced features to suppress matches
+    /// (such as extended parameters or [`Flags::SINGLEMATCH`]) this
+    /// may represent a conservative upper bound for the true maximum length of
+    /// a match.
     pub max_width: Option<ExprWidth>,
     /// Whether this expression can produce matches that are not returned in
     /// order, such as those produced by assertions.
     pub unordered_matches: UnorderedMatchBehavior,
-    /// Whether this expression can produce matches at end of data (EOD). In
-    /// streaming mode, EOD matches are raised during @ref hs_close_stream(),
-    /// since it is only when @ref hs_close_stream() is called that the EOD
-    /// location is known.
+    /// Whether this expression can produce matches at end of data (EOD).
+    ///
+    /// In streaming mode, EOD matches are raised during
+    /// [`Streamer::flush_eod()`](crate::stream::Streamer::flush_eod), since it
+    /// is only when `flush_eod()` is called that the EOD location is
+    /// known.
     ///
     /// Note: trailing `\b` word boundary assertions may also result in EOD
     /// matches as end-of-data can act as a word boundary.
