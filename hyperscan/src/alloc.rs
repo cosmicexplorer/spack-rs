@@ -52,8 +52,6 @@ impl LayoutTracker {
     }
   }
 
-  pub fn allocator(&self) -> Arc<dyn GlobalAlloc> { Arc::clone(&self.allocator) }
-
   pub fn current_allocations(&mut self) -> Vec<(NonNull<u8>, Layout)> {
     self
       .layouts
@@ -66,10 +64,16 @@ impl LayoutTracker {
 
 impl MallocLikeAllocator for LayoutTracker {
   fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
+    /* .alloc() is undefined when provided a 0 size alloc, so handle it here. */
+    if size == 0 {
+      return None;
+    }
     /* NB: Allocate everything with 8-byte alignment. Only the database allocator
      * is documented to require 8-byte alignment; nothing else seems to break
      * if we use it for everything! */
     let layout = Layout::from_size_align(size, 8).unwrap();
+    /* This is part of the safety guarantee imposed by .alloc(): */
+    assert!(layout.size() > 0);
     let ret = NonNull::new(unsafe { self.allocator.alloc(layout) })?;
     assert!(self.layouts.lock().insert(ret, layout).is_none());
     Some(ret)

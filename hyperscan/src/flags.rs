@@ -163,6 +163,10 @@ impl Flags {
   /// [`Mode::SOM_HORIZON_MEDIUM`], and [`Mode::SOM_HORIZON_SMALL`], enabling
   /// this behaviour may reduce performance. And particularly, it may increase
   /// stream state requirements in streaming mode.
+  ///
+  /// See the [Start of Match] reference for more details.
+  ///
+  /// [Start of Match]: https://intel.github.io/hyperscan/dev-reference/compilation.html#som
   pub const SOM_LEFTMOST: Self = Self(hs::HS_FLAG_SOM_LEFTMOST as c_uint);
 }
 
