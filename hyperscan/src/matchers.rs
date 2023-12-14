@@ -523,15 +523,24 @@ pub mod stream {
       pub fn push_match(&mut self, m: StreamMatch) { self.sender.send(m).unwrap(); }
 
       pub fn reset(&mut self) { self.scanner.reset(); }
-    }
 
-    impl Clone for StreamScanMatcher {
-      fn clone(&self) -> Self {
+      pub fn replace_sender(
+        &mut self,
+        sender: mpsc::UnboundedSender<StreamMatch>,
+      ) -> mpsc::UnboundedSender<StreamMatch> {
+        mem::replace(&mut self.sender, sender)
+      }
+
+      pub fn clone_with_sender(&self, sender: mpsc::UnboundedSender<StreamMatch>) -> Self {
         Self {
-          sender: self.sender.clone(),
+          sender,
           scanner: self.scanner.boxed_clone(),
         }
       }
+    }
+
+    impl Clone for StreamScanMatcher {
+      fn clone(&self) -> Self { self.clone_with_sender(self.sender.clone()) }
     }
 
     pub(crate) unsafe extern "C" fn scan_slice_stream(

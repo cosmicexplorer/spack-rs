@@ -7,17 +7,14 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::{match_slice_stream, StreamMatcher},
+    stream::match_slice_stream,
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     ByteSlice, MatchResult, VectoredByteSlices,
   },
   stream::StreamSink,
 };
 #[cfg(feature = "async")]
-use crate::{
-  matchers::stream::scan::{scan_slice_stream, StreamScanMatcher},
-  stream::channel::StreamSinkChannel,
-};
+use crate::{matchers::stream::scan::scan_slice_stream, stream::channel::StreamSinkChannel};
 
 #[cfg(feature = "async")]
 use {

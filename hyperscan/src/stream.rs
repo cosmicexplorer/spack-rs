@@ -80,7 +80,6 @@ impl ops::Drop for LiveStream {
   }
 }
 
-#[derive(Clone)]
 pub struct StreamSink {
   pub live: LiveStream,
   pub matcher: StreamMatcher,
@@ -106,11 +105,30 @@ impl StreamSink {
     scratch.flush_eod_sync(self)
   }
 
-  pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> {
+  pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
     self.live.try_reset()?;
     self.matcher.reset();
     Ok(())
   }
+
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+    Ok(Self {
+      live: self.live.try_clone()?,
+      matcher: self.matcher.clone(),
+    })
+  }
+
+  pub fn try_clone_from(&mut self, other: &Self) -> Result<(), HyperscanRuntimeError> {
+    self.live.try_clone_from(&other.live)?;
+    self.matcher.clone_from(&other.matcher);
+    Ok(())
+  }
+}
+
+impl Clone for StreamSink {
+  fn clone(&self) -> Self { self.try_clone().unwrap() }
+
+  fn clone_from(&mut self, other: &Self) { self.try_clone_from(other).unwrap(); }
 }
 
 pub struct ScratchStreamSink {
@@ -118,11 +136,33 @@ pub struct ScratchStreamSink {
   pub scratch: Scratch,
 }
 
+impl ScratchStreamSink {
+  pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), HyperscanRuntimeError> {
+    let Self { sink, scratch } = self;
+    sink.scan(data, scratch)
+  }
+
+  pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
+    let Self { sink, scratch } = self;
+    sink.flush_eod(scratch)
+  }
+
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+    Ok(Self {
+      sink: self.sink.try_clone()?,
+      scratch: self.scratch.try_clone()?,
+    })
+  }
+}
+
+impl Clone for ScratchStreamSink {
+  fn clone(&self) -> Self { self.try_clone().unwrap() }
+}
+
 impl std::io::Write for ScratchStreamSink {
   fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
     self
-      .sink
-      .scan(ByteSlice::from_slice(buf), &mut self.scratch)
+      .scan(ByteSlice::from_slice(buf))
       .map(|()| buf.len())
       .map_err(std::io::Error::other)
   }
@@ -178,11 +218,48 @@ pub mod channel {
       scratch.flush_eod(self).await
     }
 
-    pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> {
+    pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
       self.live.try_reset()?;
       self.matcher.reset();
       Ok(())
     }
+
+    pub fn reset_channel(
+      &mut self,
+    ) -> (
+      mpsc::UnboundedSender<StreamMatch>,
+      mpsc::UnboundedReceiver<StreamMatch>,
+    ) {
+      let (tx, rx) = mpsc::unbounded_channel();
+      let old_tx = self.matcher.replace_sender(tx);
+      let old_rx = mem::replace(&mut self.rx, rx);
+      (old_tx, old_rx)
+    }
+
+    pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+      let (tx, rx) = mpsc::unbounded_channel();
+      Ok(Self {
+        live: self.live.try_clone()?,
+        matcher: self.matcher.clone_with_sender(tx),
+        rx,
+      })
+    }
+
+    pub fn try_clone_from(
+      &mut self,
+      other: &Self,
+    ) -> Result<mpsc::UnboundedReceiver<StreamMatch>, HyperscanRuntimeError> {
+      let (tx, rx) = mpsc::unbounded_channel();
+      self.live.try_clone_from(&other.live)?;
+      self.matcher = other.matcher.clone_with_sender(tx);
+      Ok(mem::replace(&mut self.rx, rx))
+    }
+  }
+
+  impl Clone for StreamSinkChannel {
+    fn clone(&self) -> Self { self.try_clone().unwrap() }
+
+    fn clone_from(&mut self, other: &Self) { self.try_clone_from(other).unwrap(); }
   }
 
   pub struct ScratchStreamSinkChannel {
@@ -191,6 +268,43 @@ pub mod channel {
     #[allow(clippy::type_complexity)]
     write_future: Option<(*const u8, Pin<Box<dyn Future<Output=io::Result<usize>>>>)>,
     shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>,
+  }
+
+  unsafe impl Send for ScratchStreamSinkChannel {}
+  unsafe impl Sync for ScratchStreamSinkChannel {}
+
+  impl ScratchStreamSinkChannel {
+    pub fn new(sink: StreamSinkChannel, scratch: Scratch) -> Self {
+      Self {
+        sink,
+        scratch,
+        write_future: None,
+        shutdown_future: None,
+      }
+    }
+
+    pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
+      let Self { sink, scratch, .. } = self;
+      sink.scan(data, scratch).await
+    }
+
+    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
+      let Self { sink, scratch, .. } = self;
+      sink.flush_eod(scratch).await
+    }
+
+    pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+      Ok(Self {
+        sink: self.sink.try_clone()?,
+        scratch: self.scratch.try_clone()?,
+        write_future: None,
+        shutdown_future: None,
+      })
+    }
+  }
+
+  impl Clone for ScratchStreamSinkChannel {
+    fn clone(&self) -> Self { self.try_clone().unwrap() }
   }
 
   impl io::AsyncWrite for ScratchStreamSinkChannel {
@@ -217,11 +331,9 @@ pub mod channel {
         let buf_len = buf.len();
         let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
           unsafe { &mut *s }
-            .sink
-            .scan(
-              ByteSlice::from_slice(unsafe { slice::from_raw_parts(buf_ptr, buf_len) }),
-              unsafe { &mut (*s).scratch },
-            )
+            .scan(ByteSlice::from_slice(unsafe {
+              slice::from_raw_parts(buf_ptr, buf_len)
+            }))
             .and_then(move |()| async move { Ok(buf_len) })
             .map_err(io::Error::other),
         );
@@ -255,18 +367,15 @@ pub mod channel {
         Poll::Ready(ret)
       } else {
         let s: *mut Self = self.as_mut().get_mut();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
-          unsafe { &mut *s }
-            .sink
-            .flush_eod(unsafe { &mut (*s).scratch })
-            .map_err(io::Error::other),
-        );
+        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> =
+          Box::pin(unsafe { &mut *s }.flush_eod().map_err(io::Error::other));
 
         if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
           return Poll::Ready(ret);
         }
 
         self.shutdown_future = Some(fut);
+
         Poll::Pending
       }
     }
