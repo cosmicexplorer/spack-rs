@@ -16,6 +16,7 @@ jobs:
       matrix:
         args:
           - -p super-process
+          # Fails due to tokio for some reason due to event-listener dep from the "fs" feature?
           # - -p spack-rs
           - -p hyperscan-async
           - -p re2
@@ -77,8 +78,7 @@ jobs:
         args:
           - -p super-process -p spack-rs
           - -p re2 -vv
-          # This keeps rebuilding hyperscan and taking 20 minutes, not clear why.
-          # - -p hyperscan-async --no-default-features --features chimera,static,compiler -vv
+          - -p hyperscan-async --no-default-features --features chimera,static,compiler,async -vv
     runs-on: ubuntu-latest
 
     steps:
