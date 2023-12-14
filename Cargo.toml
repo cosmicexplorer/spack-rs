@@ -25,7 +25,7 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 [package]
 name                    = "spack-rs"
 description             = "Summon spack from rust build scripts!"
-version                 = "0.0.3"
+version                 = "0.0.4"
 edition.workspace       = true
 license                 = "(Apache-2.0 OR MIT)"
 repository.workspace    = true
@@ -36,10 +36,10 @@ name                    = "spack"
 
 [workspace.dependencies]
 hyperscan-async         = { path = "hyperscan" }
-hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.4" }
+hyperscan-async-sys     = { path = "hyperscan/sys", version = "0.0.5" }
 re2                     = { path = "re2" }
-re2-sys                 = { path = "re2/sys", version = "0.0.4" }
-spack                   = { path = ".", version = "0.0.3", package = "spack-rs" }
+re2-sys                 = { path = "re2/sys", version = "0.0.5" }
+spack                   = { path = ".", version = "0.0.4", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.1" }
 
 async-stream            = "0.3.3"
