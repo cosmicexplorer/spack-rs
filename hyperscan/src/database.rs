@@ -48,7 +48,7 @@ impl Database {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let expr: Expression = "(he)ll".parse()?;
-  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK, Platform::get())?;
+  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK, None)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -68,7 +68,7 @@ impl Database {
     expression: &Expression,
     flags: Flags,
     mode: Mode,
-    platform: &Platform,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -78,7 +78,9 @@ impl Database {
           expression.as_ptr(),
           flags.into_native(),
           mode.into_native(),
-          platform.as_ref_native(),
+          platform
+            .map(|p| mem::transmute(p.as_ref_native()))
+            .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
         )
@@ -93,7 +95,7 @@ impl Database {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let expr: Literal = "he\0ll".parse()?;
-  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, Platform::get())?;
+  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, None)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -113,7 +115,7 @@ impl Database {
     literal: &Literal,
     flags: Flags,
     mode: Mode,
-    platform: &Platform,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -124,7 +126,9 @@ impl Database {
           flags.into_native(),
           literal.as_bytes().len(),
           mode.into_native(),
-          platform.as_ref_native(),
+          platform
+            .map(|p| mem::transmute(p.as_ref_native()))
+            .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
         )
@@ -149,7 +153,7 @@ impl Database {
   ///   .with_ids([ExprId(1), ExprId(2)])
   ///   .with_exts([None, Some(&ext)]);
   ///
-  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK, Platform::get())?;
+  /// let db = Database::compile_multi(&expr_set, Mode::BLOCK, None)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -176,7 +180,7 @@ impl Database {
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
-    platform: &Platform,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -190,7 +194,9 @@ impl Database {
             exts_ptr,
             expression_set.num_elements(),
             mode.into_native(),
-            platform.as_ref_native(),
+            platform
+              .map(|p| mem::transmute(p.as_ref_native()))
+              .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
           )
@@ -201,7 +207,9 @@ impl Database {
             expression_set.ids_ptr(),
             expression_set.num_elements(),
             mode.into_native(),
-            platform.as_ref_native(),
+            platform
+              .map(|p| mem::transmute(p.as_ref_native()))
+              .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
           )
@@ -222,7 +230,7 @@ impl Database {
   ///   .with_flags([Flags::default(), Flags::default()])
   ///   .with_ids([ExprId(2), ExprId(1)]);
   ///
-  /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK, Platform::get())?;
+  /// let db = Database::compile_multi_literal(&lit_set, Mode::BLOCK, None)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -255,7 +263,7 @@ impl Database {
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
-    platform: &Platform,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -268,7 +276,9 @@ impl Database {
           literal_set.lengths_ptr(),
           literal_set.num_elements(),
           mode.into_native(),
-          platform.as_ref_native(),
+          platform
+            .map(|p| mem::transmute(p.as_ref_native()))
+            .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
         )
@@ -676,13 +686,14 @@ pub mod chimera {
     pub fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::{*, chimera::*}};
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
     ///
     /// let expr: ChimeraExpression = "(he)ll".parse()?;
-    /// let _db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS, Platform::get())?;
+    /// # #[allow(unused_variables)]
+    /// let db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS, None)?;
     /// # Ok(())
-    /// # })}
+    /// # }
     /// ```
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
@@ -690,7 +701,7 @@ pub mod chimera {
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
       mode: ChimeraMode,
-      platform: &Platform,
+      platform: Option<&Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
@@ -700,7 +711,9 @@ pub mod chimera {
             expression.as_ptr(),
             flags.into_native(),
             mode.into_native(),
-            platform.as_ref_native(),
+            platform
+              .map(|p| mem::transmute(p.as_ref_native()))
+              .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
           )
@@ -711,9 +724,8 @@ pub mod chimera {
     }
 
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::{*, chimera::*}, matchers::chimera::*};
-    /// use futures_util::TryStreamExt;
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
     /// let b_expr: ChimeraExpression = "b+".parse()?;
@@ -721,25 +733,25 @@ pub mod chimera {
     ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
     ///   .with_ids([ExprId(1), ExprId(2)])
     ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
-    /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS, Platform::get())?;
+    /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS, None)?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
-    /// let m = |_: &_| ChimeraMatchResult::Continue;
-    /// let e = |_: &_| ChimeraMatchResult::Continue;
-    /// let matches: Vec<&str> = scratch.scan_channel(&db, "aardvark imbibbe".into(), m, e)
-    ///  .and_then(|ChimeraMatch { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-    ///  .try_collect()
-    ///  .await?;
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch.scan_sync(&db, "aardvark imbibbe".into(), |ChimeraMatch { source, .. }| {
+    ///    matches.push(unsafe { source.as_str() });
+    ///    ChimeraMatchResult::Continue
+    ///  }, e)?;
     /// assert_eq!(&matches, &["aa", "a", "b", "bb"]);
     /// # Ok(())
-    /// # })}
+    /// # }
     /// ```
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
-      platform: &Platform,
+      platform: Option<&Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
@@ -758,7 +770,9 @@ pub mod chimera {
               mode.into_native(),
               match_limit,
               match_limit_recursion,
-              platform.as_ref_native(),
+              platform
+                .map(|p| mem::transmute(p.as_ref_native()))
+                .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
             )
@@ -769,7 +783,9 @@ pub mod chimera {
               exprs.ids_ptr(),
               exprs.num_elements(),
               mode.into_native(),
-              platform.as_ref_native(),
+              platform
+                .map(|p| mem::transmute(p.as_ref_native()))
+                .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
             )

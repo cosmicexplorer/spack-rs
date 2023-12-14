@@ -13,7 +13,6 @@ use crate::{error::HyperscanRuntimeError, hs};
 
 use indexmap::IndexMap;
 use libc;
-use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 
 use std::{
@@ -110,7 +109,7 @@ unsafe fn dealloc_or_libc_fallback(allocator: &RwLock<Option<LayoutTracker>>, p:
 
 macro_rules! allocator {
   ($lock_name:ident, $alloc_name:ident, $free_name:ident) => {
-    static $lock_name: Lazy<RwLock<Option<LayoutTracker>>> = Lazy::new(|| RwLock::new(None));
+    static $lock_name: RwLock<Option<LayoutTracker>> = RwLock::new(None);
 
     pub(crate) unsafe extern "C" fn $alloc_name(size: usize) -> *mut c_void {
       alloc_or_libc_fallback(&$lock_name, size)

@@ -40,7 +40,7 @@
 //! ```
 
 use crate::{
-  database::{Database, Platform},
+  database::Database,
   error::{HyperscanCompileError, HyperscanRuntimeError},
   flags::{ExtFlags, Flags, Mode},
   hs,
@@ -248,9 +248,9 @@ impl Expression {
     Ok(ret)
   }
 
-  /// Call [`Database::compile()`] with the result of [`Platform::get()`].
+  /// Call [`Database::compile()`] with [`None`] for the platform.
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile(self, flags, mode, Platform::get())
+    Database::compile(self, flags, mode, None)
   }
 }
 
@@ -329,10 +329,9 @@ impl Literal {
   /// any null terminator.
   pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
 
-  /// Call [`Database::compile_literal()`] with the result of
-  /// [`Platform::get()`].
+  /// Call [`Database::compile_literal()`] with [`None`] for the platform.
   pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_literal(self, flags, mode, Platform::get())
+    Database::compile_literal(self, flags, mode, None)
   }
 }
 
@@ -573,9 +572,9 @@ impl<'a> ExpressionSet<'a> {
     self
   }
 
-  /// Call [`Database::compile_multi()`] with the result of [`Platform::get()`].
+  /// Call [`Database::compile_multi()`] with [`None`] for the platform.
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_multi(&self, mode, Platform::get())
+    Database::compile_multi(&self, mode, None)
   }
 
   /// The number of patterns in this set.
@@ -1197,10 +1196,9 @@ impl<'a> LiteralSet<'a> {
     self
   }
 
-  /// Call [`Database::compile_multi_literal()`] with the result of
-  /// [`Platform::get()`].
+  /// Call [`Database::compile_multi_literal()`] with [`None`] for the platform.
   pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
-    Database::compile_multi_literal(&self, mode, Platform::get())
+    Database::compile_multi_literal(&self, mode, None)
   }
 
   /// The number of literals in this set.
@@ -1265,7 +1263,7 @@ impl<'a> LiteralSet<'a> {
 pub mod chimera {
   use super::ExprId;
   use crate::{
-    database::{chimera::ChimeraDb, Platform},
+    database::chimera::ChimeraDb,
     error::chimera::ChimeraCompileError,
     flags::chimera::{ChimeraFlags, ChimeraMode},
   };
@@ -1355,13 +1353,13 @@ pub mod chimera {
       Ok(Self(CString::new(x)?))
     }
 
-    /// Call [`ChimeraDb::compile()`] with the result of [`Platform::get()`].
+    /// Call [`ChimeraDb::compile()`] with [`None`] for the platform.
     pub fn compile(
       &self,
       flags: ChimeraFlags,
       mode: ChimeraMode,
     ) -> Result<ChimeraDb, ChimeraCompileError> {
-      ChimeraDb::compile(self, flags, mode, Platform::get())
+      ChimeraDb::compile(self, flags, mode, None)
     }
   }
 
@@ -1593,10 +1591,9 @@ pub mod chimera {
       self
     }
 
-    /// Call [`ChimeraDb::compile_multi()`] with the result of
-    /// [`Platform::get()`].
+    /// Call [`ChimeraDb::compile_multi()`] with [`None`] for the platform.
     pub fn compile(self, mode: ChimeraMode) -> Result<ChimeraDb, ChimeraCompileError> {
-      ChimeraDb::compile_multi(&self, mode, Platform::get())
+      ChimeraDb::compile_multi(&self, mode, None)
     }
 
     /// The number of patterns in this set.

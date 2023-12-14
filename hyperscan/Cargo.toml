@@ -10,7 +10,7 @@ authors.workspace       = true
 [features]
 default                 = ["static", "compiler"]
 static                  = ["hyperscan-async-sys/static"]
-compiler                = ["hyperscan-async-sys/compiler"]
+compiler                = ["hyperscan-async-sys/compiler", "dep:once_cell"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["hyperscan-async-sys/chimera"]
 async                   = ["dep:async-stream", "dep:futures-core", "dep:futures-util", "dep:tokio"]
@@ -30,7 +30,7 @@ futures-util            = { workspace = true, optional = true }
 indexmap                = { workspace = true, optional = true }
 libc.workspace          = true
 num_enum.workspace      = true
-once_cell.workspace     = true
+once_cell               = { workspace = true, optional = true }
 parking_lot             = { workspace = true, optional = true }
 static_assertions.workspace = true
 thiserror.workspace     = true

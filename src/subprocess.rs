@@ -113,8 +113,7 @@ pub mod python {
 
     #[tokio::test]
     async fn test_detect_python() -> Result<(), crate::Error> {
-      #[allow(unused_variables)]
-      let python = FoundPython::detect().await.unwrap();
+      let _python = FoundPython::detect().await.unwrap();
       Ok(())
     }
   }
