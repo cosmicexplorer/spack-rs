@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-use spack::utils::declarative::{bindings, resolve};
+use spack::utils::declarative::resolve;
 
 use bindgen;
 use tokio::fs;
@@ -49,7 +49,7 @@ async fn main() -> eyre::Result<()> {
     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
     .header("src/hs.h");
   for p in prefixes.into_iter() {
-    bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
+    bindings = bindings.clang_arg(format!("-I{}", p.include_subdir().display()));
   }
 
   bindings = bindings.allowlist_item("hs.*");

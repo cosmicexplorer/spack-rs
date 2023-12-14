@@ -3,7 +3,7 @@
 
 #![allow(clippy::single_component_path_imports)]
 
-use spack::utils::declarative::{bindings, resolve};
+use spack::utils::declarative::resolve;
 
 use bindgen;
 use cc;
@@ -50,7 +50,7 @@ async fn main() -> eyre::Result<()> {
   bindings = bindings.allowlist_item("re2::.*");
   bindings = bindings.allowlist_item("re2_c_bindings::.*");
   for p in prefixes.iter().cloned() {
-    bindings = bindings.clang_arg(format!("-I{}", bindings::get_include_subdir(p).display()));
+    bindings = bindings.clang_arg(format!("-I{}", p.include_subdir().display()));
   }
   bindings.generate()?.write_to_file(&outfile)?;
 
@@ -61,7 +61,7 @@ async fn main() -> eyre::Result<()> {
       .std("c++20")
       .file("src/c-bindings.cpp")
       .include("src")
-      .includes(prefixes.into_iter().map(bindings::get_include_subdir))
+      .includes(prefixes.into_iter().map(|p| p.include_subdir()))
       .try_compile("re2_c_bindings")
   })
   .await??;

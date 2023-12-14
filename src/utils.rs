@@ -276,6 +276,10 @@ pub mod prefix {
         }
       }
     }
+
+    pub fn include_subdir(&self) -> PathBuf { self.path.join("include") }
+
+    pub fn lib_subdir(&self) -> PathBuf { self.path.join("lib") }
   }
 
   #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
@@ -714,14 +718,6 @@ pub mod declarative {
 
       resolve_recipe(env_label.clone(), cur_recipe, env_instructions).await
     }
-  }
-
-  pub mod bindings {
-    use crate::utils::prefix;
-
-    use std::path::PathBuf;
-
-    pub fn get_include_subdir(prefix: prefix::Prefix) -> PathBuf { prefix.path.join("include") }
   }
 
   pub mod linker {
