@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Async wrapper for the hyperscan C++ regex library.
+//! Wrapper for the hyperscan C++ regex library.
 
 /* Warn for missing docs in general, and hard require crate-level docs. */
 // #![warn(missing_docs)]

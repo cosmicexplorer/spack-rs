@@ -1,6 +1,6 @@
 [package]
 name                    = "hyperscan-async"
-description             = "Async wrapper for the hyperscan C++ regex library."
+description             = "Wrapper for the hyperscan C++ regex library."
 version                 = "0.0.4"
 edition.workspace       = true
 license                 = "BSD-3-Clause"
