@@ -432,9 +432,9 @@ impl Scratch {
     match self.as_ref_native() {
       None => Ok(0),
       Some(p) => {
-        let mut n = mem::MaybeUninit::<usize>::uninit();
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, n.as_mut_ptr()) })?;
-        Ok(unsafe { n.assume_init() })
+        let mut n: usize = 0;
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
+        Ok(n)
       },
     }
   }
@@ -543,6 +543,7 @@ pub mod chimera {
   use super::*;
   use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
 
+  #[cfg(feature = "async")]
   use async_stream::stream;
 
   pub type NativeChimeraScratch = hs::ch_scratch;
@@ -724,9 +725,9 @@ pub mod chimera {
       match self.as_ref_native() {
         None => Ok(0),
         Some(p) => {
-          let mut n = mem::MaybeUninit::<usize>::uninit();
-          ChimeraRuntimeError::from_native(unsafe { hs::ch_scratch_size(p, n.as_mut_ptr()) })?;
-          Ok(unsafe { n.assume_init() })
+          let mut n: usize = 0;
+          ChimeraRuntimeError::from_native(unsafe { hs::ch_scratch_size(p, &mut n) })?;
+          Ok(n)
         },
       }
     }

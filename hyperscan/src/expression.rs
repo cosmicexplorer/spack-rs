@@ -846,7 +846,7 @@ impl Default for ExprExt {
 
 impl ExprExt {
   /// Generate an empty instance with all features disabled.
-  pub const fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
+  pub fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
 
   /// The minimum end offset in the data stream at which this expression should
   /// match successfully.

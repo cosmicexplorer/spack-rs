@@ -16,9 +16,8 @@ jobs:
       matrix:
         args:
           - -p super-process
-          # These two fail because of dependencies and it's not clear why???
           # - -p spack-rs
-          # - -p hyperscan-async
+          - -p hyperscan-async
           - -p re2
     runs-on: ubuntu-latest
 
@@ -79,7 +78,7 @@ jobs:
           - -p super-process -p spack-rs
           - -p re2 -vv
           # This keeps rebuilding hyperscan and taking 20 minutes, not clear why.
-          # - -p hyperscan-async --no-default-features --features chimera,static,compile -vv
+          # - -p hyperscan-async --no-default-features --features chimera,static,compiler -vv
     runs-on: ubuntu-latest
 
     steps:
@@ -234,13 +233,19 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features static,compile -vv
+        args: -p hyperscan-async --no-default-features --features static,alloc,compiler -vv
+
+    - name: test hyperscan-static-with-compile-async
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p hyperscan-async --no-default-features --features static,alloc,async,compiler -vv
 
     - name: test hyperscan-dynamic-with-compile
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features dynamic,compile -vv
+        args: -p hyperscan-async --no-default-features --features dynamic,compiler -vv
 
     # FIXME: add hyperscan-static-runtime-only and hyperscan-dynamic-runtime-only!!
 
@@ -248,4 +253,10 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera,static,compile -vv
+        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,compiler -vv
+
+    - name: test hyperscan-static-chimera-async
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,async,compiler -vv

@@ -332,9 +332,8 @@ pub mod chimera {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
   /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
-  /// use futures_util::TryStreamExt;
   /// use std::{alloc::System, sync::Arc};
   ///
   /// hyperscan::alloc::chimera::set_chimera_allocator(Arc::new(System))?;
@@ -344,15 +343,15 @@ pub mod chimera {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let m = |_: &_| ChimeraMatchResult::Continue;
-  /// let e = |_: &_| ChimeraMatchResult::Continue;
-  /// let matches: Vec<&str> = scratch.scan_channel(&db, "hello".into(), m, e)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// let e = |_| ChimeraMatchResult::Continue;
+  /// scratch.scan_sync(&db, "hello".into(), |m| {
+  ///   matches.push(unsafe { m.source.as_str() });
+  ///   ChimeraMatchResult::Continue
+  /// }, e)?;
   /// assert_eq!(&matches, &["hell"]);
   /// # Ok(())
-  /// # })}
+  /// # }
   /// ```
   pub fn set_chimera_allocator(
     allocator: Arc<impl GlobalAlloc+'static>,
