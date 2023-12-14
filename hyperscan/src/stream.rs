@@ -64,6 +64,13 @@ impl LiveStream {
   pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
   }
+
+  pub fn compress(
+    &self,
+    into: compress::CompressReserveBehavior,
+  ) -> Result<compress::CompressedStream, CompressionError> {
+    compress::CompressedStream::compress(into, self)
+  }
 }
 
 impl Clone for LiveStream {
@@ -382,6 +389,129 @@ pub mod channel {
 
     /* TODO: add vectored write support if vectored streaming databases ever
      * exist! */
+  }
+}
+
+pub mod compress {
+  use super::*;
+
+  pub enum CompressReserveBehavior {
+    NewBuf,
+    ExpandBuf(Vec<u8>),
+    FixedSizeBuf(Vec<u8>),
+  }
+
+  impl CompressReserveBehavior {
+    pub fn current_buf(&mut self) -> Option<&mut Vec<u8>> {
+      match self {
+        Self::NewBuf => None,
+        Self::ExpandBuf(ref mut buf) => Some(buf),
+        Self::FixedSizeBuf(ref mut buf) => Some(buf),
+      }
+    }
+  }
+
+  pub(crate) enum ReserveResponse {
+    MadeSpace(Vec<u8>),
+    NoSpace(Vec<u8>),
+  }
+
+  impl CompressReserveBehavior {
+    pub(crate) fn reserve(self, n: usize) -> ReserveResponse {
+      match self {
+        Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)),
+        Self::ExpandBuf(mut buf) => {
+          if n > buf.capacity() {
+            let additional = n - buf.capacity();
+            buf.reserve(additional);
+          }
+          ReserveResponse::MadeSpace(buf)
+        },
+        Self::FixedSizeBuf(buf) => {
+          if buf.capacity() <= n {
+            ReserveResponse::NoSpace(buf)
+          } else {
+            ReserveResponse::MadeSpace(buf)
+          }
+        },
+      }
+    }
+  }
+
+  pub struct CompressedStream {
+    pub buf: Vec<u8>,
+  }
+
+  impl CompressedStream {
+    pub(crate) fn compress(
+      mut into: CompressReserveBehavior,
+      live: &LiveStream,
+    ) -> Result<Self, CompressionError> {
+      let mut required_space: usize = 0;
+
+      /* If we already have an existing buffer to play around with, try that right
+       * off to see if it was enough to avoid further allocations. */
+      if let Some(ref mut buf) = into.current_buf() {
+        match HyperscanRuntimeError::from_native(unsafe {
+          hs::hs_compress_stream(
+            live.as_ref_native(),
+            mem::transmute(buf.as_mut_ptr()),
+            buf.len(),
+            &mut required_space,
+          )
+        }) {
+          Err(HyperscanRuntimeError::InsufficientSpace) => (),
+          Err(e) => return Err(e.into()),
+          Ok(()) => {
+            return Ok(Self {
+              buf: mem::take(buf),
+            })
+          },
+        }
+      } else {
+        /* Otherwise (e.g. if we have a NewBuf), get the required space first
+         * before trying to allocate anything by providing
+         * NULL for the data pointer. */
+        assert_eq!(
+          Err(HyperscanRuntimeError::InsufficientSpace),
+          HyperscanRuntimeError::from_native(unsafe {
+            hs::hs_compress_stream(
+              live.as_ref_native(),
+              ptr::null_mut(),
+              0,
+              &mut required_space,
+            )
+          })
+        );
+      }
+      /* At this point, we know some allocation is necessary, and the
+       * `required_space` variable is populated with the amount of space
+       * necessary to compress. */
+
+      /* Allocate or fail allocation. */
+      let mut allocated_space: usize = 0;
+      let buf = match into.reserve(required_space) {
+        ReserveResponse::NoSpace(buf) => {
+          return Err(CompressionError::NoSpace(required_space, buf))
+        },
+        ReserveResponse::MadeSpace(mut buf) => {
+          HyperscanRuntimeError::from_native(unsafe {
+            hs::hs_compress_stream(
+              live.as_ref_native(),
+              mem::transmute(buf.as_mut_ptr()),
+              buf.len(),
+              &mut allocated_space,
+            )
+          })?;
+          /* No particular reason these values should be different across two
+           * subsequent calls. */
+          debug_assert_eq!(required_space, allocated_space);
+          buf
+        },
+      };
+
+      Ok(Self { buf })
+    }
   }
 }
 
@@ -883,39 +1013,6 @@ pub mod channel {
 /* fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) ->
  * Poll<io::Result<()>> { */
 /* self.sink_pin().poll_shutdown(cx) */
-/* } */
-/* } */
-
-/* pub enum CompressReserveBehavior { */
-/* NewBuf, */
-/* ExpandBuf(Vec<u8>), */
-/* FixedSizeBuf(Vec<u8>), */
-/* } */
-
-/* pub(crate) enum ReserveResponse { */
-/* MadeSpace(Vec<u8>), */
-/* NoSpace(Vec<u8>), */
-/* } */
-
-/* impl CompressReserveBehavior { */
-/* pub(crate) fn reserve(self, n: usize) -> ReserveResponse { */
-/* match self { */
-/* Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)), */
-/* Self::ExpandBuf(mut buf) => { */
-/* if n > buf.capacity() { */
-/* let additional = n - buf.capacity(); */
-/* buf.reserve(additional); */
-/* } */
-/* ReserveResponse::MadeSpace(buf) */
-/* }, */
-/* Self::FixedSizeBuf(buf) => { */
-/* if buf.capacity() <= n { */
-/* ReserveResponse::NoSpace(buf) */
-/* } else { */
-/* ReserveResponse::MadeSpace(buf) */
-/* } */
-/* }, */
-/* } */
 /* } */
 /* } */
 

@@ -47,7 +47,6 @@ use crate::{
 };
 
 use displaydoc::Display;
-use itertools::Itertools;
 
 use std::{
   ffi::{CStr, CString},
@@ -1049,6 +1048,7 @@ impl<'a> fmt::Debug for LiteralSet<'a> {
           .map(|s| format!("{:?}", s))
           .unwrap_or_else(|_| format!("(non-utf8: {:?})", s))
       })
+      .collect::<Vec<_>>()
       .join(", ");
     write!(
       f,

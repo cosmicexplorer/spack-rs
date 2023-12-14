@@ -340,8 +340,8 @@ pub enum HyperscanCompileError {
 pub enum CompressionError {
   /// other error: {0}
   Other(#[from] HyperscanRuntimeError),
-  /// not enough space for {0} in buf
-  NoSpace(usize),
+  /// not enough space for {0} in buf {1:?}
+  NoSpace(usize, Vec<u8>),
 }
 
 /// Wrapper for errors returned by

@@ -14,7 +14,7 @@ compile                 = ["hyperscan-async-sys/compile"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["hyperscan-async-sys/chimera"]
 async                   = ["dep:async-stream", "dep:futures-core", "dep:futures-util", "dep:tokio", "dep:tokio-stream"]
-alloc                   = ["dep:parking_lot"]
+alloc                   = ["dep:indexmap", "dep:parking_lot"]
 
 [lib]
 name                    = "hyperscan"
@@ -27,8 +27,7 @@ cfg-if                  = "1"
 displaydoc.workspace    = true
 futures-core            = { workspace = true, optional = true }
 futures-util            = { workspace = true, optional = true }
-indexmap.workspace      = true
-itertools.workspace     = true
+indexmap                = { workspace = true, optional = true }
 libc.workspace          = true
 num_enum.workspace      = true
 once_cell.workspace     = true

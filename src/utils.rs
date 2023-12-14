@@ -170,7 +170,6 @@ pub mod prefix {
   use futures_core::stream::Stream;
   use futures_util::{pin_mut, stream::TryStreamExt};
   use indexmap::{IndexMap, IndexSet};
-  use itertools::Itertools;
   use once_cell::sync::Lazy;
   use regex::Regex;
   use thiserror::Error;
@@ -410,6 +409,7 @@ pub mod prefix {
         let joined_rpath: String = containing_dirs
           .into_iter()
           .map(|p| format!("{}", p.display()))
+          .collect::<Vec<_>>()
           .join(":");
         println!("cargo:joined_rpath={}", joined_rpath);
       }
