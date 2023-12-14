@@ -74,12 +74,12 @@ impl CannedOptions {
 /// represent a slice of arbitrary bytes:
 ///```
 /// # fn main() -> Result<(), re2::RE2Error> {
-/// use re2::{*, options::*, string::*};
+/// use re2::{*, options::*};
 ///
 /// let o: Options = CannedOptions::Latin1.into();
-/// let r = RE2::compile(StringView::from_slice(b"asdf"), o)?;
+/// let r = RE2::compile("asdf", o)?;
 /// assert_eq!(Encoding::Latin1, r.options().encoding);
-/// assert!(r.full_match_view(StringView::from_slice(b"asdf")));
+/// assert!(r.full_match("asdf"));
 /// # Ok(())
 /// # }
 /// ```

@@ -140,7 +140,8 @@ impl RE2 {
   ///   },
   /// );
   /// ```
-  pub fn compile(pattern: StringView, options: Options) -> Result<Self, CompileError> {
+  pub fn compile(pattern: &str, options: Options) -> Result<Self, CompileError> {
+    let pattern = StringView::from_str(pattern);
     let s = Self(unsafe { re2_c::RE2Wrapper::new(pattern.into_native(), &options.into_native()) });
     s.check_error()?;
     Ok(s)
@@ -155,11 +156,11 @@ impl RE2 {
   ///```
   /// # fn main() -> Result<(), re2::RE2Error> {
   /// let r: re2::RE2 = "asdf".parse()?;
-  /// assert_eq!(unsafe { r.pattern().as_str() }, "asdf");
+  /// assert_eq!(r.pattern(), "asdf");
   /// # Ok(())
   /// # }
   /// ```
-  pub fn pattern(&self) -> StringView { unsafe { StringView::from_native(self.0.pattern()) } }
+  pub fn pattern(&self) -> &str { unsafe { StringView::from_native(self.0.pattern()).as_str() } }
 
   /// Extract the options object provided to the compiler.
   ///
@@ -224,7 +225,7 @@ impl RE2 {
   ///
   /// let q = RE2::quote_meta("1.5-1.8?".into());
   /// let r: RE2 = unsafe { q.as_view().as_str() }.parse()?;
-  /// assert_eq!(r"1\.5\-1\.8\?", unsafe { r.pattern().as_str() });
+  /// assert_eq!(r"1\.5\-1\.8\?", r.pattern());
   /// assert!(r.full_match("1.5-1.8?"));
   /// # Ok(())
   /// # }
@@ -237,12 +238,13 @@ impl RE2 {
   ///
   /// let o = Options { literal: true, ..Default::default() };
   /// let r = RE2::compile("1.5-1.8?".into(), o)?;
-  /// assert_eq!("1.5-1.8?", unsafe { r.pattern().as_str() });
+  /// assert_eq!("1.5-1.8?", r.pattern());
   /// assert!(r.full_match("1.5-1.8?"));
   /// # Ok(())
   /// # }
   /// ```
-  pub fn quote_meta(pattern: StringView) -> StringWrapper {
+  pub fn quote_meta(pattern: &str) -> StringWrapper {
+    let pattern = StringView::from_str(pattern);
     let mut out = StringWrapper::from_view(pattern);
     unsafe { re2_c::RE2Wrapper::quote_meta(pattern.into_native(), out.as_mut_native()) };
     out
@@ -252,9 +254,7 @@ impl RE2 {
 impl str::FromStr for RE2 {
   type Err = CompileError;
 
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Self::compile(StringView::from_str(s), Options::default())
-  }
+  fn from_str(s: &str) -> Result<Self, Self::Err> { Self::compile(s, Options::default()) }
 }
 
 /// Deletes the underlying C++ object on drop.
@@ -269,9 +269,6 @@ impl ops::Drop for RE2 {
 /// The useful part: the matching interface.
 ///
 /// Matching methods tend to have a few variants:
-/// - Methods with a `*_view` suffix accept and return [`StringView`] instances.
-///   These may have arbitrary encodings, as opposed to UTF-8-encoded
-///   [`str`](prim@str) instances.
 /// - Methods with a `*_capturing` suffix will return a variable array of
 ///   strings corresponding to matching capture groups. For these methods,
 ///   requesting more groups than the result of [`Self::num_captures()`] will
@@ -300,8 +297,7 @@ impl RE2 {
     map_array(argv, StringView::from_str)
   }
 
-  /// [`Self::full_match()`] for arbitrary string encodings.
-  pub fn full_match_view(&self, text: StringView) -> bool {
+  pub(crate) fn full_match_view(&self, text: StringView) -> bool {
     unsafe { self.0.full_match(text.into_native()) }
   }
 
@@ -318,8 +314,7 @@ impl RE2 {
   /// ```
   pub fn full_match(&self, text: &str) -> bool { self.full_match_view(StringView::from_str(text)) }
 
-  /// [`Self::full_match_capturing()`] for arbitrary string encodings.
-  pub fn full_match_capturing_view<'a, const N: usize>(
+  pub(crate) fn full_match_capturing_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
   ) -> Option<[StringView<'a>; N]> {
@@ -377,8 +372,7 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
-  /// [`Self::partial_match()`] for arbitrary string encodings.
-  pub fn partial_match_view(&self, text: StringView) -> bool {
+  pub(crate) fn partial_match_view(&self, text: StringView) -> bool {
     unsafe { self.0.partial_match(text.into_native()) }
   }
 
@@ -399,8 +393,7 @@ impl RE2 {
     self.partial_match_view(StringView::from_str(text))
   }
 
-  /// [`Self::partial_match_capturing()`] for arbitrary string encodings.
-  pub fn partial_match_capturing_view<'a, const N: usize>(
+  pub(crate) fn partial_match_capturing_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
   ) -> Option<[StringView<'a>; N]> {
@@ -463,8 +456,7 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
-  /// [`Self::consume()`] for arbitrary string encodings.
-  pub fn consume_view(&self, text_view: &mut StringView) -> bool {
+  pub(crate) fn consume_view(&self, text_view: &mut StringView) -> bool {
     if !unsafe { self.0.consume(text_view.as_mut_native()) } {
       return false;
     }
@@ -492,8 +484,7 @@ impl RE2 {
     ret
   }
 
-  /// [`Self::consume_capturing()`] for arbitrary string encodings.
-  pub fn consume_capturing_view<'a, const N: usize>(
+  pub(crate) fn consume_capturing_view<'a, const N: usize>(
     &self,
     text_view: &mut StringView<'a>,
   ) -> Option<[StringView<'a>; N]> {
@@ -553,8 +544,7 @@ impl RE2 {
     ret.map(Self::convert_strings)
   }
 
-  /// [`Self::find_and_consume()`] for arbitrary string encodings.
-  pub fn find_and_consume_view(&self, text_view: &mut StringView) -> bool {
+  pub(crate) fn find_and_consume_view(&self, text_view: &mut StringView) -> bool {
     if !unsafe { self.0.find_and_consume(text_view.as_mut_native()) } {
       return false;
     }
@@ -584,8 +574,7 @@ impl RE2 {
     ret
   }
 
-  /// [`Self::find_and_consume_capturing()`] for arbitrary string encodings.
-  pub fn find_and_consume_capturing_view<'a, const N: usize>(
+  pub(crate) fn find_and_consume_capturing_view<'a, const N: usize>(
     &self,
     text_view: &mut StringView<'a>,
   ) -> Option<[StringView<'a>; N]> {
@@ -651,8 +640,7 @@ impl RE2 {
     ret.map(Self::convert_strings)
   }
 
-  /// [`Self::match_no_captures()`] for arbitrary string encodings.
-  pub fn match_no_captures_view(
+  pub(crate) fn match_no_captures_view(
     &self,
     text: StringView,
     range: ops::Range<usize>,
@@ -691,8 +679,7 @@ impl RE2 {
     self.match_no_captures_view(StringView::from_str(text), range, anchor)
   }
 
-  /// [`Self::match_routine()`] for arbirary string encodings.
-  pub fn match_routine_view<'a, const N: usize>(
+  pub(crate) fn match_routine_view<'a, const N: usize>(
     &self,
     text_view: StringView<'a>,
     range: ops::Range<usize>,
@@ -798,12 +785,8 @@ impl RE2 {
 /// # Ok(())
 /// # }
 /// ```
-///
-/// As with the matching interface, methods with a `*_view` suffix operate on
-/// [`StringView`] instances, which may have arbitrary encodings.
 impl RE2 {
-  /// [`Self::replace()`] for arbitrary string encodings.
-  pub fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
+  pub(crate) fn replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> bool {
     unsafe { self.0.replace(text.as_mut_native(), rewrite.into_native()) }
   }
 
@@ -825,8 +808,7 @@ impl RE2 {
     self.replace_view(text, StringView::from_str(rewrite))
   }
 
-  /// [`Self::replace_n()`] for arbitrary string encodings.
-  pub fn replace_n_view(
+  pub(crate) fn replace_n_view(
     &self,
     text: &mut StringWrapper,
     rewrite: StringView,
@@ -863,8 +845,7 @@ impl RE2 {
     self.replace_n_view(text, StringView::from_str(rewrite), limit)
   }
 
-  /// [`Self::global_replace()`] for arbitrary string encodings.
-  pub fn global_replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> usize {
+  pub(crate) fn global_replace_view(&self, text: &mut StringWrapper, rewrite: StringView) -> usize {
     unsafe {
       self
         .0
@@ -892,8 +873,7 @@ impl RE2 {
     self.global_replace_view(text, StringView::from_str(rewrite))
   }
 
-  /// [`Self::extract()`] for arbitrary string encodings.
-  pub fn extract_view(
+  pub(crate) fn extract_view(
     &self,
     text: StringView,
     rewrite: StringView,
@@ -939,12 +919,8 @@ impl RE2 {
 ///
 /// These methods make use of lower-level matching methods like
 /// [`Self::match_routine()`] to produce lazy streams of results.
-///
-/// As with the matching interface, methods with a `*_view` suffix operate on
-/// [`StringView`] instances, which may have arbitrary encodings.
 impl RE2 {
-  /// [`Self::find_iter()`] for arbitrary string encodings.
-  pub fn find_iter_view<'r, 'h: 'r, const N: usize>(
+  pub(crate) fn find_iter_view<'r, 'h: 'r, const N: usize>(
     &'r self,
     hay: StringView<'h>,
   ) -> impl Iterator<Item=[StringView<'h>; N]>+'r {
@@ -990,8 +966,7 @@ impl RE2 {
       .map(Self::convert_strings)
   }
 
-  /// [`Self::split()`] for arbitrary string encodings.
-  pub fn split_view<'r, 'h: 'r>(
+  pub(crate) fn split_view<'r, 'h: 'r>(
     &'r self,
     hay: StringView<'h>,
   ) -> impl Iterator<Item=StringView<'h>>+'r {
@@ -1060,7 +1035,8 @@ impl RE2 {
   /// assert_eq!(1, RE2::max_submatch(r"\0a\1sdf".into()));
   /// assert_eq!(3, RE2::max_submatch(r"\3a\1sdf".into()));
   /// ```
-  pub fn max_submatch(rewrite: StringView) -> usize {
+  pub fn max_submatch(rewrite: &str) -> usize {
+    let rewrite = StringView::from_str(rewrite);
     unsafe { re2_c::RE2Wrapper::max_submatch(rewrite.into_native()) }
   }
 
@@ -1100,7 +1076,7 @@ impl RE2 {
   ///
   /// // Results are sorted by number:
   /// let groups: Vec<(&str, usize)> = r.named_groups()
-  ///   .map(|g| (unsafe { g.name().as_str() }, *g.index()))
+  ///   .map(|g| (g.name(), *g.index()))
   ///   .collect();
   /// assert_eq!(vec![("y", 1), ("x", 2), ("z", 4)], groups);
   /// # Ok(())
@@ -1115,7 +1091,7 @@ impl RE2 {
   /// Return an iterator covering both named and positional-only groups.
   ///
   /// Positional-only groups are represented with [`None`] instead of a
-  /// [`StringView`].
+  /// [`str`](prim@str).
   ///
   /// The index of each group can be recovered by calling `.enumerate()` on the
   /// result. This is possible because this iterator also generates a
@@ -1133,7 +1109,6 @@ impl RE2 {
   /// assert_eq!(5, r.num_captures());
   ///
   /// let indexed: Vec<(usize, Option<&str>)> = r.named_and_numbered_groups()
-  ///   .map(|s| s.map(|s| unsafe { s.as_str() }))
   ///   .enumerate()
   ///   .collect();
   /// assert_eq!(
@@ -1141,14 +1116,11 @@ impl RE2 {
   ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)] );
   /// # Ok(())
   /// # }
-  pub fn named_and_numbered_groups(
-    &self,
-  ) -> impl Iterator<Item=Option<StringView>>+ExactSizeIterator {
+  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+ExactSizeIterator {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 
-  /// [`Self::check_rewrite()`] for arbitrary string encodings.
-  pub fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
+  pub(crate) fn check_rewrite_view(&self, rewrite: StringView) -> Result<(), RewriteError> {
     let mut sw = StringWrapper::blank();
 
     if unsafe {
@@ -1196,8 +1168,7 @@ impl RE2 {
     self.check_rewrite_view(StringView::from_str(rewrite))
   }
 
-  /// [`Self::vector_rewrite()`] for arbitrary string encodings.
-  pub fn vector_rewrite_view<const N: usize>(
+  pub(crate) fn vector_rewrite_view<const N: usize>(
     &self,
     out: &mut StringWrapper,
     rewrite: StringView,
@@ -1271,7 +1242,7 @@ impl fmt::Display for RE2 {
 
 impl cmp::PartialEq for RE2 {
   fn eq(&self, other: &Self) -> bool {
-    self.pattern().eq(&other.pattern()) && self.options().eq(&other.options())
+    self.pattern().eq(other.pattern()) && self.options().eq(&other.options())
   }
 }
 
@@ -1318,7 +1289,9 @@ impl<'a> NamedGroup<'a> {
 
   /// Get a handle to the group's name, which can be decoded to
   /// [`str`](prim@str) if the original pattern was also UTF-8.
-  pub const fn name(&self) -> StringView<'a> { StringView::from_native(self.inner.name_) }
+  pub const fn name(&self) -> &'a str {
+    unsafe { mem::transmute(StringView::from_native(self.inner.name_).as_str()) }
+  }
 
   /// Get a handle to the index, which does not change after creation.
   pub const fn index(&self) -> &'a usize { unsafe { mem::transmute(&self.inner.index_) } }
@@ -1404,7 +1377,7 @@ impl<'a> NamedAndNumberedGroups<'a> {
 }
 
 impl<'a> Iterator for NamedAndNumberedGroups<'a> {
-  type Item = Option<StringView<'a>>;
+  type Item = Option<&'a str>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let Self {

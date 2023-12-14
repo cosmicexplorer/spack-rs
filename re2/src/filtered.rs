@@ -156,8 +156,7 @@ impl FilteredRE2Builder {
     Self(unsafe { re2_c::FilteredRE2Wrapper::new1(min_atom_len as c_int) })
   }
 
-  /// [`Self::add()`] for arbitrary string encodings.
-  pub fn add_view(
+  pub(crate) fn add_view(
     &mut self,
     pattern: StringView,
     options: Options,
@@ -193,8 +192,7 @@ impl FilteredRE2Builder {
     (ret, set)
   }
 
-  /// [`Self::slow_first_match()`] for arbitrary string encodings.
-  pub fn slow_first_match_view(&self, text: StringView) -> Option<ExpressionIndex> {
+  pub(crate) fn slow_first_match_view(&self, text: StringView) -> Option<ExpressionIndex> {
     let ret = unsafe { self.0.slow_first_match(text.into_native()) };
     if ret == -1 {
       None
@@ -280,7 +278,7 @@ impl<'o> InnerRE2<'o> {
 ///
 /// let (filter, atom_set) = builder.compile();
 /// let patterns: Vec<_> = filter.inner_regexps()
-///   .map(|r| unsafe { r.as_re2().pattern().as_str() })
+///   .map(|r| r.as_re2().pattern())
 ///   .collect();
 /// assert_eq!(&patterns, &["asdf", "asay", "as+"]);
 ///
@@ -346,8 +344,7 @@ pub struct FilteredRE2(re2_c::FilteredRE2Wrapper);
 impl FilteredRE2 {
   pub(crate) const fn from_native(w: re2_c::FilteredRE2Wrapper) -> Self { Self(w) }
 
-  /// [`Self::first_match()`] for arbitrary string encodings.
-  pub fn first_match_view(
+  pub(crate) fn first_match_view(
     &self,
     text: StringView,
     atoms: &MatchedSetInfo,
@@ -370,8 +367,7 @@ impl FilteredRE2 {
     self.first_match_view(StringView::from_str(text), atoms)
   }
 
-  /// [`Self::all_matches()`] for arbitrary string encodings.
-  pub fn all_matches_view(
+  pub(crate) fn all_matches_view(
     &self,
     text: StringView,
     atoms: &MatchedSetInfo,
@@ -469,7 +465,7 @@ impl ops::Drop for FilteredRE2 {
 ///   .collect();
 /// assert_eq!(&matched_atoms, &["a", "s", "asdf", "asay"]);
 /// let matched_regexps: Vec<&str> = filter.get_matches(&matches)
-///   .map(|r| unsafe { r.as_re2().pattern().as_str() })
+///   .map(|r| r.as_re2().pattern())
 ///   .collect();
 /// assert_eq!(&matched_regexps, &["asdf", "asay", "as+"]);
 ///
@@ -513,8 +509,7 @@ impl Filter {
     })
   }
 
-  /// [`Self::all_matches()`] for arbitrary string encodings.
-  pub fn all_matches_view(
+  pub(crate) fn all_matches_view(
     &self,
     text: StringView,
     atoms: &mut MatchedSetInfo,
@@ -533,8 +528,7 @@ impl Filter {
     self.all_matches_view(StringView::from_str(text), atoms, matches)
   }
 
-  /// [`Self::potential_matches()`] for arbitrary string encodings.
-  pub fn potential_matches_view(
+  pub(crate) fn potential_matches_view(
     &self,
     text: StringView,
     atoms: &mut MatchedSetInfo,

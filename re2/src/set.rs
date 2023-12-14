@@ -142,8 +142,10 @@ impl SetBuilder {
     Self(unsafe { re2_c::SetWrapper::new(&options.into_native(), anchor.into_native()) })
   }
 
-  /// [`Self::add()`] for arbitrary string encodings.
-  pub fn add_view(&mut self, pattern: StringView) -> Result<ExpressionIndex, SetPatternError> {
+  pub(crate) fn add_view(
+    &mut self,
+    pattern: StringView,
+  ) -> Result<ExpressionIndex, SetPatternError> {
     let mut error = StringWrapper::blank();
     let ret: c_int = unsafe { self.0.add(pattern.into_native(), error.as_mut_native()) };
 
@@ -216,8 +218,7 @@ impl ops::Drop for SetBuilder {
 pub struct Set(pub(crate) re2_c::SetWrapper);
 
 impl Set {
-  /// [`Self::match_routine()`] for arbitrary string encodings.
-  pub fn match_routine_view(&self, text: StringView, matches: &mut MatchedSetInfo) -> bool {
+  pub(crate) fn match_routine_view(&self, text: StringView, matches: &mut MatchedSetInfo) -> bool {
     unsafe {
       self
         .0
@@ -261,8 +262,7 @@ impl Set {
     self.match_routine_view(StringView::from_str(text), matches)
   }
 
-  /// [`Self::match_routine_with_error()`] for arbitrary string encodings.
-  pub fn match_routine_with_error_view(
+  pub(crate) fn match_routine_with_error_view(
     &self,
     text: StringView,
     matches: &mut MatchedSetInfo,
