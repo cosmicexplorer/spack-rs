@@ -3,7 +3,7 @@
 
 use crate::{
   database::Database,
-  error::{HyperscanRuntimeError, ScanError},
+  error::HyperscanRuntimeError,
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
@@ -14,7 +14,9 @@ use crate::{
   stream::StreamSink,
 };
 #[cfg(feature = "async")]
-use crate::{matchers::stream::scan::scan_slice_stream, stream::channel::StreamSinkChannel};
+use crate::{
+  error::ScanError, matchers::stream::scan::scan_slice_stream, stream::channel::StreamSinkChannel,
+};
 
 #[cfg(feature = "async")]
 use {
@@ -38,35 +40,41 @@ impl Scratch {
   pub const fn new() -> Self { Self(None) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::*, state::*};
-  /// use futures_util::TryStreamExt;
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*};
   ///
-  /// let a_expr: Expression = "a+".parse()?;
-  /// let a_db = a_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let a_expr: Expression = "a+".parse()?;
+  ///   let a_db = a_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
   ///
-  /// let b_expr: Expression = "b+".parse()?;
-  /// let b_db = b_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let b_expr: Expression = "b+".parse()?;
+  ///   let b_db = b_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::new();
-  /// scratch.setup_for_db(&a_db)?;
-  /// scratch.setup_for_db(&b_db)?;
+  ///   let mut scratch = Scratch::new();
+  ///   scratch.setup_for_db(&a_db)?;
+  ///   scratch.setup_for_db(&b_db)?;
   ///
-  /// let s: ByteSlice = "ababaabb".into();
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&a_db, s, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["a", "a", "a", "aa"]);
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&b_db, s, |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["b", "b", "b", "bb"]);
-  /// # Ok(())
-  /// # })}
+  ///   let s: ByteSlice = "ababaabb".into();
+  ///
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&a_db, s, |m| {
+  ///       matches.push(unsafe { m.source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "a", "a", "aa"]);
+  ///
+  ///   matches.clear();
+  ///   scratch
+  ///     .scan_sync(&b_db, s, |m| {
+  ///       matches.push(unsafe { m.source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["b", "b", "b", "bb"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanRuntimeError> {
     let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
@@ -83,50 +91,57 @@ impl Scratch {
     self.0.map(|mut p| unsafe { p.as_mut() })
   }
 
+  #[cfg(feature = "async")]
   fn into_db(db: &Database) -> usize {
     let db: *const Database = db;
     db as usize
   }
 
+  #[cfg(feature = "async")]
   fn from_db<'a>(db: usize) -> &'a Database { unsafe { &*(db as *const Database) } }
 
+  #[cfg(feature = "async")]
   fn into_scratch(scratch: &mut Scratch) -> usize {
     let scratch: *mut Scratch = scratch;
     scratch as usize
   }
 
+  #[cfg(feature = "async")]
   fn from_scratch<'a>(scratch: usize) -> &'a mut Scratch {
     unsafe { &mut *(scratch as *mut Scratch) }
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   ///
-  /// let a_expr: Expression = "a+".parse()?;
-  /// let b_expr: Expression = "b+".parse()?;
-  /// let flags = Flags::SOM_LEFTMOST;
-  /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
-  ///   .with_flags([flags, flags])
-  ///   .with_ids([ExprId(1), ExprId(2)]);
-  /// let db = expr_set.compile(Mode::BLOCK)?;
-  /// let mut scratch = db.allocate_scratch()?;
+  ///   let a_expr: Expression = "a+".parse()?;
+  ///   let b_expr: Expression = "b+".parse()?;
+  ///   let flags = Flags::SOM_LEFTMOST;
+  ///   let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///     .with_flags([flags, flags])
+  ///     .with_ids([ExprId(1), ExprId(2)]);
+  ///   let db = expr_set.compile(Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
   ///
-  /// let mut matches: Vec<&str> = Vec::new();
-  /// {
-  ///   let mut f = |Match { source, .. }| {
-  ///     matches.push(unsafe { source.as_str() });
-  ///     MatchResult::Continue
-  ///   };
-  ///   scratch.scan_sync(&db, "aardvark".into(), &mut f)?;
-  ///   scratch.scan_sync(&db, "imbibbe".into(), &mut f)?;
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   {
+  ///     let mut f = |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     };
+  ///     scratch.scan_sync(&db, "aardvark".into(), &mut f)?;
+  ///     scratch.scan_sync(&db, "imbibbe".into(), &mut f)?;
+  ///   }
+  ///   assert_eq!(&matches, &["a", "aa", "a", "b", "b", "bb"]);
+  ///
+  ///   let ret = scratch.scan_sync(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching);
+  ///   assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
+  ///   Ok(())
   /// }
-  /// assert_eq!(&matches, &["a", "aa", "a", "b", "b", "bb"]);
-  ///
-  /// let ret = scratch.scan_sync(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching);
-  /// assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
-  /// # Ok(())
-  /// # }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn scan_sync<'data>(
     &mut self,
@@ -458,7 +473,7 @@ impl ops::Drop for Scratch {
 unsafe impl Send for Scratch {}
 unsafe impl Sync for Scratch {}
 
-#[cfg(all(test, feature = "compile"))]
+#[cfg(all(test, feature = "compiler", feature = "async"))]
 mod test {
   use crate::{
     expression::Expression,

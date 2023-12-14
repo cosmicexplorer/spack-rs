@@ -22,7 +22,7 @@ async fn main() -> eyre::Result<()> {
 
   if cfg!(feature = "chimera") {
     assert!(cfg!(feature = "static"), "chimera requires static");
-    assert!(cfg!(feature = "compile"), "chimera requires compile");
+    assert!(cfg!(feature = "compiler"), "chimera requires compiler");
   } else if cfg!(feature = "dynamic") {
     assert!(
       !cfg!(feature = "static"),
@@ -54,7 +54,7 @@ async fn main() -> eyre::Result<()> {
 
   bindings = bindings.allowlist_item("hs.*");
   bindings = bindings.allowlist_item("HS.*");
-  if !cfg!(feature = "compile") {
+  if !cfg!(feature = "compiler") {
     bindings = bindings.clang_arg("-D__HS_RUNTIME_ONLY__");
   }
   if cfg!(feature = "chimera") {

@@ -198,7 +198,9 @@ pub enum MatchResult {
   /// Immediately cease matching.
   ///
   /// If scanning is performed in streaming mode and this value is returned, any
-  /// subsequent calls to [`Streamer::scan()`](crate::stream::Streamer::scan)
+  /// subsequent calls to
+  /// [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
+  /// or [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream)
   /// for the same stream will immediately return with
   /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
   CeaseMatching = 1,

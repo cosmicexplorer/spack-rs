@@ -3,16 +3,18 @@
 
 use crate::{
   database::Database,
-  error::{CompressionError, HyperscanRuntimeError, ScanError},
+  error::{CompressionError, HyperscanRuntimeError},
   hs,
   matchers::{
-    stream::{StreamHandler, StreamMatch, StreamMatcher},
-    ByteSlice, ExpressionIndex, MatchEvent, MatchResult,
+    stream::{StreamHandler, StreamMatcher},
+    ByteSlice,
   },
   state::Scratch,
 };
+#[cfg(feature = "async")]
+use crate::{error::ScanError, matchers::stream::StreamMatch};
 
-use std::{mem, ops, ptr, slice};
+use std::{mem, ops, ptr};
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -183,17 +185,14 @@ pub mod channel {
   use super::*;
   use crate::matchers::stream::scan::{StreamScanMatcher, StreamScanner};
 
-  use futures_core::stream::Stream;
   use futures_util::TryFutureExt;
-  use tokio::{io, sync::mpsc, task};
-  use tokio_stream::wrappers::UnboundedReceiverStream;
+  use tokio::{io, sync::mpsc};
 
   use std::{
     future::Future,
-    mem, ops,
+    mem,
     pin::Pin,
-    ptr, slice,
-    sync::Arc,
+    slice,
     task::{ready, Context, Poll},
   };
 
@@ -443,7 +442,7 @@ pub mod compress {
   }
 
   impl CompressedStream {
-    pub(crate) fn compress(
+    pub fn compress(
       mut into: CompressReserveBehavior,
       live: &LiveStream,
     ) -> Result<Self, CompressionError> {
@@ -456,16 +455,20 @@ pub mod compress {
           hs::hs_compress_stream(
             live.as_ref_native(),
             mem::transmute(buf.as_mut_ptr()),
-            buf.len(),
+            buf.capacity(),
             &mut required_space,
           )
         }) {
           Err(HyperscanRuntimeError::InsufficientSpace) => (),
           Err(e) => return Err(e.into()),
           Ok(()) => {
+            debug_assert!(buf.capacity() >= required_space);
+            unsafe {
+              buf.set_len(required_space);
+            }
             return Ok(Self {
               buf: mem::take(buf),
-            })
+            });
           },
         }
       } else {
@@ -489,28 +492,51 @@ pub mod compress {
        * necessary to compress. */
 
       /* Allocate or fail allocation. */
-      let mut allocated_space: usize = 0;
       let buf = match into.reserve(required_space) {
         ReserveResponse::NoSpace(buf) => {
-          return Err(CompressionError::NoSpace(required_space, buf))
+          /* This is supposed to be what ReserveResponse checks. */
+          debug_assert!(required_space > buf.len());
+          return Err(CompressionError::NoSpace(required_space, buf));
         },
         ReserveResponse::MadeSpace(mut buf) => {
+          let mut allocated_space: usize = 0;
           HyperscanRuntimeError::from_native(unsafe {
             hs::hs_compress_stream(
               live.as_ref_native(),
               mem::transmute(buf.as_mut_ptr()),
-              buf.len(),
+              buf.capacity(),
               &mut allocated_space,
             )
           })?;
           /* No particular reason these values should be different across two
            * subsequent calls. */
           debug_assert_eq!(required_space, allocated_space);
+          debug_assert!(allocated_space <= buf.capacity());
+          unsafe {
+            buf.set_len(allocated_space);
+          }
           buf
         },
       };
 
       Ok(Self { buf })
+    }
+
+    /* TODO: a .expand_into() method which re-uses the storage of an &mut
+     * Streamer argument (similar to .try_clone_from() elsewhere in this file).
+     * Would require patching the hyperscan API again to expose a method that
+     * separates the "reset" from the "expand into" operation. */
+    pub fn expand(&self, db: &Database) -> Result<LiveStream, HyperscanRuntimeError> {
+      let mut inner = ptr::null_mut();
+      HyperscanRuntimeError::from_native(unsafe {
+        hs::hs_expand_stream(
+          db.as_ref_native(),
+          &mut inner,
+          mem::transmute(self.buf.as_ptr()),
+          self.buf.len(),
+        )
+      })?;
+      Ok(unsafe { LiveStream::from_native(inner) })
     }
   }
 }
@@ -1098,7 +1124,7 @@ pub mod compress {
 /* } */
 /* } */
 
-/* #[cfg(all(test, feature = "compile"))] */
+/* #[cfg(all(test, feature = "compiler"))] */
 /* mod test { */
 /* use super::*; */
 /* use crate::{ */

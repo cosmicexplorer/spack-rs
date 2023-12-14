@@ -18,11 +18,11 @@ pub(crate) use hyperscan_sys::hs;
 pub mod alloc;
 pub mod database;
 pub mod error;
-#[cfg(feature = "compile")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 pub mod expression;
-#[cfg(feature = "compile")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 pub mod flags;
 pub mod matchers;
 pub mod state;
@@ -31,8 +31,20 @@ pub mod stream;
 unsafe fn free_misc(p: *mut u8) {
   let p = p as *mut std::os::raw::c_void;
   cfg_if::cfg_if! {
-    if #[cfg(feature = "static")] {
+    if #[cfg(feature = "alloc")] {
       alloc::misc_free_func(p);
+    } else {
+      libc::free(p);
+    }
+  }
+}
+
+#[cfg(feature = "chimera")]
+unsafe fn free_misc_chimera(p: *mut u8) {
+  let p = p as *mut std::os::raw::c_void;
+  cfg_if::cfg_if! {
+    if #[cfg(feature = "alloc")] {
+      alloc::chimera::chimera_misc_free_func(p);
     } else {
       libc::free(p);
     }
@@ -58,6 +70,8 @@ unsafe fn free_misc(p: *mut u8) {
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 pub fn check_valid_platform() -> Result<(), error::HyperscanRuntimeError> {
   error::HyperscanRuntimeError::from_native(unsafe { hs::hs_valid_platform() })
 }

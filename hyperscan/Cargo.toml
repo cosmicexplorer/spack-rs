@@ -8,12 +8,12 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["static", "compile", "async", "alloc"]
+default                 = ["static", "compiler"]
 static                  = ["hyperscan-async-sys/static"]
-compile                 = ["hyperscan-async-sys/compile"]
+compiler                = ["hyperscan-async-sys/compiler"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["hyperscan-async-sys/chimera"]
-async                   = ["dep:async-stream", "dep:futures-core", "dep:futures-util", "dep:tokio", "dep:tokio-stream"]
+async                   = ["dep:async-stream", "dep:futures-core", "dep:futures-util", "dep:tokio"]
 alloc                   = ["dep:indexmap", "dep:parking_lot"]
 
 [lib]
@@ -35,7 +35,6 @@ parking_lot             = { workspace = true, optional = true }
 static_assertions.workspace = true
 thiserror.workspace     = true
 tokio                   = { workspace = true, features = ["rt", "sync", "io-util", "macros"], optional = true }
-tokio-stream            = { version = "0.1.14", optional = true }
 
 [dev-dependencies]
 eyre.workspace          = true

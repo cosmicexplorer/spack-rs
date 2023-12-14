@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 use crate::{
   error::HyperscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
@@ -12,18 +12,16 @@ use crate::{
 };
 use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 use once_cell::sync::Lazy;
 
-#[cfg(feature = "compile")]
-use std::ptr;
 use std::{
   borrow::Cow,
   ffi::CStr,
   mem::{self, MaybeUninit},
   ops,
   os::raw::c_char,
-  slice, str,
+  ptr, slice, str,
 };
 
 #[derive(Debug)]
@@ -46,26 +44,26 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
-  /// use futures_util::TryStreamExt;
   ///
   /// let expr: Expression = "(he)ll".parse()?;
   /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "hello".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch
+  ///   .scan_sync(&db, "hello".into(), |m| {
+  ///     matches.push(unsafe { m.source.as_str() });
+  ///     MatchResult::Continue
+  ///   })?;
   /// assert_eq!(&matches, &["hell"]);
   /// # Ok(())
-  /// # })}
+  /// # }
   /// ```
-  #[cfg(feature = "compile")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile(
     expression: &Expression,
     flags: Flags,
@@ -91,26 +89,26 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
-  /// use futures_util::TryStreamExt;
   ///
   /// let expr: Literal = "he\0ll".parse()?;
   /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, Platform::get())?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "he\0llo".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch
+  ///   .scan_sync(&db, "he\0llo".into(), |m| {
+  ///     matches.push(unsafe { m.source.as_str() });
+  ///     MatchResult::Continue
+  ///   })?;
   /// assert_eq!(&matches, &["he\0ll"]);
   /// # Ok(())
-  /// # })}
+  /// # }
   /// ```
-  #[cfg(feature = "compile")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile_literal(
     literal: &Literal,
     flags: Flags,
@@ -137,9 +135,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
-  /// use futures_util::TryStreamExt;
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
@@ -156,24 +153,26 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch
+  ///   .scan_sync(&db, "aardvark".into(), |m| {
+  ///     matches.push(unsafe { m.source.as_str() });
+  ///     MatchResult::Continue
+  ///   })?;
   /// assert_eq!(&matches, &["a", "aa", "aardva"]);
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "imbibe".into(), |_| MatchResult::Continue)
-  ///   .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
+  /// matches.clear();
+  /// scratch
+  ///   .scan_sync(&db, "imbibe".into(), |m| {
+  ///     matches.push(unsafe { m.source.as_str() });
+  ///     MatchResult::Continue
+  ///   })?;
   /// assert_eq!(&matches, &["imb", "imbib"]);
   /// # Ok(())
-  /// # })}
+  /// # }
   /// ```
-  #[cfg(feature = "compile")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
@@ -214,9 +213,8 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
-  /// use futures_util::TryStreamExt;
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
   /// let free_lit: Literal = "fr\0e\0e".parse()?;
@@ -228,28 +226,32 @@ impl Database {
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<(u32, &str)> = scratch
-  ///   .scan_channel(&db, "he\0llo".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
-  ///     Ok((id, unsafe { source.as_str() }))
-  ///   })
-  ///   .try_collect()
-  ///   .await?;
+  /// let mut matches: Vec<(u32, &str)> = Vec::new();
+  /// scratch
+  ///   .scan_sync(
+  ///     &db,
+  ///     "he\0llo".into(),
+  ///     |Match { id: ExpressionIndex(id), source, .. }| {
+  ///       matches.push((id, unsafe { source.as_str() }));
+  ///       MatchResult::Continue
+  ///     })?;
   /// assert_eq!(&matches, &[(2, "he\0ll")]);
   ///
-  /// let matches: Vec<(u32, &str)> = scratch
-  ///   .scan_channel(&db, "fr\0e\0edom".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { id: ExpressionIndex(id), source, .. }| async move {
-  ///     Ok((id, unsafe { source.as_str() }))
-  ///   })
-  ///   .try_collect()
-  ///   .await?;
+  /// matches.clear();
+  /// scratch
+  ///   .scan_sync(
+  ///     &db,
+  ///     "fr\0e\0edom".into(),
+  ///     |Match { id: ExpressionIndex(id), source, .. }| {
+  ///       matches.push((id, unsafe { source.as_str() }));
+  ///       MatchResult::Continue
+  ///     })?;
   /// assert_eq!(&matches, &[(1, "fr\0e\0e")]);
   /// # Ok(())
-  /// # })}
+  /// # }
   /// ```
-  #[cfg(feature = "compile")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
@@ -277,19 +279,22 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
-  /// let db_size = db.database_size()?;
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  ///   let db_size = db.database_size()?;
   ///
-  /// // Size may vary across architectures:
-  /// assert_eq!(db_size, 936);
-  /// assert!(db_size > 500);
-  /// assert!(db_size < 2000);
-  /// # Ok(())
-  /// # }
+  ///   // Size may vary across architectures:
+  ///   assert_eq!(db_size, 936);
+  ///   assert!(db_size > 500);
+  ///   assert!(db_size < 2000);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn database_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
@@ -300,19 +305,22 @@ impl Database {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
-  /// let stream_size = db.stream_size()?;
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
+  ///   let stream_size = db.stream_size()?;
   ///
-  /// // Size may vary across architectures:
-  /// assert_eq!(stream_size, 18);
-  /// assert!(stream_size > 10);
-  /// assert!(stream_size < 20);
-  /// # Ok(())
-  /// # }
+  ///   // Size may vary across architectures:
+  ///   assert_eq!(stream_size, 18);
+  ///   assert!(stream_size > 10);
+  ///   assert!(stream_size < 20);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
@@ -325,22 +333,25 @@ impl Database {
   pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
-  /// use futures_util::TryStreamExt;
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?.deserialize_db()?;
-  /// let mut scratch = db.allocate_scratch()?;
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?.deserialize_db()?;
+  ///   let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["a", "aa", "a"]);
-  /// # Ok(())
-  /// # })}
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
     SerializedDb::serialize_db(self)
@@ -396,7 +407,7 @@ impl ops::Drop for MiscAllocation {
 }
 
 #[derive(Debug)]
-pub struct DbInfo(pub MiscAllocation);
+pub struct DbInfo(MiscAllocation);
 
 impl DbInfo {
   const fn without_null(&self) -> impl slice::SliceIndex<[u8], Output=[u8]> { ..(self.0.len() - 1) }
@@ -411,22 +422,24 @@ impl DbInfo {
   }
 
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*};
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, database::*};
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
-  /// let info = DbInfo::extract_db_info(&db)?;
-  /// assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-  /// # Ok(())
-  /// # }
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  ///   let info = DbInfo::extract_db_info(&db)?;
+  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanRuntimeError> {
-    let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+    let mut info = ptr::null_mut();
     HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_database_info(db.as_ref_native(), info.as_mut_ptr())
+      hs::hs_database_info(db.as_ref_native(), &mut info)
     })?;
-    let info = unsafe { info.assume_init() };
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
     assert!(len > 0);
 
@@ -498,15 +511,18 @@ impl SerializedDb<'static> {
 
 impl<'a> SerializedDb<'a> {
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*};
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
-  /// let info = serialized_db.extract_db_info()?;
-  /// assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-  /// # Ok(())
-  /// # }
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
+  ///   let info = serialized_db.extract_db_info()?;
+  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
     let mut info = ptr::null_mut();
@@ -558,33 +574,36 @@ impl<'a> SerializedDb<'a> {
   /// [`Self::deserialized_size()`] in size!**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
-  /// use futures_util::TryStreamExt;
-  /// use std::mem;
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
+  ///   use std::mem;
   ///
-  /// let expr: Expression = "a+".parse()?;
-  /// let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
   ///
-  /// // Allocate a vector with sufficient capacity for the deserialized db:
-  /// let mut db_data: Vec<u8> = Vec::with_capacity(serialized_db.deserialized_size()?);
-  /// let db = unsafe {
-  ///   let db_ptr: *mut NativeDb = mem::transmute(db_data.as_mut_ptr());
-  ///   serialized_db.deserialize_db_at(db_ptr)?;
-  ///   // Wrap in ManuallyDrop to avoid freeing memory owned by the `db_data` vector.
-  ///   mem::ManuallyDrop::new(Database::from_native(db_ptr))
-  /// };
+  ///   // Allocate a vector with sufficient capacity for the deserialized db:
+  ///   let mut db_data: Vec<u8> = Vec::with_capacity(serialized_db.deserialized_size()?);
+  ///   let db = unsafe {
+  ///     let db_ptr: *mut NativeDb = mem::transmute(db_data.as_mut_ptr());
+  ///     serialized_db.deserialize_db_at(db_ptr)?;
+  ///     // Wrap in ManuallyDrop to avoid freeing memory owned by the `db_data` vector.
+  ///     mem::ManuallyDrop::new(Database::from_native(db_ptr))
+  ///   };
   ///
-  /// let mut scratch = db.allocate_scratch()?;
+  ///   let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["a", "aa", "a"]);
-  /// # Ok(())
-  /// # })}
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, ..}| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
   pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(hs::hs_deserialize_database_at(
@@ -595,16 +614,16 @@ impl<'a> SerializedDb<'a> {
   }
 }
 
-#[cfg(feature = "compile")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct Platform(hs::hs_platform_info);
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 impl Platform {
   pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
 
@@ -631,25 +650,17 @@ impl Platform {
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
+  #[cfg(feature = "compiler")]
   use super::Platform;
+  #[cfg(feature = "compiler")]
   use crate::{
-    error::chimera::{ChimeraCompileError, ChimeraRuntimeError},
+    error::chimera::ChimeraCompileError,
     expression::chimera::{ChimeraExpression, ChimeraExpressionSet, ChimeraMatchLimits},
     flags::chimera::{ChimeraFlags, ChimeraMode},
-    hs,
-    state::chimera::ChimeraScratch,
   };
+  use crate::{error::chimera::ChimeraRuntimeError, hs, state::chimera::ChimeraScratch};
 
-  use cfg_if::cfg_if;
-
-  use std::{
-    ffi::CStr,
-    mem::MaybeUninit,
-    ops,
-    os::raw::{c_char, c_void},
-    ptr,
-  };
-
+  use std::{ffi::CStr, mem, ops, ptr, slice, str};
 
   #[derive(Debug)]
   #[repr(transparent)]
@@ -673,6 +684,8 @@ pub mod chimera {
     /// # Ok(())
     /// # })}
     /// ```
+    #[cfg(feature = "compiler")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
     pub fn compile(
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
@@ -721,6 +734,8 @@ pub mod chimera {
     /// # Ok(())
     /// # })}
     /// ```
+    #[cfg(feature = "compiler")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
@@ -766,11 +781,11 @@ pub mod chimera {
     }
 
     pub fn get_db_size(&self) -> Result<usize, ChimeraRuntimeError> {
-      let mut database_size = MaybeUninit::<usize>::uninit();
+      let mut database_size: usize = 0;
       ChimeraRuntimeError::from_native(unsafe {
-        hs::ch_database_size(self.as_ref_native(), database_size.as_mut_ptr())
+        hs::ch_database_size(self.as_ref_native(), &mut database_size)
       })?;
-      Ok(unsafe { database_size.assume_init() })
+      Ok(database_size)
     }
 
     pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraRuntimeError> {
@@ -796,10 +811,56 @@ pub mod chimera {
     }
   }
 
-  #[derive(Debug, Clone)]
-  pub struct ChimeraDbInfo(pub String);
+  #[derive(Debug)]
+  pub struct ChimeraMiscAllocation {
+    data: *mut u8,
+    len: usize,
+  }
+
+  unsafe impl Send for ChimeraMiscAllocation {}
+  unsafe impl Sync for ChimeraMiscAllocation {}
+
+  impl ChimeraMiscAllocation {
+    pub const fn as_ptr(&self) -> *mut u8 { self.data }
+
+    pub const fn len(&self) -> usize { self.len }
+
+    pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+    pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+      unsafe { slice::from_raw_parts_mut(self.data, self.len) }
+    }
+
+    pub unsafe fn free(&mut self) { crate::free_misc_chimera(self.data) }
+  }
+
+  impl ops::Drop for ChimeraMiscAllocation {
+    fn drop(&mut self) {
+      unsafe {
+        self.free();
+      }
+    }
+  }
+
+  #[derive(Debug)]
+  pub struct ChimeraDbInfo(ChimeraMiscAllocation);
 
   impl ChimeraDbInfo {
+    const fn without_null(&self) -> impl slice::SliceIndex<[u8], Output=[u8]> {
+      ..(self.0.len() - 1)
+    }
+
+    pub fn as_str(&self) -> &str {
+      unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
+    }
+
+    pub fn as_mut_str(&mut self) -> &mut str {
+      let without_null = self.without_null();
+      unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
+    }
+
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
@@ -807,29 +868,23 @@ pub mod chimera {
     /// let expr: ChimeraExpression = "a+".parse()?;
     /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
     /// let info = ChimeraDbInfo::extract_db_info(&db)?;
-    /// assert_eq!(&info.0, "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    /// assert_eq!(info.as_str(), "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
     /// # Ok(())
     /// # }
     /// ```
     pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraRuntimeError> {
-      let mut info: MaybeUninit<*mut c_char> = MaybeUninit::uninit();
+      let mut info = ptr::null_mut();
       ChimeraRuntimeError::from_native(unsafe {
-        hs::ch_database_info(db.as_ref_native(), info.as_mut_ptr())
+        hs::ch_database_info(db.as_ref_native(), &mut info)
       })?;
-      let info = unsafe { info.assume_init() };
-      let ret = unsafe { CStr::from_ptr(info) }
-      .to_string_lossy()
-      /* FIXME: avoid copying! */
-      .to_string();
-      unsafe {
-        cfg_if! {
-          if #[cfg(feature = "static")] {
-            crate::alloc::chimera::chimera_misc_free_func(info as *mut c_void);
-          } else {
-            libc::free(info as *mut c_void);
-          }
-        }
-      }
+      let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
+      assert!(len > 0);
+
+      let ret = ChimeraMiscAllocation {
+        data: unsafe { mem::transmute(info) },
+        len,
+      };
+
       Ok(Self(ret))
     }
   }

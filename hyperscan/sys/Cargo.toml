@@ -14,29 +14,29 @@ name                    = "hyperscan_sys"
 [features]
 default                 = []
 static                  = []
-compile                 = []
+compiler                = []
 dynamic                 = []
 chimera                 = []
 
 [package.metadata.spack.envs.hyperscan-static-with-compile]
 spec                    = "hyperscan@v5.4.2+static~chimera"
 deps                    = { hyperscan = { type = "static", lib_names = ["hs"] } }
-features                = { needed = ["static", "compile"], conflicting = ["chimera"] }
+features                = { needed = ["static", "compiler"], conflicting = ["chimera"] }
 
 [package.metadata.spack.envs.hyperscan-dynamic-with-compile]
 spec                    = "hyperscan@v5.4.2+shared~chimera"
 deps                    = { hyperscan = { type = "dynamic", lib_names = ["hs"] } }
-features                = { needed = ["dynamic", "compile"], conflicting = ["chimera"] }
+features                = { needed = ["dynamic", "compiler"], conflicting = ["chimera"] }
 
 [package.metadata.spack.envs.hyperscan-static-runtime-only]
 spec                    = "hyperscan@v5.4.2+static~chimera"
 deps                    = { hyperscan = { type = "static", lib_names = ["hs_runtime"] } }
-features                = { needed = ["static"], conflicting = ["compile", "chimera"] }
+features                = { needed = ["static"], conflicting = ["compiler", "chimera"] }
 
 [package.metadata.spack.envs.hyperscan-dynamic-runtime-only]
 spec                    = "hyperscan@v5.4.2+shared~chimera"
 deps                    = { hyperscan = { type = "dynamic", lib_names = ["hs_runtime"] } }
-features                = { needed = ["dynamic"], conflicting = ["compile", "chimera"] }
+features                = { needed = ["dynamic"], conflicting = ["compiler", "chimera"] }
 
 [package.metadata.spack.envs.hyperscan-static-chimera]
 spec                    = "hyperscan@v5.4.2+chimera+static"

@@ -4,13 +4,13 @@
 //! Errors returned by methods in this library.
 
 use crate::hs;
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 use crate::matchers::ExpressionIndex;
 
 use displaydoc::Display;
 use thiserror::Error;
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 use std::{
   ffi::{CStr, NulError},
   fmt,
@@ -114,10 +114,10 @@ pub enum HyperscanRuntimeError {
   /// returned if the call was successful.
   ///
   /// This value is referenced internally in
-  /// [`Streamer::compress()`](crate::stream::Streamer) when requesting the
+  /// [`LiveStream::compress()`](crate::stream::LiveStream) when requesting the
   /// amount of memory to allocate for a compressed stream. Users of this
   /// library should never see this error when using the
-  /// [`CompressReserveBehavior`](crate::stream::CompressReserveBehavior)
+  /// [`CompressReserveBehavior`](crate::stream::compress::CompressReserveBehavior)
   /// interface.
   InsufficientSpace = hs::HS_INSUFFICIENT_SPACE,
   /// Unexpected internal error.
@@ -140,7 +140,7 @@ impl HyperscanRuntimeError {
     }
   }
 
-  #[cfg(feature = "compile")]
+  #[cfg(feature = "compiler")]
   pub(crate) fn copy_from_native_compile_error(
     x: hs::hs_error_t,
     c: *mut hs::hs_compile_error,
@@ -163,8 +163,8 @@ impl HyperscanRuntimeError {
 /// [`Database::compile_multi()`](crate::database::Database::compile_multi)) on
 /// failure. The caller may inspect the values returned in this type to
 /// determine the cause of failure.
-#[cfg(feature = "compile")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 #[derive(Debug, Error)]
 pub struct CompileError {
   /// A human-readable error message describing the error.
@@ -260,33 +260,37 @@ pub struct CompileError {
   /// If the error is not specific to an expression, then this value will be
   /// [`None`]:
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, error::*, flags::*, alloc::*};
-  /// use std::{alloc::{GlobalAlloc, Layout}, ptr};
+  /// // Using hyperscan::alloc requires the "alloc" feature.
+  /// #[cfg(feature = "alloc")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, error::*, flags::*, alloc::*};
+  ///   use std::{alloc::{GlobalAlloc, Layout}, ptr};
   ///
-  /// // Create a broken allocator:
-  /// struct S;
-  /// unsafe impl GlobalAlloc for S {
-  ///   unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { ptr::null_mut() }
-  ///   unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+  ///   // Create a broken allocator:
+  ///   struct S;
+  ///   unsafe impl GlobalAlloc for S {
+  ///     unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { ptr::null_mut() }
+  ///     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+  ///   }
+  ///   // Set it as the db compile allocator:
+  ///   assert!(set_db_allocator(LayoutTracker::new(S.into())).unwrap().is_none());
+  ///
+  ///   let expr: Expression = "a".parse()?;
+  ///   let CompileError { message, expression } = match expr.compile(Flags::default(), Mode::BLOCK) {
+  ///     Err(HyperscanCompileError::Compile(err)) => err,
+  ///     _ => unreachable!(),
+  ///   };
+  ///   assert_eq!(expression, None);
+  ///   assert_eq!(&message, "Could not allocate memory for bytecode.");
+  ///   Ok(())
   /// }
-  /// // Set it as the db compile allocator:
-  /// assert!(set_db_allocator(LayoutTracker::new(S.into())).unwrap().is_none());
-  ///
-  /// let expr: Expression = "a".parse()?;
-  /// let CompileError { message, expression } = match expr.compile(Flags::default(), Mode::BLOCK) {
-  ///   Err(HyperscanCompileError::Compile(err)) => err,
-  ///   _ => unreachable!(),
-  /// };
-  /// assert_eq!(expression, None);
-  /// assert_eq!(&message, "Could not allocate memory for bytecode.");
-  /// # Ok(())
-  /// # }
+  /// # #[cfg(not(feature = "alloc"))]
+  /// # fn main() {}
   /// ```
   pub expression: Option<ExpressionIndex>,
 }
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 impl fmt::Display for CompileError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
@@ -297,7 +301,7 @@ impl fmt::Display for CompileError {
   }
 }
 
-#[cfg(feature = "compile")]
+#[cfg(feature = "compiler")]
 impl CompileError {
   pub(crate) fn copy_from_native(
     x: &mut hs::hs_compile_error,
@@ -323,8 +327,8 @@ impl CompileError {
 }
 
 /// Wrapper for errors returned when parsing or compiling expressions.
-#[cfg(feature = "compile")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 #[derive(Debug, Display, Error)]
 pub enum HyperscanCompileError {
   /// non-compilation error: {0}
@@ -364,8 +368,8 @@ pub enum HyperscanError {
   /// error from the hyperscan runtime: {0}
   Runtime(#[from] HyperscanRuntimeError),
   /// compile error: {0}
-  #[cfg(feature = "compile")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   Compile(#[from] HyperscanCompileError),
   /// error during scan: {0}
   #[cfg(feature = "async")]
@@ -380,6 +384,7 @@ pub enum HyperscanError {
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
+  use crate::matchers::ExpressionIndex;
 
   use std::{fmt, os::raw::c_void, ptr};
 
@@ -479,6 +484,7 @@ pub mod chimera {
       }
     }
 
+    #[cfg(feature = "compiler")]
     pub(crate) fn copy_from_native_compile_error(
       x: hs::ch_error_t,
       c: *mut hs::ch_compile_error,
@@ -502,6 +508,8 @@ pub mod chimera {
   /// failure. The caller may inspect the values returned in this type to
   /// determine the cause of failure.
   #[derive(Debug, Error)]
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub struct ChimeraInnerCompileError {
     /// A human-readable error message describing the error.
     ///
@@ -515,6 +523,7 @@ pub mod chimera {
     pub expression: Option<ExpressionIndex>,
   }
 
+  #[cfg(feature = "compiler")]
   impl fmt::Display for ChimeraInnerCompileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       write!(
@@ -525,6 +534,7 @@ pub mod chimera {
     }
   }
 
+  #[cfg(feature = "compiler")]
   impl ChimeraInnerCompileError {
     pub(crate) fn copy_from_native(
       x: &mut hs::ch_compile_error,
@@ -550,6 +560,8 @@ pub mod chimera {
   }
 
   /// Wrapper for errors returned when parsing or compiling expressions.
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   #[derive(Debug, Display, Error)]
   pub enum ChimeraCompileError {
     /// non-compilation error: {0}
@@ -561,8 +573,6 @@ pub mod chimera {
   }
 
   /// Native error code for non-fatal match errors from PCRE execution.
-  ///
-  /// Currently these errors correspond to resource limits on PCRE backtracking.
   #[derive(
     Debug,
     Display,
@@ -626,10 +636,13 @@ pub mod chimera {
 
   /// Top-level wrapper for errors returned by the chimera library.
   #[derive(Debug, Display, Error)]
+  #[ignore_extra_doc_attributes]
   pub enum ChimeraError {
     /// error from chimera runtime: {0}
     Runtime(#[from] ChimeraRuntimeError),
     /// compile error: {0}
+    #[cfg(feature = "compiler")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
     Compile(#[from] ChimeraCompileError),
     /// error during chimera scan: {0}
     #[cfg(feature = "async")]
