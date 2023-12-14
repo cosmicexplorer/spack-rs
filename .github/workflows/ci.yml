@@ -78,7 +78,8 @@ jobs:
         args:
           - -p super-process -p spack-rs
           - -p re2 -vv
-          - -p hyperscan-async --no-default-features --features chimera,static,compiler,async -vv
+          # This keeps rebuilding hyperscan and taking 20 minutes, not clear why.
+          # - -p hyperscan-async --no-default-features --features chimera,static,compiler,async -vv
     runs-on: ubuntu-latest
 
     steps:

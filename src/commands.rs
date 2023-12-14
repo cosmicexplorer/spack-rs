@@ -740,6 +740,7 @@ pub mod install {
   };
 
   use async_trait::async_trait;
+  use num_cpus;
 
   use std::ffi::OsStr;
 
@@ -796,7 +797,8 @@ pub mod install {
 
       /* Generate spack argv. */
       /* FIXME: determine appropriate amount of build parallelism! */
-      let mut args = vec!["install", "--fail-fast", "-j6"];
+      let jobs_arg = format!("-j{}", num_cpus::get());
+      let mut args = vec!["install", "--fail-fast", &jobs_arg];
       /* If running this inside an environment, the command will fail without this
        * argument. */
       if env.is_some() {
