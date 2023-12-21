@@ -175,28 +175,6 @@ impl fmt::Display for ExpressionIndex {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "<{}>", self.0) }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-struct RangeIndex(pub c_ulonglong);
-
-impl RangeIndex {
-  pub const fn into_rust_index(self) -> usize {
-    static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
-    self.0 as usize
-  }
-
-  pub const fn bounded_range(from: Self, to: Self) -> ops::Range<usize> {
-    static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
-    let from = from.into_rust_index();
-    let to = to.into_rust_index();
-    debug_assert!(from <= to);
-    ops::Range {
-      start: from,
-      end: to,
-    }
-  }
-}
-
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 #[ignore_extra_doc_attributes]
@@ -241,9 +219,15 @@ impl MatchEvent {
   ) -> Self {
     static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
     debug_assert_eq!(flags, 0, "flags are currently unused");
+    static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
+    static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
+    debug_assert!(from <= to);
     Self {
       id: ExpressionIndex(id),
-      range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
+      range: ops::Range {
+        start: from as usize,
+        end: to as usize,
+      },
       context: ptr::NonNull::new(context),
     }
   }
@@ -630,9 +614,13 @@ pub mod chimera {
       context: *mut c_void,
     ) -> Self {
       debug_assert_eq!(flags, 0, "flags are currently unused");
+      debug_assert!(from <= to);
       Self {
         id: ExpressionIndex(id),
-        range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
+        range: ops::Range {
+          start: from as usize,
+          end: to as usize,
+        },
         captures: unsafe { slice::from_raw_parts(captured, size as usize) },
         context: ptr::NonNull::new(context),
       }
@@ -714,7 +702,11 @@ pub mod chimera {
             None
           } else {
             debug_assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
-            let range = RangeIndex::bounded_range(RangeIndex(*from), RangeIndex(*to));
+            debug_assert!(from <= to);
+            let range = ops::Range {
+              start: *from as usize,
+              end: *to as usize,
+            };
             Some(matcher.index_range(range))
           }
         })
