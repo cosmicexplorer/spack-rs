@@ -4,6 +4,76 @@
 //! Routines for overriding the allocators used in several components of
 //! hyperscan.
 //!
+//! These methods can be used to wrap nonstandard allocators such as
+//! [jemalloc](https://docs.rs/jemallocator) for hyperscan usage:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//!   use hyperscan::{expression::*, flags::*, matchers::*};
+//!   use jemallocator::Jemalloc;
+//!
+//!   // Use jemalloc for all hyperscan allocations.
+//!   hyperscan::alloc::set_allocator(Jemalloc.into())?;
+//!
+//!   // Everything works as normal.
+//!   let expr: Expression = "(he)ll".parse()?;
+//!   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+//!
+//!   let mut scratch = db.allocate_scratch()?;
+//!
+//!   let mut matches: Vec<&str> = Vec::new();
+//!   scratch
+//!     .scan_sync(&db, "hello".into(), |m| {
+//!       matches.push(unsafe { m.source.as_str() });
+//!       MatchResult::Continue
+//!     })?;
+//!   assert_eq!(&matches, &["hell"]);
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
+//!
+//! However, this module also supports inspecting live allocations with
+//! [`LayoutTracker::current_allocations()`] without overriding the allocation
+//! logic, by wrapping the standard [`System`](std::alloc::System) allocator:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//!   use hyperscan::{expression::*, flags::*, database::*, alloc::*};
+//!   use std::{alloc::System, mem::ManuallyDrop};
+//!
+//!   // Wrap the standard Rust System allocator.
+//!   let tracker = LayoutTracker::new(System.into());
+//!   // Register it as the allocator for databases.
+//!   assert!(set_db_allocator(tracker)?.is_none());
+//!
+//!   // Create a database.
+//!   let expr: Expression = "asdf".parse()?;
+//!   let mut db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+//!
+//!   // Get the database allocator we just registered and view its live allocations:
+//!   let allocs = get_db_allocator().as_ref().unwrap().current_allocations();
+//!   // Verify that only the single known db was allocated:
+//!   assert_eq!(1, allocs.len());
+//!   let (p, _layout) = allocs[0];
+//!   let db_ptr: *mut NativeDb = db.as_mut_native();
+//!   assert_eq!(p.as_ptr() as *mut NativeDb, db_ptr);
+//!
+//!   // Demonstrate that we can actually use this pointer as a reference to the database,
+//!   // although we have to be careful not to run the drop code:
+//!   let db = ManuallyDrop::new(unsafe { Database::from_native(p.as_ptr() as *mut NativeDb) });
+//!   // We can inspect properties of the database with this reference:
+//!   assert_eq!(db.database_size()?, 936);
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
+//!
+//! # Global State
 //! These methods mutate global process state when setting function pointers for
 //! alloc and free, so this module requires the `"alloc"` feature, which itself
 //! requires the `"static"` feature which statically links the hyperscan native
@@ -13,7 +83,7 @@ use crate::{error::HyperscanRuntimeError, hs};
 
 use indexmap::IndexMap;
 use libc;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 
 use std::{
   alloc::{GlobalAlloc, Layout},
@@ -23,14 +93,35 @@ use std::{
   sync::Arc,
 };
 
+/// The alloc/free interface required by hyperscan methods.
+///
+/// This is named "malloc-like" because it mirrors the interface provided by
+/// [`libc::malloc()`] and [`libc::free()`]. This differs from [`GlobalAlloc`]
+/// in two ways:
+/// - no [`Layout`] argument is provided to the deallocate method, so the
+///   implementation must record the size of each allocation somewhere.
+/// - only a `size` argument is provided to the allocate method, with the
+///   *alignment* requirements of the memory being relegated to comments and
+///   docstrings.
 pub trait MallocLikeAllocator {
+  /// Allocate a region of memory of at least `size` bytes.
+  ///
+  /// The alignment of the returned memory region is specified by the
+  /// implementation. Returns [`None`] if allocation fails for any reason.
   fn allocate(&self, size: usize) -> Option<NonNull<u8>>;
+  /// Free up a previously-allocated memory region at `ptr`.
+  ///
+  /// The value must be the exact same location returned by a previous call to
+  /// [`Self::allocate()`]. The behavior if this method is called more than once
+  /// is unspecified.
   fn deallocate(&self, ptr: NonNull<u8>);
 }
 
+/// An adapter for [`GlobalAlloc`] instances to implement
+/// [`MallocLikeAllocator`].
 pub struct LayoutTracker {
   allocator: Arc<dyn GlobalAlloc>,
-  layouts: Mutex<IndexMap<NonNull<u8>, Layout>>,
+  layouts: RwLock<IndexMap<NonNull<u8>, Layout>>,
 }
 
 unsafe impl Send for LayoutTracker {}
@@ -45,23 +136,29 @@ impl ops::Drop for LayoutTracker {
 }
 
 impl LayoutTracker {
+  /// Create a new allocation mapping which tracks [`Layout`] instances for each
+  /// allocation that goes to the underlying `allocator`.
   pub fn new(allocator: Arc<impl GlobalAlloc+'static>) -> Self {
     Self {
       allocator,
-      layouts: Mutex::new(IndexMap::new()),
+      layouts: RwLock::new(IndexMap::new()),
     }
   }
 
-  pub fn current_allocations(&mut self) -> Vec<(NonNull<u8>, Layout)> {
-    self
-      .layouts
-      .get_mut()
-      .iter()
-      .map(|(x, y)| (*x, *y))
-      .collect()
+  /// Get a copy of the current live allocation mapping given a reference to
+  /// this allocator.
+  ///
+  /// This struct makes use of an [`RwLock`] to allow concurrent access. Note
+  /// that pointers may not be safe to dereference if they are freed after this
+  /// method is called!
+  pub fn current_allocations(&self) -> Vec<(NonNull<u8>, Layout)> {
+    self.layouts.read().iter().map(|(x, y)| (*x, *y)).collect()
   }
 }
 
+/// Hyperscan only specifies a single alignment requirement of 8 bytes for its
+/// db allocator, so [`LayoutTracker`] simply uses 8-byte
+/// alignment for all allocations.
 impl MallocLikeAllocator for LayoutTracker {
   fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
     /* .alloc() is undefined when provided a 0 size alloc, so handle it here. */
@@ -75,12 +172,12 @@ impl MallocLikeAllocator for LayoutTracker {
     /* This is part of the safety guarantee imposed by .alloc(): */
     assert!(layout.size() > 0);
     let ret = NonNull::new(unsafe { self.allocator.alloc(layout) })?;
-    assert!(self.layouts.lock().insert(ret, layout).is_none());
+    assert!(self.layouts.write().insert(ret, layout).is_none());
     Some(ret)
   }
 
   fn deallocate(&self, ptr: NonNull<u8>) {
-    let layout = self.layouts.lock().remove(&ptr).unwrap();
+    let layout = self.layouts.write().remove(&ptr).unwrap();
     unsafe {
       self.allocator.dealloc(ptr.as_ptr(), layout);
     }
@@ -146,7 +243,7 @@ allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 ///   let mut db = ManuallyDrop::new(expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?);
 ///
 ///   // Change the allocator to a fresh LayoutTracker:
-///   let mut tracker = set_db_allocator(LayoutTracker::new(System.into())).unwrap().unwrap();
+///   let tracker = set_db_allocator(LayoutTracker::new(System.into())).unwrap().unwrap();
 ///   // Get the extant allocations from the old LayoutTracker:
 ///   let allocs = tracker.current_allocations();
 ///   // Verify that only the single known db was allocated:
@@ -201,6 +298,8 @@ pub fn set_db_allocator(
   Ok(ret)
 }
 
+pub fn get_db_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> { DB_ALLOCATOR.read() }
+
 allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 
 pub fn set_misc_allocator(
@@ -211,6 +310,10 @@ pub fn set_misc_allocator(
     hs::hs_set_misc_allocator(Some(misc_alloc_func), Some(misc_free_func))
   })?;
   Ok(ret)
+}
+
+pub fn get_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+  MISC_ALLOCATOR.read()
 }
 
 allocator![SCRATCH_ALLOCATOR, scratch_alloc_func, scratch_free_func];
@@ -225,6 +328,10 @@ pub fn set_scratch_allocator(
   Ok(ret)
 }
 
+pub fn get_scratch_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+  SCRATCH_ALLOCATOR.read()
+}
+
 allocator![STREAM_ALLOCATOR, stream_alloc_func, stream_free_func];
 
 pub fn set_stream_allocator(
@@ -235,6 +342,10 @@ pub fn set_stream_allocator(
     hs::hs_set_stream_allocator(Some(stream_alloc_func), Some(stream_free_func))
   })?;
   Ok(ret)
+}
+
+pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+  STREAM_ALLOCATOR.read()
 }
 
 ///```
@@ -300,6 +411,10 @@ pub mod chimera {
     Ok(ret)
   }
 
+  pub fn get_chimera_db_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+    CHIMERA_DB_ALLOCATOR.read()
+  }
+
   allocator![
     CHIMERA_MISC_ALLOCATOR,
     chimera_misc_alloc_func,
@@ -314,6 +429,10 @@ pub mod chimera {
       hs::ch_set_misc_allocator(Some(chimera_misc_alloc_func), Some(chimera_misc_free_func))
     })?;
     Ok(ret)
+  }
+
+  pub fn get_chimera_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+    CHIMERA_MISC_ALLOCATOR.read()
   }
 
   allocator![
@@ -333,6 +452,10 @@ pub mod chimera {
       )
     })?;
     Ok(ret)
+  }
+
+  pub fn get_chimera_scratch_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
+    CHIMERA_SCRATCH_ALLOCATOR.read()
   }
 
   ///```

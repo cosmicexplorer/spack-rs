@@ -318,6 +318,7 @@ impl Scratch {
     static_assertions::assert_eq_size!(&u8, *const u8);
     static_assertions::assert_eq_size!(&[u8; 4], *const u8);
     static_assertions::const_assert!(mem::size_of::<&[u8]>() > mem::size_of::<*const u8>());
+    static_assertions::assert_eq_size!(&u8, *const u8);
 
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
