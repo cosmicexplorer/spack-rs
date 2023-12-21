@@ -4,6 +4,15 @@
 //! Routines for overriding the allocators used in several components of
 //! hyperscan.
 //!
+//! # Use Cases
+//! [`set_allocator()`] will set all of the allocators at once, while the
+//! `set_*_allocator()` methods such as [`set_db_allocator()`] enable overriding
+//! allocation logic for individual components of hyperscan. In either case,
+//! `get_*_allocator()` methods such as [`get_db_allocator()`] enable
+//! introspection of the active allocator (which defaults to [`libc::malloc()`]
+//! and [`libc::free()`] if unset).
+//!
+//! ## Nonstandard Allocators
 //! These methods can be used to wrap nonstandard allocators such as
 //! [jemalloc](https://docs.rs/jemallocator) for hyperscan usage:
 //!
@@ -35,6 +44,7 @@
 //! # fn main() {}
 //! ```
 //!
+//! ## Inspecting Live Allocations
 //! However, this module also supports inspecting live allocations with
 //! [`LayoutTracker::current_allocations()`] without overriding the allocation
 //! logic, by wrapping the standard [`System`](std::alloc::System) allocator:
@@ -78,6 +88,78 @@
 //! alloc and free, so this module requires the `"alloc"` feature, which itself
 //! requires the `"static"` feature which statically links the hyperscan native
 //! library to ensure exclusive access to this global state.
+//!
+//! ## Lifetimes and Dangling Pointers
+//! These methods enable resetting the registered allocator more than once over
+//! the lifetime of the program, but trying to drop any object allocated with a
+//! previous allocator will cause an error. The
+//! [`ManuallyDrop`](mem::ManuallyDrop) and `from_native()` methods (such as
+//! [`Database::from_native()`](crate::database::Database::from_native)) can be
+//! used to manage the lifetime of objects across multiple allocators:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//!   use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
+//!   use std::{alloc::System, mem::ManuallyDrop};
+//!
+//!   // Set the process-global allocator to use for Database instances:
+//!   let tracker = LayoutTracker::new(System.into());
+//!   // There was no custom allocator registered yet.
+//!   assert!(set_db_allocator(tracker)?.is_none());
+//!
+//!   let expr: Expression = "asdf".parse()?;
+//!   // Use ManuallyDrop to avoid calling the hyperscan db free method,
+//!   // since we will be invalidating the pointer by changing the allocator,
+//!   // and the .try_drop() method and Drop impl both call into
+//!   // whatever allocator is currently active to free the pointer, which will error.
+//!   let mut db = ManuallyDrop::new(expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?);
+//!
+//!   // Change the allocator to a fresh LayoutTracker:
+//!   let tracker = set_db_allocator(LayoutTracker::new(System.into()))?.unwrap();
+//!   // Get the extant allocations from the old LayoutTracker:
+//!   let allocs = tracker.current_allocations();
+//!   // Verify that only the single known db was allocated:
+//!   assert_eq!(1, allocs.len());
+//!   let (p, layout) = allocs[0];
+//!   let db_ptr: *mut NativeDb = db.as_mut_native();
+//!   assert_eq!(p.as_ptr() as *mut NativeDb, db_ptr);
+//!
+//!   // Despite having reset the allocator, our previous db is still valid
+//!   // and can be used for matching:
+//!   let mut scratch = db.allocate_scratch()?;
+//!   let mut matches: Vec<&str> = Vec::new();
+//!   scratch.scan_sync(&db, "asdf asdf".into(), |m| {
+//!     matches.push(unsafe { m.source.as_str() });
+//!     MatchResult::Continue
+//!   })?;
+//!   assert_eq!(&matches, &["asdf", "asdf"]);
+//!
+//!   // We can deserialize something from somewhere else into the db handle:
+//!   let expr: Literal = "hello".parse()?;
+//!   let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
+//!   // Ensure the allocated database is large enough to contain the deserialized one:
+//!   assert!(layout.size() >= serialized_db.deserialized_size()?);
+//!   // NB: overwrite the old database!
+//!   unsafe { serialized_db.deserialize_db_at(db.as_mut_native())?; }
+//!
+//!   // Reuse the same database object now:
+//!   scratch.setup_for_db(&db)?;
+//!   matches.clear();
+//!   scratch.scan_sync(&db, "hello hello".into(), |m| {
+//!     matches.push(unsafe { m.source.as_str() });
+//!     MatchResult::Continue
+//!   })?;
+//!   assert_eq!(&matches, &["hello", "hello"]);
+//!
+//!   // Deallocate the db by hand here (ensure no other handles point to it):
+//!   tracker.deallocate(p);
+//!   // NB: `db` is now INVALID and points to FREED MEMORY!!!
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
 
 use crate::{error::HyperscanRuntimeError, hs};
 
@@ -252,70 +334,8 @@ macro_rules! allocator {
 
 allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 
-///```
-/// #[cfg(feature = "compiler")]
-/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-///   use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
-///   use std::{alloc::System, mem::ManuallyDrop};
-///
-///   // Set the process-global allocator to use for Database instances:
-///   let tracker = LayoutTracker::new(System.into());
-///   // There was no custom allocator registered yet.
-///   assert!(set_db_allocator(tracker).unwrap().is_none());
-///
-///   let expr: Expression = "asdf".parse()?;
-///   // Use ManuallyDrop to avoid calling the hyperscan db free method,
-///   // since we will be invalidating the pointer by changing the allocator,
-///   // and the .try_drop() method and Drop impl both call into
-///   // whatever allocator is currently active to free the pointer, which will error.
-///   let mut db = ManuallyDrop::new(expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?);
-///
-///   // Change the allocator to a fresh LayoutTracker:
-///   let tracker = set_db_allocator(LayoutTracker::new(System.into())).unwrap().unwrap();
-///   // Get the extant allocations from the old LayoutTracker:
-///   let allocs = tracker.current_allocations();
-///   // Verify that only the single known db was allocated:
-///   assert_eq!(1, allocs.len());
-///   let (p, layout) = allocs[0];
-///   let db_ptr: *mut NativeDb = db.as_mut_native();
-///   assert_eq!(p.as_ptr() as *mut NativeDb, db_ptr);
-///
-///   // Despite having reset the allocator, our previous db is still valid
-///   // and can be used for matching:
-///   let mut scratch = db.allocate_scratch()?;
-///   let mut matches: Vec<&str> = Vec::new();
-///   scratch.scan_sync(&db, "asdf asdf".into(), |m| {
-///     matches.push(unsafe { m.source.as_str() });
-///     MatchResult::Continue
-///   })?;
-///   assert_eq!(&matches, &["asdf", "asdf"]);
-///
-///   // We can deserialize something from somewhere else into the db handle:
-///   let expr: Literal = "hello".parse()?;
-///   let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
-///   // Ensure the allocated database is large enough to contain the deserialized one:
-///   assert!(layout.size() >= serialized_db.deserialized_size()?);
-///   // NB: overwrite the old database!
-///   unsafe { serialized_db.deserialize_db_at(db.as_mut_native())?; }
-///
-///   // Reuse the same database object now:
-///   scratch.setup_for_db(&db)?;
-///   matches.clear();
-///   scratch.scan_sync(&db, "hello hello".into(), |m| {
-///     matches.push(unsafe { m.source.as_str() });
-///     MatchResult::Continue
-///   })?;
-///   assert_eq!(&matches, &["hello", "hello"]);
-///
-///   // Need to deallocate the db by hand in order to drop the original LayoutTracker
-///   // without panicking:
-///   tracker.deallocate(p);
-///   // NB: `db` is now INVALID and points to FREED MEMORY!!!
-///   Ok(())
-/// }
-/// # #[cfg(not(feature = "compiler"))]
-/// # fn main() {}
-/// ```
+/// Reset the allocator used for [`Database`](crate::database::Database)
+/// instances.
 pub fn set_db_allocator(
   tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
@@ -326,10 +346,14 @@ pub fn set_db_allocator(
   Ok(ret)
 }
 
+/// Get the allocator used for [`Database`](crate::database::Database)
+/// instances.
 pub fn get_db_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> { DB_ALLOCATOR.read() }
 
 allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 
+/// Reset the allocator used for
+/// [`MiscAllocation`](crate::database::MiscAllocation) instances.
 pub fn set_misc_allocator(
   tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
@@ -340,12 +364,15 @@ pub fn set_misc_allocator(
   Ok(ret)
 }
 
+/// Get the allocator used for
+/// [`MiscAllocation`](crate::database::MiscAllocation) instances.
 pub fn get_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
   MISC_ALLOCATOR.read()
 }
 
 allocator![SCRATCH_ALLOCATOR, scratch_alloc_func, scratch_free_func];
 
+/// Reset the allocator used for [`Scratch`](crate::state::Scratch) instances.
 pub fn set_scratch_allocator(
   tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
@@ -356,12 +383,15 @@ pub fn set_scratch_allocator(
   Ok(ret)
 }
 
+/// Get the allocator used for [`Scratch`](crate::state::Scratch) instances.
 pub fn get_scratch_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
   SCRATCH_ALLOCATOR.read()
 }
 
 allocator![STREAM_ALLOCATOR, stream_alloc_func, stream_free_func];
 
+/// Reset the allocator used for [`LiveStream`](crate::stream::LiveStream)
+/// instances.
 pub fn set_stream_allocator(
   tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
@@ -372,17 +402,24 @@ pub fn set_stream_allocator(
   Ok(ret)
 }
 
+/// Get the allocator used for [`LiveStream`](crate::stream::LiveStream)
+/// instances.
 pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
   STREAM_ALLOCATOR.read()
 }
 
+/// Convenience method to reset all hyperscan dynamic allocators at once.
+///
+/// Example: use [jemalloc](https://docs.rs/jemallocator) for all hyperscan allocations:
+///
 ///```
 /// #[cfg(feature = "compiler")]
 /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
 ///   use hyperscan::{expression::*, flags::*, matchers::*};
-///   use std::alloc::System;
+///   use jemallocator::Jemalloc;
 ///
-///   hyperscan::alloc::set_allocator(System.into())?;
+///   // Use jemalloc for all hyperscan allocations.
+///   hyperscan::alloc::set_allocator(Jemalloc.into())?;
 ///
 ///   let expr: Expression = "(he)ll".parse()?;
 ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
@@ -419,8 +456,12 @@ pub fn set_allocator(
 
 /// Routines for overriding the allocators used in the chimera library.
 ///
-/// As with the base hyperscan library, this can wrap nonstandard allocators
-/// such as [jemalloc](https://docs.rs/jemallocator):
+/// # Use Cases
+/// As with the base [`hyperscan#Use Cases`](crate::alloc#use-cases), this has setter methods
+/// for all allocators at once, or for a single component at a time, as well as getter methods.
+///
+/// ## Nonstandard Allocators
+/// It can wrap nonstandard allocators such as [jemalloc](https://docs.rs/jemallocator):
 ///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
@@ -448,7 +489,8 @@ pub fn set_allocator(
 /// # }
 /// ```
 ///
-/// but also supports inspecting live allocations with
+/// ## Inspecting Live Allocations
+/// This module also supports inspecting live allocations with
 /// [`LayoutTracker::current_allocations()`]:
 ///
 ///```
@@ -487,7 +529,14 @@ pub fn set_allocator(
 /// (this is [enforced by the build
 /// script](https://github.com/intel/hyperscan/blob/bc3b191ab56055e8560c7cdc161c289c4d76e3d2/CMakeLists.txt#L494)
 /// in the hyperscan/chimera codebase), there are no additional restrictions
-/// required to enable modification of process-global state.
+/// required to enable modification of process-global state (unlike the
+/// corresponding [`hyperscan#Global State`](crate::alloc#global-state)).
+///
+/// ## Lifetimes and Dangling Pointers
+/// Similar methods as in the parent
+/// [`hyperscan#Lifetimes`](crate::alloc#lifetimes-and-dangling-pointers) can be
+/// used to handle object lifetimes if multiple allocators are used over the
+/// lifetime of the program.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
@@ -500,6 +549,8 @@ pub mod chimera {
     chimera_db_free_func
   ];
 
+  /// Reset the allocator used for
+  /// [`ChimeraDb`](crate::database::chimera::ChimeraDb) instances.
   pub fn set_chimera_db_allocator(
     tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
@@ -510,6 +561,8 @@ pub mod chimera {
     Ok(ret)
   }
 
+  /// Get the allocator used for
+  /// [`ChimeraDb`](crate::database::chimera::ChimeraDb) instances.
   pub fn get_chimera_db_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
     CHIMERA_DB_ALLOCATOR.read()
   }
@@ -520,6 +573,9 @@ pub mod chimera {
     chimera_misc_free_func
   ];
 
+  /// Reset the allocator used for
+  /// [`ChimeraMiscAllocation`](crate::database::chimera::ChimeraMiscAllocation)
+  /// instances.
   pub fn set_chimera_misc_allocator(
     tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
@@ -530,6 +586,9 @@ pub mod chimera {
     Ok(ret)
   }
 
+  /// Get the allocator used for
+  /// [`ChimeraMiscAllocation`](crate::database::chimera::ChimeraMiscAllocation)
+  /// instances.
   pub fn get_chimera_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
     CHIMERA_MISC_ALLOCATOR.read()
   }
@@ -540,6 +599,8 @@ pub mod chimera {
     chimera_scratch_free_func
   ];
 
+  /// Reset the allocator used for
+  /// [`ChimeraScratch`](crate::state::chimera::ChimeraScratch) instances.
   pub fn set_chimera_scratch_allocator(
     tracker: LayoutTracker,
   ) -> Result<Option<LayoutTracker>, ChimeraRuntimeError> {
@@ -553,29 +614,36 @@ pub mod chimera {
     Ok(ret)
   }
 
+  /// Get the allocator used for
+  /// [`ChimeraScratch`](crate::state::chimera::ChimeraScratch) instances.
   pub fn get_chimera_scratch_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
     CHIMERA_SCRATCH_ALLOCATOR.read()
   }
 
+  /// Convenience method to reset all chimera dynamic allocators at once.
+  ///
+  /// Example: use [jemalloc](https://docs.rs/jemallocator) for all chimera allocations:
+  ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
   /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
-  /// use std::{alloc::System, sync::Arc};
+  /// use jemallocator::Jemalloc;
   ///
-  /// hyperscan::alloc::chimera::set_chimera_allocator(Arc::new(System))?;
+  /// // Use jemalloc for all chimera allocations.
+  /// hyperscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
   ///
   /// let expr: ChimeraExpression = "(he)ll".parse()?;
-  /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+  /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
   /// let mut matches: Vec<&str> = Vec::new();
   /// let e = |_| ChimeraMatchResult::Continue;
   /// scratch.scan_sync(&db, "hello".into(), |m| {
-  ///   matches.push(unsafe { m.source.as_str() });
+  ///   matches.push(unsafe { m.captures[1].unwrap().as_str() });
   ///   ChimeraMatchResult::Continue
   /// }, e)?;
-  /// assert_eq!(&matches, &["hell"]);
+  /// assert_eq!(&matches, &["he"]);
   /// # Ok(())
   /// # }
   /// ```
