@@ -208,6 +208,7 @@ impl ops::BitAndAssign for Flags {
 /// [`VECTORED`](Self::VECTORED) is supplied, to select between the generation
 /// of a streaming, block or vectored database. In addition, other flags may be
 /// supplied to enable or configure specific features such as stream state size.
+/// Multiple flags may be used by ORing them together.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Mode(u32);

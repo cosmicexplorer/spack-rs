@@ -64,6 +64,10 @@ unsafe fn free_misc_chimera(p: *mut u8) {
 /// Returns [`ArchError`](error::HyperscanRuntimeError::ArchError) if system
 /// does not support Hyperscan.
 ///
+/// # Dependency on `"compiler"` Feature
+/// This method is not available in the `hs_runtime` library for some reason, so
+/// it currently cannot be provided without enabling the `"compiler"` feature.
+///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanRuntimeError> {
 /// hyperscan::check_valid_platform()?;

@@ -69,11 +69,13 @@
 //!   // Verify that only the single known db was allocated:
 //!   assert_eq!(1, allocs.len());
 //!   let (p, _layout) = allocs[0];
+//!   // .as_ref_native() and .as_mut_native() provide references to the wrapped pointer:
 //!   let db_ptr: *mut NativeDb = db.as_mut_native();
 //!   assert_eq!(p.as_ptr() as *mut NativeDb, db_ptr);
 //!
 //!   // Demonstrate that we can actually use this pointer as a reference to the database,
-//!   // although we have to be careful not to run the drop code:
+//!   // although we have to be careful about shared mutable access,
+//!   // so we can't run the drop code for example.
 //!   let db = ManuallyDrop::new(unsafe { Database::from_native(p.as_ptr() as *mut NativeDb) });
 //!   // We can inspect properties of the database with this reference:
 //!   assert_eq!(db.database_size()?, 936);
@@ -421,6 +423,7 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
 ///   // Use jemalloc for all hyperscan allocations.
 ///   hyperscan::alloc::set_allocator(Jemalloc.into())?;
 ///
+///   // Everything works as normal.
 ///   let expr: Expression = "(he)ll".parse()?;
 ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
 ///
@@ -457,8 +460,9 @@ pub fn set_allocator(
 /// Routines for overriding the allocators used in the chimera library.
 ///
 /// # Use Cases
-/// As with the base [`hyperscan#Use Cases`](crate::alloc#use-cases), this has setter methods
-/// for all allocators at once, or for a single component at a time, as well as getter methods.
+/// As with the base [`hyperscan#Use Cases`](crate::alloc#use-cases), this has
+/// setter methods for all allocators at once, or for a single component at a
+/// time, as well as getter methods.
 ///
 /// ## Nonstandard Allocators
 /// It can wrap nonstandard allocators such as [jemalloc](https://docs.rs/jemallocator):
@@ -632,6 +636,7 @@ pub mod chimera {
   /// // Use jemalloc for all chimera allocations.
   /// hyperscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
   ///
+  /// // Everything works as normal.
   /// let expr: ChimeraExpression = "(he)ll".parse()?;
   /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
   ///

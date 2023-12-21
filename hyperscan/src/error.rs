@@ -90,11 +90,10 @@ pub enum HyperscanRuntimeError {
   /// Note: Not all concurrent uses of scratch regions may be detected. This
   /// error is intended as a best-effort debugging tool, not a guarantee.
   ///
-  /// Note: safe Rust code should never see this error;
+  /// Note: safe Rust code should never see this error.
   /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way to
   /// avoid this while preserving the ergonomics of a [`Clone`] and [`Send`]
-  /// reference type. This approach is used in this library's
-  /// [`stream`](crate::stream) module.
+  /// reference type.
   ScratchInUse = hs::HS_SCRATCH_IN_USE,
   /// Unsupported CPU architecture.
   ///
@@ -386,7 +385,7 @@ pub mod chimera {
   use super::*;
   use crate::matchers::ExpressionIndex;
 
-  use std::{fmt, os::raw::c_void, ptr};
+  use std::fmt;
 
   /// Native error code from the underlying chimera library.
   #[derive(
@@ -454,11 +453,10 @@ pub mod chimera {
     /// Note: Not all concurrent uses of scratch regions may be detected. This
     /// error is intended as a best-effort debugging tool, not a guarantee.
     ///
-    /// Note: safe Rust code should never see this error;
+    /// Note: safe Rust code should never see this error.
     /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way
     /// to avoid this while preserving the ergonomics of a [`Clone`] and
-    /// [`Send`] reference type. This approach is used in this library's
-    /// [`stream`](crate::stream) module.
+    /// [`Send`] reference type.
     ScratchInUse = hs::CH_SCRATCH_IN_USE,
     /// Unexpected internal error from Hyperscan.
     ///
@@ -608,17 +606,13 @@ pub mod chimera {
     pub error_type: ChimeraMatchErrorType,
     /// The ID number of the expression that failed.
     pub id: ExpressionIndex,
-    /// Event-specific data, for future use. Currently unused.
-    pub info: Option<ptr::NonNull<c_void>>,
   }
 
   impl fmt::Display for ChimeraMatchError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-      write!(f, "{}@{}(info={:?})", self.error_type, self.id, self.info)
+      write!(f, "{}@{}", self.error_type, self.id)
     }
   }
-
-  unsafe impl Send for ChimeraMatchError {}
 
   /// Wrapper for errors returned by
   /// [`ChimeraScratch::scan_channel()`](crate::state::chimera::ChimeraScratch::scan_channel).

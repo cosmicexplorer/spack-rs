@@ -11,11 +11,12 @@
 //! - [`chimera::ChimeraExpression`]: PCRE regex syntax.
 //!
 //! Each hyperscan database only supports matching against *exactly one* type of
-//! these patterns, but each variant also has a `*Set` form, and all of these
-//! forms support the same interface to hyperscan's most powerful feature:
-//! multi-pattern matching, where patterns registered with [`ExprId`] in a set
-//! can be associated to [`ExpressionIndex`](crate::matchers::ExpressionIndex)
-//! instances when matched against.
+//! these patterns, but each pattern string variant also has a `*Set` form, and
+//! all of these forms support the same interface to hyperscan's most powerful
+//! feature: multi-pattern matching, where patterns registered with [`ExprId`]
+//! in a set can be associated to
+//! [`ExpressionIndex`](crate::matchers::ExpressionIndex) instances when matched
+//! against.
 //!
 //! Creating instances of these structs performs no pattern compilation itself,
 //! which is instead performed in a subsequent step by e.g.
@@ -846,6 +847,7 @@ impl Default for ExprExt {
 
 impl ExprExt {
   /// Generate an empty instance with all features disabled.
+  /* FIXME: make this const when const zeroed() is stabilized! */
   pub fn zeroed() -> Self { unsafe { mem::MaybeUninit::zeroed().assume_init() } }
 
   /// The minimum end offset in the data stream at which this expression should
@@ -881,22 +883,29 @@ impl ExprExt {
   ///
   /// let a: Expression = "a.*b".parse()?;
   /// let ext = ExprExt::from_min_length(4);
-  /// let set = ExpressionSet::from_exprs([&a])
-  ///   .with_exts([Some(&ext)])
+  /// let set = ExpressionSet::from_exprs([&a, &a])
+  ///   // #1 has no min_length, #2 does:
+  ///   .with_exts([None, Some(&ext)])
+  ///   .with_ids([ExprId(1), ExprId(2)])
   ///   .compile(Mode::BLOCK)?;
   /// let mut scratch = set.allocate_scratch()?;
   ///
   /// let msg: ByteSlice = "   ab   ab   ".into();
   ///
-  /// let mut matches: Vec<&str> = Vec::new();
+  /// let mut matches: Vec<(u32, &str)> = Vec::new();
   /// scratch.scan_sync(&set, msg, |m| {
-  ///   matches.push(unsafe { m.source.as_str() });
+  ///   matches.push((m.id.0, unsafe { m.source.as_str() }));
   ///   MatchResult::Continue
   /// })?;
   ///
-  /// // `SOM_LEFTMOST` is disabled, so we don't know the match start,
-  /// // but the min_length property is correctly applied regardless:
-  /// assert_eq!(&matches, &["   ab   ab"]);
+  /// assert_eq!(&matches, &[
+  ///   // Without min_length, both matches show up:
+  ///   (1, "   ab"),
+  ///   (1, "   ab   ab"),
+  ///   // SOM_LEFTMOST is disabled, so we don't know the match start,
+  ///   // but the min_length property is correctly applied regardless:
+  ///   (2, "   ab   ab"),
+  /// ]);
   /// # Ok(())
   /// # }
   /// ```
@@ -908,8 +917,7 @@ impl ExprExt {
     s
   }
 
-  /// Allow patterns to approximately match within this edit (Levenshtein)
-  /// distance.
+  /// Allow patterns to approximately match within this [edit distance](https://en.wikipedia.org/wiki/Edit_distance).
   pub fn from_edit_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::EDIT_DISTANCE;
     let mut s = Self::zeroed();
@@ -919,7 +927,7 @@ impl ExprExt {
     s
   }
 
-  /// Allow patterns to approximately match within this Hamming distance.
+  /// Allow patterns to approximately match within this [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance).
   pub fn from_hamming_distance(x: usize) -> Self {
     let ext_flags = ExtFlags::HAMMING_DISTANCE;
     let mut s = Self::zeroed();
@@ -931,9 +939,7 @@ impl ExprExt {
 
   const fn ext_flags(&self) -> ExtFlags { ExtFlags::from_native(self.0.flags) }
 
-  /// Get the min_offset value that will be provided to hyperscan, or [`None`]
-  /// if not activated.
-  pub fn min_offset(&self) -> Option<c_ulonglong> {
+  fn min_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_offset() {
       Some(self.0.min_offset)
     } else {
@@ -941,9 +947,7 @@ impl ExprExt {
     }
   }
 
-  /// Get the max_offset value that will be provided to hyperscan, or [`None`]
-  /// if not activated.
-  pub fn max_offset(&self) -> Option<c_ulonglong> {
+  fn max_offset(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_max_offset() {
       Some(self.0.max_offset)
     } else {
@@ -951,9 +955,7 @@ impl ExprExt {
     }
   }
 
-  /// Get the min_length value that will be provided to hyperscan, or [`None`]
-  /// if not activated.
-  pub fn min_length(&self) -> Option<c_ulonglong> {
+  fn min_length(&self) -> Option<c_ulonglong> {
     if self.ext_flags().has_min_length() {
       Some(self.0.min_length)
     } else {
@@ -961,9 +963,7 @@ impl ExprExt {
     }
   }
 
-  /// Get the edit_distance value that will be provided to hyperscan, or
-  /// [`None`] if not activated.
-  pub fn edit_distance(&self) -> Option<c_uint> {
+  fn edit_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_edit_distance() {
       Some(self.0.edit_distance)
     } else {
@@ -971,9 +971,7 @@ impl ExprExt {
     }
   }
 
-  /// Get the hamming_distance value that will be provided to hyperscan, or
-  /// [`None`] if not activated.
-  pub fn hamming_distance(&self) -> Option<c_uint> {
+  fn hamming_distance(&self) -> Option<c_uint> {
     if self.ext_flags().has_hamming_distance() {
       Some(self.0.hamming_distance)
     } else {

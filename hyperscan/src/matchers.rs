@@ -4,7 +4,7 @@
 use displaydoc::Display;
 
 use std::{
-  cmp, mem, ops,
+  cmp, fmt, mem, ops,
   os::raw::{c_char, c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
   ptr, slice, str,
@@ -161,13 +161,21 @@ impl<'a, const N: usize> From<&'a [&'a [u8]; N]> for VectoredByteSlices<'a> {
   }
 }
 
-/// <expression index {0}>
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Reference to the source expression that produced a match result.
+///
+/// This corresponds to the value of an
+/// [`ExprId`](crate::expression::ExprId) argument provided during expression
+/// set compilation, but will be `0` if only a single expression
+/// is compiled or no expression ids are provided.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ExpressionIndex(pub c_uint);
 
-/// <range index {0}>
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+impl fmt::Display for ExpressionIndex {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "<{}>", self.0) }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 struct RangeIndex(pub c_ulonglong);
 
@@ -232,7 +240,7 @@ impl MatchEvent {
     context: *mut c_void,
   ) -> Self {
     static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
-    debug_assert_eq!(flags, 0);
+    debug_assert_eq!(flags, 0, "flags are currently unused");
     Self {
       id: ExpressionIndex(id),
       range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
@@ -464,13 +472,7 @@ pub mod stream {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent {
-      id,
-      range,
-      context,
-      /* NB: ignore flags for now! */
-      ..
-    } = MatchEvent::coerce_args(id, from, to, flags, context);
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
     let mut matcher: Pin<&mut StreamMatcher> = MatchEvent::extract_context(context).unwrap();
 
     let m = StreamMatch { id, range };
@@ -552,13 +554,7 @@ pub mod stream {
       flags: c_uint,
       context: *mut c_void,
     ) -> c_int {
-      let MatchEvent {
-        id,
-        range,
-        context,
-        /* NB: ignore flags for now! */
-        ..
-      } = MatchEvent::coerce_args(id, from, to, flags, context);
+      let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
       let mut matcher: Pin<&mut StreamScanMatcher> = MatchEvent::extract_context(context).unwrap();
 
       let m = StreamMatch { id, range };
@@ -633,7 +629,7 @@ pub mod chimera {
       captured: *const hs::ch_capture,
       context: *mut c_void,
     ) -> Self {
-      debug_assert_eq!(flags, 0);
+      debug_assert_eq!(flags, 0, "flags are currently unused");
       Self {
         id: ExpressionIndex(id),
         range: RangeIndex::bounded_range(RangeIndex(from), RangeIndex(to)),
@@ -737,15 +733,11 @@ pub mod chimera {
   ) -> hs::ch_callback_t {
     let error_type = ChimeraMatchErrorType::from_native(error_type);
     let id = ExpressionIndex(id);
-    let info = ptr::NonNull::new(info);
+    debug_assert!(info.is_null(), "info pointer is currently unused");
     let ctx = ptr::NonNull::new(ctx);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
       ChimeraMatchEvent::extract_context(ctx).unwrap();
-    let e = ChimeraMatchError {
-      error_type,
-      id,
-      info,
-    };
+    let e = ChimeraMatchError { error_type, id };
 
     let result = matcher.handle_error(e);
     result.into_native()
