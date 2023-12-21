@@ -44,7 +44,7 @@
 
 // Warn for missing docs in general, and hard require crate-level docs.
 #![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
+#![deny(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 
