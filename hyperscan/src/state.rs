@@ -9,8 +9,9 @@ use crate::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
     stream::match_slice_stream,
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
-    ByteSlice, MatchResult, VectoredByteSlices,
+    MatchResult,
   },
+  sources::{ByteSlice, VectoredByteSlices},
   stream::StreamSink,
 };
 #[cfg(feature = "async")]
@@ -42,7 +43,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let a_db = a_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -260,7 +261,7 @@ impl Scratch {
 
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, vectored_slice::*}};
+  /// use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
   /// use futures_util::TryStreamExt;
   ///
   /// let a_plus: Expression = "a+".parse()?;

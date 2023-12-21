@@ -469,7 +469,7 @@ impl<'a> ExpressionSet<'a> {
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
   ///
   /// // Create two expressions to demonstrate multiple pattern IDs.
   /// let a: Expression = "a+[^a]".parse()?;
@@ -811,7 +811,7 @@ pub mod info {
 ///
 ///```
 /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::{expression::*, flags::*, matchers::*};
+/// use hyperscan::{expression::*, flags::*, matchers::*, sources::*};
 ///
 /// // Apply extended configuration to one version of the pattern, but not the other:
 /// let a: Expression = "ab".parse()?;
@@ -879,7 +879,7 @@ impl ExprExt {
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, matchers::*, sources::*};
   ///
   /// let a: Expression = "a.*b".parse()?;
   /// let ext = ExprExt::from_min_length(4);
@@ -1139,7 +1139,7 @@ impl<'a> LiteralSet<'a> {
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*};
+  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
   ///
   /// // Create two expressions to demonstrate multiple pattern IDs.
   /// let a: Literal = "a".parse()?;
@@ -1487,7 +1487,7 @@ pub mod chimera {
     ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}};
+    /// use hyperscan::{sources::*, expression::{*, chimera::*}, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}};
     ///
     /// // Create two expressions to demonstrate multiple pattern IDs.
     /// let a: ChimeraExpression = "a+[^a]".parse()?;
@@ -1543,7 +1543,7 @@ pub mod chimera {
     ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}, error::chimera::*};
+    /// use hyperscan::{sources::*, expression::chimera::*, flags::chimera::*, state::chimera::*, matchers::chimera::*, error::chimera::*};
     ///
     /// // Create one db with backtracking match limits, and one without.
     /// let a: ChimeraExpression = r"(asdf?)hey\1".parse()?;

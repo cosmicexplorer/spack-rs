@@ -5,10 +5,8 @@ use crate::{
   database::Database,
   error::{CompressionError, HyperscanRuntimeError},
   hs,
-  matchers::{
-    stream::{StreamHandler, StreamMatcher},
-    ByteSlice,
-  },
+  matchers::stream::{StreamHandler, StreamMatcher},
+  sources::ByteSlice,
   state::Scratch,
 };
 #[cfg(feature = "async")]
