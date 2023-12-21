@@ -13,20 +13,20 @@ pub struct ByteSlice<'a>(&'a [u8]);
 
 impl<'a> ByteSlice<'a> {
   pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
-    self.0.get(range).map(Self)
+    self.as_slice().get(range).map(Self::from_slice)
   }
 
-  pub const fn from_str(data: &'a str) -> Self { Self(data.as_bytes()) }
+  pub const fn from_str(data: &'a str) -> Self { Self::from_slice(data.as_bytes()) }
 
   pub const fn from_slice(data: &'a [u8]) -> Self { Self(data) }
 
-  pub const fn as_slice(&self) -> &'a [u8] { unsafe { mem::transmute(self.0) } }
+  pub const fn as_slice(&self) -> &'a [u8] { self.0 }
 
   pub const unsafe fn as_str(&self) -> &'a str { str::from_utf8_unchecked(self.as_slice()) }
 
-  pub(crate) const fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
+  pub(crate) const fn as_ptr(&self) -> *const c_char { self.as_slice().as_ptr() as *const c_char }
 
-  pub const fn len(&self) -> usize { self.0.len() }
+  pub const fn len(&self) -> usize { self.as_slice().len() }
 
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 
