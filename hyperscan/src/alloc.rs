@@ -113,12 +113,46 @@ pub trait MallocLikeAllocator {
   ///
   /// The value must be the exact same location returned by a previous call to
   /// [`Self::allocate()`]. The behavior if this method is called more than once
-  /// is unspecified.
+  /// for a given `ptr` is unspecified.
   fn deallocate(&self, ptr: NonNull<u8>);
 }
 
 /// An adapter for [`GlobalAlloc`] instances to implement
 /// [`MallocLikeAllocator`].
+///
+/// This struct also supports introspecting the current allocation table with
+/// [`Self::current_allocations()`]:
+///```
+/// use hyperscan::alloc::{LayoutTracker, MallocLikeAllocator};
+/// use std::{slice, alloc::System};
+///
+/// let tracker = LayoutTracker::new(System.into());
+/// let p1 = tracker.allocate(32).unwrap();
+/// let p2 = tracker.allocate(64).unwrap();
+///
+/// let allocs = tracker.current_allocations();
+/// assert_eq!(allocs.len(), 2);
+/// let (p1_p, p1_layout) = allocs[0];
+/// let (p2_p, p2_layout) = allocs[1];
+/// assert_eq!(p1_p, p1);
+/// assert!(p1_layout.size() >= 32);
+/// assert!(p1_layout.align() >= 8);
+/// assert_eq!(p2_p, p2);
+/// assert!(p2_layout.size() >= 64);
+/// assert!(p2_layout.align() >= 8);
+///
+/// // Note that modifying pointers in use by other threads may cause race conditions
+/// // and undefined behavior!
+/// let s1 = unsafe { slice::from_raw_parts_mut(p1_p.as_ptr(), p1_layout.size()) };
+/// s1[..5].copy_from_slice(b"hello");
+/// let s2 = unsafe { slice::from_raw_parts_mut(p2_p.as_ptr(), p2_layout.size()) };
+/// s2[..5].copy_from_slice(&s1[..5]);
+/// assert_eq!(&s2[..5], b"hello");
+///
+/// // Free memory when done:
+/// tracker.deallocate(p1);
+/// tracker.deallocate(p2);
+/// ```
 pub struct LayoutTracker {
   allocator: Arc<dyn GlobalAlloc>,
   layouts: RwLock<IndexMap<NonNull<u8>, Layout>>,
@@ -127,17 +161,9 @@ pub struct LayoutTracker {
 unsafe impl Send for LayoutTracker {}
 unsafe impl Sync for LayoutTracker {}
 
-impl ops::Drop for LayoutTracker {
-  fn drop(&mut self) {
-    if !self.layouts.get_mut().is_empty() {
-      unreachable!("can't drop LayoutTracker with pending allocations as this would leak memory");
-    }
-  }
-}
-
 impl LayoutTracker {
-  /// Create a new allocation mapping which tracks [`Layout`] instances for each
-  /// allocation that goes to the underlying `allocator`.
+  /// Create a new allocation mapping which records the [`Layout`] argument for
+  /// each allocation that goes to the underlying `allocator`.
   pub fn new(allocator: Arc<impl GlobalAlloc+'static>) -> Self {
     Self {
       allocator,
@@ -156,9 +182,11 @@ impl LayoutTracker {
   }
 }
 
-/// Hyperscan only specifies a single alignment requirement of 8 bytes for its
-/// db allocator, so [`LayoutTracker`] simply uses 8-byte
-/// alignment for all allocations.
+/// [`LayoutTracker`] implements three additional guarantees over the base
+/// [`MallocLikeAllocator`]:
+/// - 0-size allocation requests always return [`None`] instead of allocating.
+/// - all allocations are aligned to at least 8 bytes.
+/// - attempted double frees will panic instead.
 impl MallocLikeAllocator for LayoutTracker {
   fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
     /* .alloc() is undefined when provided a 0 size alloc, so handle it here. */
@@ -389,6 +417,77 @@ pub fn set_allocator(
   Ok(())
 }
 
+/// Routines for overriding the allocators used in the chimera library.
+///
+/// As with the base hyperscan library, this can wrap nonstandard allocators
+/// such as [jemalloc](https://docs.rs/jemallocator):
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+/// use jemallocator::Jemalloc;
+///
+/// // Use jemalloc for all chimera allocations.
+/// hyperscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
+///
+/// // Everything works as normal.
+/// let expr: ChimeraExpression = "(he)ll".parse()?;
+/// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
+///
+/// let mut scratch = db.allocate_scratch()?;
+///
+/// let mut matches: Vec<&str> = Vec::new();
+/// let e = |_| ChimeraMatchResult::Continue;
+/// scratch
+///   .scan_sync(&db, "hello".into(), |m| {
+///     matches.push(unsafe { m.captures[1].unwrap().as_str() });
+///     ChimeraMatchResult::Continue
+///   }, e)?;
+/// assert_eq!(&matches, &["he"]);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// but also supports inspecting live allocations with
+/// [`LayoutTracker::current_allocations()`]:
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+/// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, alloc::{*, chimera::*}};
+/// use std::{alloc::System, mem::ManuallyDrop};
+///
+/// // Wrap the standard Rust System allocator.
+/// let tracker = LayoutTracker::new(System.into());
+/// // Register it as the allocator for databases.
+/// assert!(set_chimera_db_allocator(tracker)?.is_none());
+///
+/// // Create a database.
+/// let expr: ChimeraExpression = "asdf".parse()?;
+/// let mut db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+///
+/// // Get the database allocator we just registered and view its live allocations:
+/// let allocs = get_chimera_db_allocator().as_ref().unwrap().current_allocations();
+/// // Verify that only the single known db was allocated:
+/// assert_eq!(1, allocs.len());
+/// let (p, _layout) = allocs[0];
+/// let db_ptr: *mut NativeChimeraDb = db.as_mut_native();
+/// assert_eq!(p.as_ptr() as *mut NativeChimeraDb, db_ptr);
+///
+/// // Demonstrate that we can actually use this pointer as a reference to the database,
+/// // although we have to be careful not to run the drop code:
+/// let db = ManuallyDrop::new(unsafe { ChimeraDb::from_native(p.as_ptr() as *mut NativeChimeraDb) });
+/// // We can inspect properties of the database with this reference:
+/// assert_eq!(db.get_db_size()?, 1452);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Global State
+/// Because the `"chimera"` feature already requires the `"static"` feature
+/// (this is [enforced by the build
+/// script](https://github.com/intel/hyperscan/blob/bc3b191ab56055e8560c7cdc161c289c4d76e3d2/CMakeLists.txt#L494)
+/// in the hyperscan/chimera codebase), there are no additional restrictions
+/// required to enable modification of process-global state.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
