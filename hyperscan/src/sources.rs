@@ -183,10 +183,27 @@ impl<'a> ByteSlice<'a> {
   }
 }
 
+/// A [`slice`](prim@slice) of [`ByteSlice`].
+///
+/// This struct wraps non-contiguous slices of string data to pass to the
+/// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) search
+/// method, which produces match results of type
+/// [`VectoredMatch`](crate::matchers::vectored_slice::VectoredMatch)
+/// pointing to a subset of the original data.
+///
+/// This is currently implemented as
+/// a [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent)
+/// wrapper over `&'a [ByteSlice<'a>]`. The same lifetime `'a` is associated to
+/// both the `ByteSlice<'a>` data entries themselves, as well as the location of
+/// the slice which contains those `ByteSlice<'a>`s.
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct VectoredByteSlices<'a>(&'a [ByteSlice<'a>]);
 
+/// # Byte-Oriented Interface
+/// Because hyperscan only partially supports vectored string inputs, this
+/// library does not attempt to provide a UTF8-encoded [`str`](prim@str)
+/// interface for vectored strings as with [`ByteSlice`].
 impl<'a> VectoredByteSlices<'a> {
   pub const fn from_slices(data: &'a [ByteSlice<'a>]) -> Self { Self(data) }
 
@@ -196,12 +213,39 @@ impl<'a> VectoredByteSlices<'a> {
     (data_pointers, lengths)
   }
 
-  pub const fn len(&self) -> usize { self.0.len() }
+  pub(crate) const fn native_len(&self) -> c_uint { self.0.len() as c_uint }
+}
 
-  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+impl<'a> From<&'a [ByteSlice<'a>]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [ByteSlice<'a>]) -> Self { Self::from_slices(x) }
+}
 
-  pub(crate) const fn native_len(&self) -> c_uint { self.len() as c_uint }
+impl<'a, const N: usize> From<&'a [ByteSlice<'a>; N]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [ByteSlice<'a>; N]) -> Self { Self::from_slices(x.as_ref()) }
+}
 
+impl<'a> From<&'a [&'a [u8]]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [&'a [u8]]) -> Self {
+    let x: &'a [ByteSlice<'a>] = unsafe { mem::transmute(x) };
+    Self(x)
+  }
+}
+
+impl<'a, const N: usize> From<&'a [&'a [u8]; N]> for VectoredByteSlices<'a> {
+  fn from(x: &'a [&'a [u8]; N]) -> Self {
+    let x: &'a [ByteSlice<'a>; N] = unsafe { mem::transmute(x) };
+    x.into()
+  }
+}
+
+/* FIXME: remove dynamic memory allocation! This can be handled! */
+/// # Ownership and Indexing
+/// Unlike with [`ByteSlice`], keeping track of a subset of vectored strings
+/// requires some dynamic memory allocation, since a subset of vectored data may
+/// start or stop in the middle of a particular slice. As a result,
+/// [`Self::index_range()`] cannot return `Self` without allocating new memory
+/// the way [`ByteSlice::index_range()`] can.
+impl<'a> VectoredByteSlices<'a> {
   fn find_index_at(
     &self,
     mut column: usize,
@@ -271,27 +315,5 @@ impl<'a> VectoredByteSlices<'a> {
     let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
     let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end - start)?;
     self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
-  }
-}
-
-impl<'a> From<&'a [ByteSlice<'a>]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [ByteSlice<'a>]) -> Self { Self::from_slices(x) }
-}
-
-impl<'a, const N: usize> From<&'a [ByteSlice<'a>; N]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [ByteSlice<'a>; N]) -> Self { Self::from_slices(x.as_ref()) }
-}
-
-impl<'a> From<&'a [&'a [u8]]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [&'a [u8]]) -> Self {
-    let x: &'a [ByteSlice<'a>] = unsafe { mem::transmute(x) };
-    Self(x)
-  }
-}
-
-impl<'a, const N: usize> From<&'a [&'a [u8]; N]> for VectoredByteSlices<'a> {
-  fn from(x: &'a [&'a [u8]; N]) -> Self {
-    let x: &'a [ByteSlice<'a>; N] = unsafe { mem::transmute(x) };
-    x.into()
   }
 }
