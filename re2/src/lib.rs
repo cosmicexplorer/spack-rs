@@ -106,12 +106,15 @@ fn map_array<T, U, const N: usize, F: Fn(T) -> U>(argv: [T; N], f: F) -> [U; N] 
 #[repr(transparent)]
 pub struct RE2(re2_c::RE2Wrapper);
 
-/// Basic components of `RE2` objects.
+/// # RE2 = (pattern, options)
+/// Basic components of `RE2` objects. [`Self::quote_meta()`] is a common
+/// utility method to construct pattern strings.
 impl RE2 {
   /// Compile an `RE2` pattern.
   ///
   /// A [`FromStr`](str::FromStr) implementation is also provided which calls
-  /// this method with [`Options::default()`]:
+  /// this method with [`Options::default()`], enabling the use of
+  /// [`str::parse()`]:
   ///
   ///```
   /// # fn main() -> Result<(), re2::RE2Error> {
@@ -266,8 +269,7 @@ impl ops::Drop for RE2 {
   }
 }
 
-/// The useful part: the matching interface.
-///
+/// # Matching
 /// Matching methods tend to have a few variants:
 /// - Methods with a `*_capturing` suffix will return a variable array of
 ///   strings corresponding to matching capture groups. For these methods,
@@ -760,8 +762,7 @@ impl RE2 {
   }
 }
 
-/// String search and replace interface.
-///
+/// # String Replacement with a Rewrite String
 /// These methods use a mutable [`StringWrapper`] instance with dynamically
 /// allocated data to record the result of applying a "rewrite string" to the
 /// capture groups for a given match using [`Self::vector_rewrite()`]. They may
@@ -915,8 +916,7 @@ impl RE2 {
   }
 }
 
-/// High-level iterator adaptor interface.
-///
+/// # Iterators
 /// These methods make use of lower-level matching methods like
 /// [`Self::match_routine()`] to produce lazy streams of results.
 impl RE2 {
@@ -1020,6 +1020,7 @@ impl RE2 {
   }
 }
 
+/// # Introspection
 /// Introspection methods to investigate match groups and rewrite strings.
 impl RE2 {
   /// Returns the maximum submatch needed for the `rewrite` to be done by
