@@ -9,18 +9,39 @@
 //! such as [`Match`](crate::matchers::contiguous_slice::Match).
 
 use std::{
-  cmp, mem, ops,
+  cmp, fmt, mem, ops,
   os::raw::{c_char, c_uint},
   slice, str,
 };
 
 /// A [`slice`](prim@slice) of [`u8`] with an associated lifetime.
 ///
-/// This is currently implemented as a `#[repr(transparent)]` wrapper over `&'a
-/// [u8]`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// This is currently implemented as
+/// a [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent)
+/// wrapper over `&'a [u8]`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ByteSlice<'a>(&'a [u8]);
+
+impl<'a> fmt::Debug for ByteSlice<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_slice();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "ByteSlice({:?})", s),
+      Err(_) => write!(f, "ByteSlice(non-utf8: {:?})", b),
+    }
+  }
+}
+
+impl<'a> fmt::Display for ByteSlice<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let b = self.as_slice();
+    match str::from_utf8(b) {
+      Ok(s) => write!(f, "{}", s),
+      Err(_) => write!(f, "(non-utf8: {:?})", b),
+    }
+  }
+}
 
 /// # Byte-Oriented Interface
 /// Hyperscan can search over arbitrary byte patterns in any encoding, so
@@ -46,7 +67,8 @@ pub struct ByteSlice<'a>(&'a [u8]);
 ///
 /// Note however that a [`From`] implementation is not provided to convert from
 /// an array `[u8; N]` by value, as this wrapper requires a lifetime to
-/// associate the data with, even if it's just the local `'_` lifetime.
+/// associate the data with, even if it's just the local `'_` lifetime or the
+/// global `'static` lifetime.
 impl<'a> ByteSlice<'a> {
   /// Wrap a byte slice so it can be used by hyperscan.
   ///
