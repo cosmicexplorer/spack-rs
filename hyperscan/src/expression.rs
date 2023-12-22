@@ -65,10 +65,9 @@ use std::{
 /// result in compilation errors.
 ///
 /// Note that as the underlying hyperscan library interprets pattern strings as
-/// essentially null-terminated [`CStr`] pointers, null bytes
-/// are *not* supported within `Expression` strings. Use a [`Literal`] or
-/// [`LiteralSet`] database if you need to match against patterns with null
-/// bytes.
+/// null-terminated [`CStr`]s, null bytes are *not* supported within
+/// `Expression` strings. Use a [`Literal`] or [`LiteralSet`] database if you
+/// need to match against patterns with null bytes.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -1277,10 +1276,9 @@ pub mod chimera {
 
   /// Chimera (PCRE) pattern string.
   ///
-  /// Note that as the underlying chimera library interprets pattern strings
-  /// as essentially null-terminated [`CStr`] pointers, null
-  /// bytes are *not* supported within `ChimeraExpression` strings (or by the
-  /// chimera library in general).
+  /// Note that as the underlying chimera library interprets pattern strings as
+  /// null-terminated [`CStr`]s, null bytes are *not* supported within
+  /// `ChimeraExpression` strings (or by the chimera library in general).
   ///
   /// Instances can be created equivalently with [`Self::new()`] or
   /// [`str::parse()`] via the [`str::FromStr`] impl:
