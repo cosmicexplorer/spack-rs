@@ -239,7 +239,7 @@ impl Scratch {
   pub fn scan_sync_vectored<'data>(
     &mut self,
     db: &Database,
-    data: VectoredByteSlices<'data>,
+    data: VectoredByteSlices<'data, 'data>,
     mut f: impl FnMut(VectoredMatch<'data>) -> MatchResult,
   ) -> Result<(), HyperscanRuntimeError> {
     let mut matcher = VectoredMatcher::new(data, &mut f);
@@ -283,7 +283,7 @@ impl Scratch {
   /// let matches: Vec<(u32, String)> = scratch
   ///   .scan_channel_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
   ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
-  ///     let joined = source.into_iter()
+  ///     let joined = source.iter_slices()
   ///       .map(|s| unsafe { s.as_str() })
   ///       .collect::<Vec<_>>()
   ///       .concat();
@@ -309,7 +309,7 @@ impl Scratch {
   pub fn scan_channel_vectored<'data>(
     &mut self,
     db: &Database,
-    data: VectoredByteSlices<'data>,
+    data: VectoredByteSlices<'data, 'data>,
     mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, ScanError>> {
     /* NB: while static arrays take up no extra runtime space, a ref to a
@@ -323,7 +323,7 @@ impl Scratch {
 
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
-    let data: VectoredByteSlices<'static> = unsafe { mem::transmute(data) };
+    let data: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(data) };
     let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync) = &mut f;
     let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
 

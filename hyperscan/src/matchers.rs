@@ -149,22 +149,22 @@ pub mod contiguous_slice {
 
 pub mod vectored_slice {
   use super::*;
-  use crate::sources::{ByteSlice, VectoredByteSlices};
+  use crate::sources::{VectoredByteSlices, VectoredSubset};
 
   #[derive(Debug)]
   pub struct VectoredMatch<'a> {
     pub id: ExpressionIndex,
-    pub source: Vec<ByteSlice<'a>>,
+    pub source: VectoredSubset<'a, 'a>,
   }
 
   pub(crate) struct VectoredMatcher<'data, 'code> {
-    parent_slices: VectoredByteSlices<'data>,
+    parent_slices: VectoredByteSlices<'data, 'data>,
     handler: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult),
   }
 
   impl<'data, 'code> VectoredMatcher<'data, 'code> {
     pub fn new<F: FnMut(VectoredMatch<'data>) -> MatchResult>(
-      parent_slices: VectoredByteSlices<'data>,
+      parent_slices: VectoredByteSlices<'data, 'data>,
       f: &'code mut F,
     ) -> Self {
       Self {
@@ -173,9 +173,9 @@ pub mod vectored_slice {
       }
     }
 
-    pub fn parent_slices(&self) -> VectoredByteSlices<'data> { self.parent_slices }
+    pub fn parent_slices(&self) -> VectoredByteSlices<'data, 'data> { self.parent_slices }
 
-    pub fn index_range(&self, range: ops::Range<usize>) -> Vec<ByteSlice<'data>> {
+    pub fn index_range(&self, range: ops::Range<usize>) -> VectoredSubset<'data, 'data> {
       self.parent_slices.index_range(range).unwrap()
     }
 
