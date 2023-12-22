@@ -15,7 +15,10 @@ use std::{
 };
 
 /// A [`slice`](prim@slice) of [`u8`] with an associated lifetime.
-#[derive(Debug, Copy, Clone)]
+///
+/// This is currently implemented as a `#[repr(transparent)]` wrapper over `&'a
+/// [u8]`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ByteSlice<'a>(&'a [u8]);
 
@@ -27,11 +30,35 @@ pub struct ByteSlice<'a>(&'a [u8]);
 /// pattern strings (although non-literal patterns can also be used to
 /// match non-UTF8 data).
 ///
-/// [`From`] implementations are also provided to convert from native
-/// [arrays](prim@array) and [slices](prim@slice).
+/// [`From`] implementations are also provided to convert from references to
+/// native [arrays](prim@array) and [slices](prim@slice):
+///
+///```
+/// use hyperscan::sources::ByteSlice;
+///
+/// let b1 = ByteSlice::from_slice(b"asdf");
+/// let b2: ByteSlice = b"asdf".into();
+/// let b3: ByteSlice = ['a' as u8, 's' as u8, 'd' as u8, 'f' as u8].as_ref().into();
+/// assert_eq!(b1, b2);
+/// assert_eq!(b2, b3);
+/// assert_eq!(b1.as_slice(), b"asdf");
+/// ```
+///
+/// Note however that a [`From`] implementation is not provided to convert from
+/// an array `[u8; N]` by value, as this wrapper requires a lifetime to
+/// associate the data with, even if it's just the local `'_` lifetime.
 impl<'a> ByteSlice<'a> {
+  /// Wrap a byte slice so it can be used by hyperscan.
+  ///
+  /// This method is [`const`](https://doc.rust-lang.org/std/keyword.const.html) so it can be used
+  /// to define `const` values as well as
+  /// [`static`](https://doc.rust-lang.org/std/keyword.static.html) initializers.
   pub const fn from_slice(data: &'a [u8]) -> Self { Self(data) }
 
+  /// Extract the byte slice.
+  ///
+  /// A [slice](prim@slice) can be split into a pointer/length pair which is
+  /// consumed by hyperscan's underlying C ABI.
   pub const fn as_slice(&self) -> &'a [u8] { self.0 }
 
   pub(crate) const fn as_ptr(&self) -> *const c_char { self.as_slice().as_ptr() as *const c_char }
@@ -53,7 +80,16 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// [`Self::as_str()`] can be invoked safely on match results.
 ///
 /// A [`From`] implementation is also provided to convert from a native
-/// [`str`](prim@str).
+/// [`str`](prim@str):
+///
+///```
+/// use hyperscan::sources::ByteSlice;
+///
+/// let b1 = ByteSlice::from_str("asdf");
+/// let b2: ByteSlice = "asdf".into();
+/// assert_eq!(b1, b2);
+/// assert_eq!(unsafe { b1.as_str() }, "asdf");
+/// ```
 ///
 /// ## The `UTF8` Flag
 /// It is important to note that hyperscan itself does not assume any particular
@@ -65,8 +101,34 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// [`Flags::default()`](crate::flags::Flags::default)). Note however that
 /// enabling the UTF8 flag for non-UTF8 inputs produces undefined behavior.
 impl<'a> ByteSlice<'a> {
+  /// Wrap a UTF8-encoded byte slice so it can be used by hyperscan.
+  ///
+  /// As with [`Self::from_slice()`], this method is `const` and can produce
+  /// `const` values or `static` initializers.
   pub const fn from_str(data: &'a str) -> Self { Self::from_slice(data.as_bytes()) }
 
+  /// Extract the byte slice, and assert that it is correctly UTF8-encoded.
+  ///
+  /// # Safety
+  /// This method avoids the overhead of repeatedly validating the underlying
+  /// string data in the common case where all strings are UTF-8. Where this
+  /// is not certain, [`Self::as_slice()`] can be provided to methods that check
+  /// for UTF-8 validity:
+  ///
+  ///```
+  /// use hyperscan::sources::ByteSlice;
+  /// use std::str;
+  ///
+  /// // All-or-nothing UTF8 conversion with error:
+  /// let b = ByteSlice::from_slice(b"asdf");
+  /// let s = str::from_utf8(b.as_slice()).unwrap();
+  /// assert_eq!(s, "asdf");
+  ///
+  /// // Error-handling UTF8 conversion which replaces invalid characters:
+  /// let b = ByteSlice::from_slice(b"Hello \xF0\x90\x80World");
+  /// let s = String::from_utf8_lossy(b.as_slice());
+  /// assert_eq!("Hello �World", s);
+  /// ```
   pub const unsafe fn as_str(&self) -> &'a str { str::from_utf8_unchecked(self.as_slice()) }
 }
 
@@ -79,6 +141,21 @@ impl<'a> From<&'a str> for ByteSlice<'a> {
 /// fallible subsetting operation which is used to convert match offsets to
 /// substrings.
 impl<'a> ByteSlice<'a> {
+  /// Return a subset of the input, or [`None`] if the result would be out of
+  /// range:
+  ///
+  ///```
+  /// use hyperscan::sources::ByteSlice;
+  ///
+  /// let b: ByteSlice = "asdf".into();
+  /// let b2 = b.index_range(0..2).unwrap();
+  /// assert_eq!(unsafe { b2.as_str() }, "as");
+  /// assert!(b.index_range(0..5).is_none());
+  /// ```
+  ///
+  /// This method is largely intended for internal use inside this library, but
+  /// is exposed in the public API to make it clear how the match callback
+  /// converts match offsets to substrings of the original input data.
   pub fn index_range(&self, range: impl slice::SliceIndex<[u8], Output=[u8]>) -> Option<Self> {
     self.as_slice().get(range).map(Self::from_slice)
   }
