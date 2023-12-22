@@ -195,9 +195,7 @@ impl<'a> ByteSlice<'a> {
 ///
 /// This is currently implemented as
 /// a [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent)
-/// wrapper over `&'a [ByteSlice<'a>]`. The same lifetime `'a` is associated to
-/// both the `ByteSlice<'a>` data entries themselves, as well as the location of
-/// the slice which contains those `ByteSlice<'a>`s.
+/// wrapper over `&'slice [ByteSlice<'string>]`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct VectoredByteSlices<'string, 'slice>(&'slice [ByteSlice<'string>]);
