@@ -132,12 +132,12 @@ impl<'a> ByteSlice<'a> {
   /// Extract the byte slice, and assert that it is correctly UTF8-encoded.
   ///
   /// # Safety
-  /// This method calls [`str::from_utf8_unchecked()`] in order to avoid the
-  /// overhead of repeatedly validating the underlying string data in the
-  /// common case where all strings are UTF-8. Where this is not certain, the
-  /// result of [`Self::as_slice()`] can be provided to methods such as
-  /// [`str::from_utf8()`] or [`String::from_utf8_lossy()`] that check for
-  /// UTF-8 validity:
+  /// This method passes the result of [`Self::as_slice()`] to
+  /// [`str::from_utf8_unchecked()`] in order to avoid the overhead of
+  /// repeatedly validating the underlying string data in the common case
+  /// where all strings are UTF-8. Where this is not certain, the slice may be
+  /// provided to methods such as [`str::from_utf8()`] or
+  /// [`String::from_utf8_lossy()`] that check for UTF-8 validity:
   ///
   ///```
   /// use hyperscan::sources::ByteSlice;
