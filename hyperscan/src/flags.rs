@@ -10,10 +10,17 @@ use std::{
   os::raw::{c_uint, c_ulonglong},
 };
 
-trait BitSet:
+/// Utility trait used to improve ergonomics of flag composition.
+pub trait BitSet:
   Copy+ops::BitOr<Output=Self>+ops::BitOrAssign+ops::BitAnd<Output=Self>+ops::BitAndAssign
 {
+  /// Whether the underlying integer storing this bitset is not equal to 0.
+  ///
+  /// This must be implemented by each struct because the definition of "zero"
+  /// depends on the width of the integer type used to store the bitset.
   fn nonzero(&self) -> bool;
+
+  /// Whether the `other` flag was provided to the current bitset.
   fn contains(&self, other: &Self) -> bool { (*self & *other).nonzero() }
 }
 

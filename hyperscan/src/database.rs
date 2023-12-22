@@ -26,23 +26,161 @@ use std::{
   ptr, slice, str,
 };
 
-/// An in-memory state machine.
+/// Read-only description of an in-memory state machine.
 ///
-/// This type also serves as the entry point to the various types of pattern
-/// compilers, including literals, sets, and literal sets.
+/// This type also serves as the entry point to the various types of [pattern
+/// compilers](#pattern-compilers), including literals, sets, and literal sets.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Database(*mut NativeDb);
 
 pub type NativeDb = hs::hs_database;
 
+/// # Convenience Methods
+/// These methods prepare some resource within a new heap allocation and are
+/// useful for doctests and examples.
+///
+/// ## Scratch Setup
+/// Databases already require their own heap allocation, which can be managed
+/// with the methods in [Managing Allocations](#managing-allocations). However,
+/// databases also impose a sort of implicit dynamic lifetime constraint on
+/// [`Scratch`] objects, which must be initialized against a db with
+/// [`Scratch::setup_for_db()`] before hyperscan can do any searching.
+///
+/// It is encouraged to re-use [`Scratch`] objects across databases where
+/// possible to minimize unnecessary allocations, but
+/// [`Self::allocate_scratch()`] is provided as a convenience method to quickly
+/// produce a 1:1 db:scratch mapping.
+///
+/// ## Serialization
+/// While [`SerializedDb`] offers a rich interface to wrap serialized bytes from
+/// a variety of sources with [`DbAllocation`], [`Self::serialize()`] simply
+/// returns a newly allocated region of bytes.
 impl Database {
+  /// Call [`Scratch::setup_for_db()`] on a newly allocated [`Scratch`].
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
     let mut scratch = Scratch::new();
     scratch.setup_for_db(self)?;
     Ok(scratch)
   }
 
+  /// Allocate a new memory region and serialize this in-memory state machine
+  /// into it.
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  ///
+  ///   // Create a db to match against:
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///
+  ///   // Serialize and deserialize the db:
+  ///   let db = db.serialize()?.deserialize_db()?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   // Search against the db:
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
+    SerializedDb::serialize_db(self)
+  }
+}
+
+/// # Pattern Compilers
+/// Hyperscan supports compiling state machines for PCRE-like and literal
+/// pattern strings, as well as parallel sets of those patterns (although note
+/// that literal and non-literal patterns cannot be mixed). Each compile method
+/// supports a subset of all [`Flags`] arguments, documented in each method.
+///
+/// ## Platform Compatibility
+/// Each method also accepts an optional reference to a [`Platform`] object,
+/// which is used to select processor features to compile the database for.
+/// While the default of [`None`] will enable all features available to the
+/// current processor, some features can be disabled in order to produce a
+/// database which can execute on a wider variety of target platforms
+/// after being deserialized from a remote source.
+///
+///```
+/// #[cfg(feature = "compiler")]
+/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+///   use hyperscan::{expression::*, flags::{*, platform::*}, database::*};
+///
+///   let expr: Expression = "a+".parse()?;
+///
+///   // Verify that the current platform has AVX2 instructions, and make a db:
+///   let mut plat = Platform::get().clone();
+///   assert!(plat.cpu_features().contains(&CpuFeatures::AVX2));
+///   let db_with_avx2 = Database::compile(&expr, Flags::default(), Mode::BLOCK, Some(&plat))?;
+///
+///   // Avoid using AVX2 instructions:
+///   plat.set_cpu_features(CpuFeatures::default());
+///   let db_no_avx2 = Database::compile(&expr, Flags::default(), Mode::BLOCK, Some(&plat))?;
+///
+///   // Instruction selection does not affect the size of the state machine:
+///   assert_eq!(db_with_avx2.database_size()?, db_no_avx2.database_size()?);
+///   Ok(())
+/// }
+/// # #[cfg(not(feature = "compiler"))]
+/// # fn main() {}
+/// ```
+///
+/// ## Dynamic Memory Allocation
+/// These methods allocate a new region of memory using the db allocator (which
+/// can be overridden with [`crate::alloc::set_db_allocator()`]). That
+/// allocation can be manipulated as described in [Managing
+/// Allocations](#managing-allocations).
+#[cfg(feature = "compiler")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
+impl Database {
+  /// Single pattern compiler.
+  ///
+  /// # Accepted Flags
+  /// - [`CASELESS`](Flags::CASELESS)
+  /// - [`DOTALL`](Flags::DOTALL)
+  /// - [`MULTILINE`](Flags::MULTILINE)
+  /// - [`SINGLEMATCH`](Flags::SINGLEMATCH)
+  /// - [`ALLOWEMPTY`](Flags::ALLOWEMPTY)
+  /// - [`UTF8`](Flags::UTF8)
+  /// - [`UCP`](Flags::UCP)
+  /// - [`PREFILTER`](Flags::PREFILTER)
+  /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
+  /// - [`COMBINATION`](Flags::COMBINATION)
+  /// - [`QUIET`](Flags::QUIET)
+  ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
@@ -62,8 +200,6 @@ impl Database {
   /// # Ok(())
   /// # }
   /// ```
-  #[cfg(feature = "compiler")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile(
     expression: &Expression,
     flags: Flags,
@@ -90,54 +226,21 @@ impl Database {
     Ok(unsafe { Self::from_native(db) })
   }
 
-  ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// Multiple pattern compiler.
   ///
-  /// let expr: Literal = "he\0ll".parse()?;
-  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, None)?;
+  /// # Accepted Flags
+  /// - [`CASELESS`](Flags::CASELESS)
+  /// - [`DOTALL`](Flags::DOTALL)
+  /// - [`MULTILINE`](Flags::MULTILINE)
+  /// - [`SINGLEMATCH`](Flags::SINGLEMATCH)
+  /// - [`ALLOWEMPTY`](Flags::ALLOWEMPTY)
+  /// - [`UTF8`](Flags::UTF8)
+  /// - [`UCP`](Flags::UCP)
+  /// - [`PREFILTER`](Flags::PREFILTER)
+  /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
+  /// - [`COMBINATION`](Flags::COMBINATION)
+  /// - [`QUIET`](Flags::QUIET)
   ///
-  /// let mut scratch = db.allocate_scratch()?;
-  ///
-  /// let mut matches: Vec<&str> = Vec::new();
-  /// scratch
-  ///   .scan_sync(&db, "he\0llo".into(), |m| {
-  ///     matches.push(unsafe { m.source.as_str() });
-  ///     MatchResult::Continue
-  ///   })?;
-  /// assert_eq!(&matches, &["he\0ll"]);
-  /// # Ok(())
-  /// # }
-  /// ```
-  #[cfg(feature = "compiler")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-  pub fn compile_literal(
-    literal: &Literal,
-    flags: Flags,
-    mode: Mode,
-    platform: Option<&Platform>,
-  ) -> Result<Self, HyperscanCompileError> {
-    let mut db = ptr::null_mut();
-    let mut compile_err = ptr::null_mut();
-    HyperscanRuntimeError::copy_from_native_compile_error(
-      unsafe {
-        hs::hs_compile_lit(
-          literal.as_ptr(),
-          flags.into_native(),
-          literal.as_bytes().len(),
-          mode.into_native(),
-          platform
-            .map(|p| mem::transmute(p.as_ref_native()))
-            .unwrap_or(ptr::null()),
-          &mut db,
-          &mut compile_err,
-        )
-      },
-      compile_err,
-    )?;
-    Ok(unsafe { Self::from_native(db) })
-  }
-
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
@@ -175,8 +278,6 @@ impl Database {
   /// # Ok(())
   /// # }
   /// ```
-  #[cfg(feature = "compiler")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
@@ -220,6 +321,66 @@ impl Database {
     Ok(unsafe { Self::from_native(db) })
   }
 
+  /// Single literal compiler.
+  ///
+  /// # Accepted Flags
+  /// - [`CASELESS`](Flags::CASELESS)
+  /// - [`SINGLEMATCH`](Flags::SINGLEMATCH)
+  /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  ///
+  /// let expr: Literal = "he\0ll".parse()?;
+  /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, None)?;
+  ///
+  /// let mut scratch = db.allocate_scratch()?;
+  ///
+  /// let mut matches: Vec<&str> = Vec::new();
+  /// scratch
+  ///   .scan_sync(&db, "he\0llo".into(), |m| {
+  ///     matches.push(unsafe { m.source.as_str() });
+  ///     MatchResult::Continue
+  ///   })?;
+  /// assert_eq!(&matches, &["he\0ll"]);
+  /// # Ok(())
+  /// # }
+  /// ```
+  pub fn compile_literal(
+    literal: &Literal,
+    flags: Flags,
+    mode: Mode,
+    platform: Option<&Platform>,
+  ) -> Result<Self, HyperscanCompileError> {
+    let mut db = ptr::null_mut();
+    let mut compile_err = ptr::null_mut();
+    HyperscanRuntimeError::copy_from_native_compile_error(
+      unsafe {
+        hs::hs_compile_lit(
+          literal.as_ptr(),
+          flags.into_native(),
+          literal.as_bytes().len(),
+          mode.into_native(),
+          platform
+            .map(|p| mem::transmute(p.as_ref_native()))
+            .unwrap_or(ptr::null()),
+          &mut db,
+          &mut compile_err,
+        )
+      },
+      compile_err,
+    )?;
+    Ok(unsafe { Self::from_native(db) })
+  }
+
+  /// Multiple literal compiler.
+  ///
+  /// # Accepted Flags
+  /// - [`CASELESS`](Flags::CASELESS)
+  /// - [`SINGLEMATCH`](Flags::SINGLEMATCH)
+  /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
+  ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
@@ -258,8 +419,6 @@ impl Database {
   /// # Ok(())
   /// # }
   /// ```
-  #[cfg(feature = "compiler")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
@@ -287,23 +446,63 @@ impl Database {
     )?;
     Ok(unsafe { Self::from_native(db) })
   }
+}
 
+/// # Introspection
+/// These methods extract various bits of runtime information from the db.
+impl Database {
+  /// Return the size of the db allocation.
+  ///
+  /// Using [`Flags::UCP`] explodes the size of character classes, which
+  /// increases the size of the state machine:
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
   ///   use hyperscan::{expression::*, flags::*};
   ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
-  ///   let db_size = db.database_size()?;
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
+  ///   let ascii_db = expr.compile(Flags::default(), Mode::BLOCK)?;
   ///
-  ///   // Size may vary across architectures:
-  ///   assert_eq!(db_size, 936);
-  ///   assert!(db_size > 500);
-  ///   assert!(db_size < 2000);
+  ///   // Including UTF-8 classes increases the size:
+  ///   let utf8_db_size = utf8_db.database_size()?;
+  ///   let ascii_db_size = ascii_db.database_size()?;
+  ///   assert!(utf8_db_size > ascii_db_size);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  ///
+  /// This size corresponds to the requested allocation size passed to the db
+  /// allocator:
+  ///
+  ///```
+  /// #[cfg(all(feature = "alloc", feature = "compiler"))]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, alloc::*};
+  ///   use std::alloc::System;
+  ///
+  ///   // Wrap the standard Rust System allocator.
+  ///   let tracker = LayoutTracker::new(System.into());
+  ///   // Register it as the allocator for databases.
+  ///   assert!(set_db_allocator(tracker)?.is_none());
+  ///
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
+  ///
+  ///   // Get the database allocator we just registered and view its live allocations:
+  ///   let allocs = get_db_allocator().as_ref().unwrap().current_allocations();
+  ///   // Verify that only the single known db was allocated:
+  ///   assert_eq!(1, allocs.len());
+  ///   let (_p, layout) = allocs[0];
+  ///
+  ///   // Verify that the allocation size is the same as reported:
+  ///   assert_eq!(layout.size(), utf8_db.database_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
   pub fn database_size(&self) -> Result<usize, HyperscanRuntimeError> {
@@ -314,22 +513,55 @@ impl Database {
     Ok(unsafe { ret.assume_init() })
   }
 
+  /// Return the amount of space necessary to maintain stream state for this db.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
   ///   use hyperscan::{expression::*, flags::*};
   ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::UTF8, Mode::STREAM)?;
-  ///   let stream_size = db.stream_size()?;
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::STREAM)?;
+  ///   let ascii_db = expr.compile(Flags::default(), Mode::STREAM)?;
   ///
-  ///   // Size may vary across architectures:
-  ///   assert_eq!(stream_size, 18);
-  ///   assert!(stream_size > 10);
-  ///   assert!(stream_size < 20);
+  ///   // Including UTF-8 classes increases both db and stream size:
+  ///   assert!(utf8_db.database_size()? > ascii_db.database_size()?);
+  ///   assert!(utf8_db.stream_size()? > ascii_db.stream_size()?);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  ///
+  /// This size corresponds to the requested allocation size passed to the
+  /// stream allocator:
+  ///
+  ///```
+  /// #[cfg(all(feature = "alloc", feature = "compiler"))]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, alloc::*, stream::*};
+  ///   use std::alloc::System;
+  ///
+  ///   // Wrap the standard Rust System allocator.
+  ///   let tracker = LayoutTracker::new(System.into());
+  ///   // Register it as the allocator for streams.
+  ///   assert!(set_stream_allocator(tracker)?.is_none());
+  ///
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::STREAM)?;
+  ///   let _stream = LiveStream::try_open(&db)?;
+  ///
+  ///   // Get the stream allocator we just registered and view its live allocations:
+  ///   let allocs = get_stream_allocator().as_ref().unwrap().current_allocations();
+  ///   // Verify that only the single known stream was allocated:
+  ///   assert_eq!(1, allocs.len());
+  ///   let (_p, layout) = allocs[0];
+  ///
+  ///   // Verify that the allocation size is the same as reported:
+  ///   assert_eq!(layout.size(), db.stream_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
   pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
@@ -340,43 +572,38 @@ impl Database {
     Ok(unsafe { ret.assume_init() })
   }
 
-  pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
-
+  /// Extract metadata about the current database into a new string allocation.
+  ///
+  /// This is a convenience method that simply calls
+  /// [`DbInfo::extract_db_info()`].
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  ///   use hyperscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?.deserialize_db()?;
-  ///   let mut scratch = db.allocate_scratch()?;
-  ///
-  ///   let mut matches: Vec<&str> = Vec::new();
-  ///   scratch
-  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
-  ///       matches.push(unsafe { source.as_str() });
-  ///       MatchResult::Continue
-  ///     })?;
-  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  ///   let info = db.info()?;
+  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
-    SerializedDb::serialize_db(self)
-  }
-
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
-  }
+  pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
 }
 
 /// # Managing Allocations
 /// These methods provide access to the underlying memory allocation containing
 /// the data for the in-memory state machine. They can be used along with
 /// [`SerializedDb::deserialize_db_at()`] to control the memory location used
-/// by the state machine.
+/// for the state machine, or to preserve db allocations across weird lifetime
+/// constraints.
+///
+/// Note that [`Self::database_size()`] can be used to determine the size of the
+/// memory allocation pointed to by [`Self::as_ref_native()`] and
+/// [`Self::as_mut_native()`].
 impl Database {
   /// Wrap the provided allocation `p`.
   ///
@@ -440,6 +667,22 @@ impl Database {
   /// The result of this method can be cast to a pointer and provided to
   /// [`Self::from_native()`].
   pub fn as_mut_native(&mut self) -> &mut NativeDb { unsafe { &mut *self.0 } }
+
+  /// Free the underlying db allocation.
+  ///
+  /// # Safety
+  /// This method must be called at most once over the lifetime of each db
+  /// allocation. It is called by default on drop, so
+  /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap instances
+  /// that reference external data.
+  ///
+  /// ## Only Frees Memory
+  /// This method performs no processing other than freeing the allocated
+  /// memory, so it can be skipped without leaking resources if the
+  /// underlying db allocation is freed by some other means.
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
+  }
 }
 
 impl ops::Drop for Database {
@@ -670,6 +913,9 @@ impl<'a> SerializedDb<'a> {
   ///     // Wrap in ManuallyDrop to avoid freeing memory owned by the `db_data` vector.
   ///     mem::ManuallyDrop::new(Database::from_native(db_ptr))
   ///   };
+  ///   // Note that the expected deserialized size is the same
+  ///   // as the resulting in-memory database size:
+  ///   assert_eq!(db.database_size()?, serialized_db.deserialized_size()?);
   ///
   ///   let mut scratch = db.allocate_scratch()?;
   ///
