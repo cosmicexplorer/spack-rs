@@ -59,7 +59,7 @@ impl<'a> fmt::Display for ByteSlice<'a> {
 ///
 /// let b1 = ByteSlice::from_slice(b"asdf");
 /// let b2: ByteSlice = b"asdf".into();
-/// let b3: ByteSlice = ['a' as u8, 's' as u8, 'd' as u8, 'f' as u8].as_ref().into();
+/// let b3: ByteSlice = [b'a', b's', b'd', b'f'].as_ref().into();
 /// assert_eq!(b1, b2);
 /// assert_eq!(b2, b3);
 /// assert_eq!(b1.as_slice(), b"asdf");

@@ -674,7 +674,8 @@ impl Database {
   /// This method must be called at most once over the lifetime of each db
   /// allocation. It is called by default on drop, so
   /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap instances
-  /// that reference external data.
+  /// that reference external data to avoid attempting to free the referenced
+  /// data.
   ///
   /// ## Only Frees Memory
   /// This method performs no processing other than freeing the allocated
@@ -729,35 +730,30 @@ impl ops::Drop for MiscAllocation {
   }
 }
 
+/// Wrapper for allocated string data returned by [`Database::info()`].
 #[derive(Debug)]
-pub struct DbInfo(MiscAllocation);
+#[repr(transparent)]
+pub struct DbInfo(pub MiscAllocation);
 
 impl DbInfo {
   const fn without_null(&self) -> impl slice::SliceIndex<[u8], Output=[u8]> { ..(self.0.len() - 1) }
 
+  /// Return a view of the allocated string data.
+  ///
+  /// Hyperscan will always return valid UTF-8 data for this string, so it skips
+  /// the validity check. Note that the returned string does not include the
+  /// trailing null byte allocated by the underlying hyperscan library.
   pub fn as_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
   }
 
-  pub fn as_mut_str(&mut self) -> &mut str {
+  #[allow(dead_code)]
+  fn as_mut_str(&mut self) -> &mut str {
     let without_null = self.without_null();
     unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
   }
 
-  ///```
-  /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, database::*};
-  ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
-  ///   let info = DbInfo::extract_db_info(&db)?;
-  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-  ///   Ok(())
-  /// }
-  /// # #[cfg(not(feature = "compiler"))]
-  /// # fn main() {}
-  /// ```
+  /// Write out metadata for `db` into a newly allocated region.
   pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut info = ptr::null_mut();
     HyperscanRuntimeError::from_native(unsafe {
@@ -808,6 +804,10 @@ impl DbAllocation<'static> {
   }
 }
 
+impl Clone for DbAllocation<'static> {
+  fn clone(&self) -> Self { Self::from_cloned_data(self) }
+}
+
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct SerializedDb<'a>(pub DbAllocation<'a>);
@@ -830,6 +830,10 @@ impl SerializedDb<'static> {
     let SerializedDb(ref s) = s;
     Self(DbAllocation::from_cloned_data(s))
   }
+}
+
+impl Clone for SerializedDb<'static> {
+  fn clone(&self) -> Self { Self::from_cloned_data(self) }
 }
 
 impl<'a> SerializedDb<'a> {
@@ -1219,5 +1223,23 @@ pub mod chimera {
 
       Ok(Self(ret))
     }
+  }
+}
+
+#[cfg(all(test, feature = "compiler"))]
+mod test {
+  use crate::{expression::*, flags::*};
+
+  #[test]
+  fn test_db_info_mut_str() {
+    let expr: Expression = "a+".parse().unwrap();
+    let db = expr.compile(Flags::default(), Mode::BLOCK).unwrap();
+    let mut info = db.info().unwrap();
+
+    assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    unsafe {
+      info.as_mut_str().as_bytes_mut()[9] = b'6';
+    }
+    assert!(info.as_str().starts_with("Version: 6.4.2"));
   }
 }
