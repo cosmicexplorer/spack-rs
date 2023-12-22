@@ -1,6 +1,8 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Compile state machines from expressions or deserialize them from bytes.
+
 #[cfg(feature = "compiler")]
 use crate::{
   error::HyperscanCompileError,
@@ -24,6 +26,10 @@ use std::{
   ptr, slice, str,
 };
 
+/// An in-memory state machine.
+///
+/// This type also serves as the entry point to the various types of pattern
+/// compilers, including literals, sets, and literal sets.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Database(*mut NativeDb);
@@ -31,12 +37,6 @@ pub struct Database(*mut NativeDb);
 pub type NativeDb = hs::hs_database;
 
 impl Database {
-  pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
-
-  pub fn as_ref_native(&self) -> &NativeDb { unsafe { &*self.0 } }
-
-  pub fn as_mut_native(&mut self) -> &mut NativeDb { unsafe { &mut *self.0 } }
-
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
     let mut scratch = Scratch::new();
     scratch.setup_for_db(self)?;
@@ -47,8 +47,8 @@ impl Database {
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
   /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   ///
-  /// let expr: Expression = "(he)ll".parse()?;
-  /// let db = Database::compile(&expr, Flags::UTF8, Mode::BLOCK, None)?;
+  /// let expr: Expression = "hell(o)?".parse()?;
+  /// let db = Database::compile(&expr, Flags::default(), Mode::BLOCK, None)?;
   ///
   /// let mut scratch = db.allocate_scratch()?;
   ///
@@ -58,7 +58,7 @@ impl Database {
   ///     matches.push(unsafe { m.source.as_str() });
   ///     MatchResult::Continue
   ///   })?;
-  /// assert_eq!(&matches, &["hell"]);
+  /// assert_eq!(&matches, &["hell", "hello"]);
   /// # Ok(())
   /// # }
   /// ```
@@ -370,6 +370,76 @@ impl Database {
   pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
   }
+}
+
+/// # Managing Allocations
+/// These methods provide access to the underlying memory allocation containing
+/// the data for the in-memory state machine. They can be used along with
+/// [`SerializedDb::deserialize_db_at()`] to control the memory location used
+/// by the state machine.
+impl Database {
+  /// Wrap the provided allocation `p`.
+  ///
+  /// # Safety
+  /// The pointer `p` must point to an initialized db allocation prepared by one
+  /// of the compile or deserialize methods.
+  ///
+  /// This method also makes it especially easy to create multiple references to
+  /// the same allocation, which will then cause a double free when
+  /// [`Self::try_drop()`] is called more than once for the same db allocation.
+  /// To avoid this, wrap the result in a [`ManuallyDrop`](mem::ManuallyDrop):
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*, state::*};
+  ///   use std::mem::ManuallyDrop;
+  ///
+  ///   // Compile a legitimate db:
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let mut db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///
+  ///   // Create two new references to that allocation,
+  ///   // wrapped to avoid calling the drop code:
+  ///   let db_ptr: *mut NativeDb = db.as_mut_native();
+  ///   let db_ref_1 = ManuallyDrop::new(unsafe { Database::from_native(db_ptr) });
+  ///   let db_ref_2 = ManuallyDrop::new(unsafe { Database::from_native(db_ptr) });
+  ///
+  ///   // Both db references are valid and can be used for matching.
+  ///   let mut scratch = Scratch::new();
+  ///   scratch.setup_for_db(&db_ref_1)?;
+  ///   scratch.setup_for_db(&db_ref_2)?;
+  ///
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db_ref_1, "aardvark".into(), |Match { source, ..}| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   scratch
+  ///     .scan_sync(&db_ref_2, "aardvark".into(), |Match { source, ..}| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a", "a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub const unsafe fn from_native(p: *mut NativeDb) -> Self { Self(p) }
+
+  /// Get a read-only reference to the db allocation.
+  ///
+  /// This method is mostly used internally and cast to a pointer to provide to
+  /// the hyperscan native library methods.
+  pub fn as_ref_native(&self) -> &NativeDb { unsafe { &*self.0 } }
+
+  /// Get a mutable reference to the db allocation.
+  ///
+  /// The result of this method can be cast to a pointer and provided to
+  /// [`Self::from_native()`].
+  pub fn as_mut_native(&mut self) -> &mut NativeDb { unsafe { &mut *self.0 } }
 }
 
 impl ops::Drop for Database {
