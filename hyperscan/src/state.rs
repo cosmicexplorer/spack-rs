@@ -26,8 +26,6 @@ use {
   tokio::{sync::mpsc, task},
 };
 
-#[cfg(feature = "async")]
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
   mem, ops,
   ptr::{self, NonNull},
@@ -274,19 +272,11 @@ impl Scratch {
     unsafe { &mut *(scratch as *mut Scratch) }
   }
 
-  fn into_flag(flag: &AtomicBool) -> usize {
-    let flag: *const AtomicBool = flag;
-    flag as usize
-  }
-
-  fn from_flag<'a>(flag: usize) -> &'a AtomicBool { unsafe { &*(flag as *const AtomicBool) } }
-
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
   ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
   ///   use futures_util::TryStreamExt;
-  ///   use std::sync::atomic::AtomicBool;
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let b_expr: Expression = "b+".parse()?;
@@ -298,14 +288,14 @@ impl Scratch {
   ///   let mut scratch = db.allocate_scratch()?;
   ///
   ///   let matches: Vec<&str> = scratch
-  ///     .scan_channel(&db, "aardvark".into(), &AtomicBool::new(false), |_| MatchResult::Continue)
+  ///     .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
   ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///     .try_collect()
   ///     .await?;
   ///   assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   ///   let matches: Vec<&str> = scratch
-  ///     .scan_channel(&db, "imbibbe".into(), &AtomicBool::new(false), |_| MatchResult::Continue)
+  ///     .scan_channel(&db, "imbibbe".into(), |_| MatchResult::Continue)
   ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
   ///     .try_collect()
   ///     .await?;
@@ -314,17 +304,7 @@ impl Scratch {
   ///   let ret = scratch.scan_channel(
   ///     &db,
   ///     "abwuebiaubeb".into(),
-  ///     &AtomicBool::new(false),
   ///     |_| MatchResult::CeaseMatching,
-  ///   ).try_for_each(|_| async { Ok(()) })
-  ///    .await;
-  ///   assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
-  ///
-  ///   let ret = scratch.scan_channel(
-  ///     &db,
-  ///     "abwuebiaubeb".into(),
-  ///     &AtomicBool::new(true),
-  ///     |_| MatchResult::Continue,
   ///   ).try_for_each(|_| async { Ok(()) })
   ///    .await;
   ///   assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
@@ -337,14 +317,12 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-    termination_flag: &AtomicBool,
     mut f: impl FnMut(&Match<'data>) -> MatchResult+Send+Sync,
   ) -> impl Stream<Item=Result<Match<'data>, ScanError>> {
     /* Convert all references into pointers cast to usize to strip lifetime
      * information so it can be moved into spawn_blocking(): */
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
-    let tf = Self::into_flag(&termination_flag);
     let f: &mut (dyn FnMut(&Match<'data>) -> MatchResult+Send+Sync) = &mut f;
 
     /* Create a channel for match results alone, *not* errors. */
@@ -361,12 +339,8 @@ impl Scratch {
       /* Dereference pointer arguments. */
       let scratch: &mut Self = Self::from_scratch(scratch);
       let db: &Database = Self::from_db(db);
-      let tf: &AtomicBool = Self::from_flag(tf);
 
       scratch.scan_sync(db, data, |m| {
-        if tf.load(Ordering::Acquire) {
-          return MatchResult::CeaseMatching;
-        }
         let result = f(&m);
         matches_tx.send(m).unwrap();
         result
@@ -386,7 +360,6 @@ impl Scratch {
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
   ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
   ///   use futures_util::TryStreamExt;
-  ///   use std::sync::atomic::AtomicBool;
   ///
   ///   let a_plus: Expression = "a+".parse()?;
   ///   let b_plus: Expression = "b+".parse()?;
@@ -405,12 +378,7 @@ impl Scratch {
   ///     "dfeg".into(),
   ///   ];
   ///   let matches: Vec<(u32, String)> = scratch
-  ///     .scan_channel_vectored(
-  ///       &db,
-  ///       data.as_ref().into(),
-  ///       &AtomicBool::new(false),
-  ///       |_| MatchResult::Continue,
-  ///     )
+  ///     .scan_channel_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
   ///     .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
   ///       let joined = source.iter_slices()
   ///         .map(|s| unsafe { s.as_str() })
@@ -440,7 +408,6 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data, 'data>,
-    termination_flag: &AtomicBool,
     mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, ScanError>> {
     /* NB: while static arrays take up no extra runtime space, a ref to a
@@ -456,7 +423,6 @@ impl Scratch {
      * information so it can be moved into spawn_blocking(): */
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
-    let tf = Self::into_flag(&termination_flag);
     let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync) = &mut f;
 
     /* Create a channel for match results alone, *not* errors. */
@@ -474,12 +440,8 @@ impl Scratch {
       /* Dereference pointer arguments. */
       let scratch: &mut Self = Self::from_scratch(scratch);
       let db: &Database = Self::from_db(db);
-      let tf: &AtomicBool = Self::from_flag(tf);
 
       scratch.scan_sync_vectored(db, data, |m| {
-        if tf.load(Ordering::Acquire) {
-          return MatchResult::CeaseMatching;
-        }
         let result = f(&m);
         matches_tx.send(m).unwrap();
         result
@@ -552,10 +514,7 @@ mod test {
 
   use futures_util::TryStreamExt;
 
-  use std::{
-    mem::ManuallyDrop,
-    sync::{atomic::AtomicBool, Arc},
-  };
+  use std::{mem::ManuallyDrop, sync::Arc};
 
   #[tokio::test]
   async fn try_clone_still_valid() -> Result<(), eyre::Report> {
@@ -573,9 +532,7 @@ mod test {
 
     /* Operate on the clone. */
     let matches: Vec<&str> = s2
-      .scan_channel(&db, "asdf".into(), &AtomicBool::new(false), |_| {
-        MatchResult::Continue
-      })
+      .scan_channel(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
@@ -601,9 +558,7 @@ mod test {
 
     /* Operate on the result of Arc::make_mut(). */
     let matches: Vec<&str> = Arc::make_mut(&mut s2)
-      .scan_channel(&db, "asdf".into(), &AtomicBool::new(false), |_| {
-        MatchResult::Continue
-      })
+      .scan_channel(&db, "asdf".into(), |_| MatchResult::Continue)
       .and_then(|m| async move { Ok(unsafe { m.source.as_str() }) })
       .try_collect()
       .await?;
