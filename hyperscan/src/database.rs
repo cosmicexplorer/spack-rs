@@ -135,31 +135,58 @@ impl Database {
 /// #[cfg(feature = "compiler")]
 /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
 ///   use hyperscan::{expression::*, flags::{*, platform::*}, database::*};
+///   use std::slice;
 ///
 ///   let expr: Expression = "a+".parse()?;
 ///
 ///   // Verify that the current platform has AVX2 instructions, and make a db:
 ///   let plat = Platform::local();
 ///   assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
-///   assert_ne!(plat, &Platform::GENERIC);
+///   assert!(plat != &Platform::GENERIC);
 ///   let db_with_avx2 = Database::compile(
 ///     &expr,
 ///     Flags::default(),
 ///     Mode::STREAM,
-///     Some(*plat),
+///     Some(plat),
 ///   )?;
 ///
+///   // The only specialized instructions we have available are AVX2:
+///   assert!(CpuFeatures::NONE == plat.cpu_features & !CpuFeatures::AVX2);
 ///   // Avoid using AVX2 instructions:
 ///   let db_no_avx2 = Database::compile(
 ///     &expr,
 ///     Flags::default(),
 ///     Mode::STREAM,
-///     Some(Platform::GENERIC),
+///     Some(&Platform::GENERIC),
 ///   )?;
 ///
 ///   // Instruction selection does not affect the size of the state machine:
-///   assert_eq!(db_with_avx2.database_size()?, db_no_avx2.database_size()?);
-///   assert_eq!(db_with_avx2.stream_size()?, db_no_avx2.stream_size()?);
+///   assert!(db_with_avx2.database_size()? == db_no_avx2.database_size()?);
+///   assert!(db_with_avx2.stream_size()? == db_no_avx2.stream_size()?);
+///
+///   let db_local = Database::compile(&expr, Flags::default(), Mode::STREAM, None)?;
+///   assert!(db_with_avx2.database_size()? == db_local.database_size()?);
+///   let n = db_with_avx2.database_size()?;
+///
+///   // Using None produces the same db as Platform::local():
+///   assert_eq!(db_with_avx2.info()?, db_local.info()?);
+///   assert!(db_no_avx2.info()? != db_local.info()?);
+///
+///   // The "same" db even applies to the in-memory representation:
+///   let db_data_1 = unsafe { slice::from_raw_parts(
+///     db_with_avx2.as_ref_native() as *const NativeDb as *const u8,
+///     n,
+///   )};
+///   let db_data_2 = unsafe { slice::from_raw_parts(
+///     db_no_avx2.as_ref_native() as *const NativeDb as *const u8,
+///     n,
+///   )};
+///   let db_data_3 = unsafe { slice::from_raw_parts(
+///     db_local.as_ref_native() as *const NativeDb as *const u8,
+///     n,
+///   )};
+///   assert!(db_data_1 == db_data_3);
+///   assert!(db_data_1 != db_data_2);
 ///   Ok(())
 /// }
 /// # #[cfg(not(feature = "compiler"))]
@@ -212,10 +239,11 @@ impl Database {
     expression: &Expression,
     flags: Flags,
     mode: Mode,
-    platform: Option<Platform>,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
+    let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
@@ -223,7 +251,8 @@ impl Database {
           flags.into_native(),
           mode.into_native(),
           platform
-            .map(|p| &p.into_native() as *const hs::hs_platform_info)
+            .as_ref()
+            .map(|p| p as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -289,10 +318,11 @@ impl Database {
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
-    platform: Option<Platform>,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
+    let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         if let Some(exts_ptr) = expression_set.exts_ptr() {
@@ -304,7 +334,8 @@ impl Database {
             expression_set.num_elements(),
             mode.into_native(),
             platform
-              .map(|p| &p.into_native() as *const hs::hs_platform_info)
+              .as_ref()
+              .map(|p| p as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -317,7 +348,8 @@ impl Database {
             expression_set.num_elements(),
             mode.into_native(),
             platform
-              .map(|p| &p.into_native() as *const hs::hs_platform_info)
+              .as_ref()
+              .map(|p| p as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -359,10 +391,11 @@ impl Database {
     literal: &Literal,
     flags: Flags,
     mode: Mode,
-    platform: Option<Platform>,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
+    let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit(
@@ -371,7 +404,8 @@ impl Database {
           literal.as_bytes().len(),
           mode.into_native(),
           platform
-            .map(|p| &p.into_native() as *const hs::hs_platform_info)
+            .as_ref()
+            .map(|p| p as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -430,10 +464,11 @@ impl Database {
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
-    platform: Option<Platform>,
+    platform: Option<&Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
+    let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
     HyperscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit_multi(
@@ -444,7 +479,8 @@ impl Database {
           literal_set.num_elements(),
           mode.into_native(),
           platform
-            .map(|p| &p.into_native() as *const hs::hs_platform_info)
+            .as_ref()
+            .map(|p| p as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -1072,7 +1108,7 @@ pub mod chimera {
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
       mode: ChimeraMode,
-      platform: Option<Platform>,
+      platform: Option<&Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
@@ -1122,7 +1158,7 @@ pub mod chimera {
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
-      platform: Option<Platform>,
+      platform: Option<&Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();

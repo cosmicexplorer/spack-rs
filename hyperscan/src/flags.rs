@@ -12,7 +12,7 @@ use std::{
 
 /// Utility trait used to improve ergonomics of flag composition.
 pub trait BitSet:
-  Copy+ops::BitOr<Output=Self>+ops::BitOrAssign+ops::BitAnd<Output=Self>+ops::BitAndAssign
+  Copy+ops::BitOr<Output=Self>+ops::BitOrAssign+ops::BitAnd<Output=Self>+ops::BitAndAssign+ops::Not
 {
   /// Whether the underlying integer storing this bitset is not equal to 0.
   ///
@@ -214,6 +214,12 @@ impl ops::BitAndAssign for Flags {
   }
 }
 
+impl ops::Not for Flags {
+  type Output = Self;
+
+  fn not(self) -> Self::Output { Self(!self.0) }
+}
+
 
 /// Compiler mode flags that affect the database as a whole.
 ///
@@ -311,6 +317,12 @@ impl ops::BitAndAssign for Mode {
   }
 }
 
+impl ops::Not for Mode {
+  type Output = Self;
+
+  fn not(self) -> Self::Output { Self(!self.0) }
+}
+
 /// Flags used for instruction selection with [`platform::Platform`].
 pub mod platform {
   use super::*;
@@ -382,6 +394,12 @@ pub mod platform {
     }
   }
 
+  impl ops::Not for CpuFeatures {
+    type Output = Self;
+
+    fn not(self) -> Self::Output { Self(!self.0) }
+  }
+
   /// Tuning flags
   #[derive(
     Debug,
@@ -444,10 +462,10 @@ pub mod platform {
   /// further reference.
   #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct Platform {
+    /// Tuning flags.
     pub tune: TuneFamily,
+    /// CPU feature support flags.
     pub cpu_features: CpuFeatures,
-    pub reserved1: u64,
-    pub reserved2: u64,
   }
 
   static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
@@ -466,8 +484,6 @@ pub mod platform {
     pub const GENERIC: Self = Self {
       tune: TuneFamily::Generic,
       cpu_features: CpuFeatures::NONE,
-      reserved1: 0,
-      reserved2: 0,
     };
 
     /// Configuration to build for the current platform.
@@ -477,32 +493,23 @@ pub mod platform {
     pub fn local() -> &'static Self { &CACHED_PLATFORM }
 
     pub(crate) fn from_native(x: hs::hs_platform_info) -> Self {
+      /* NB: ignore reserved fields for now. */
       let hs::hs_platform_info {
-        tune,
-        cpu_features,
-        reserved1,
-        reserved2,
+        tune, cpu_features, ..
       } = x;
       Self {
         tune: TuneFamily::from_native(tune),
         cpu_features: CpuFeatures::from_native(cpu_features),
-        reserved1,
-        reserved2,
       }
     }
 
     pub(crate) fn into_native(self) -> hs::hs_platform_info {
-      let Self {
-        tune,
-        cpu_features,
-        reserved1,
-        reserved2,
-      } = self;
+      let Self { tune, cpu_features } = self;
       hs::hs_platform_info {
         tune: tune.into_native(),
         cpu_features: cpu_features.into_native(),
-        reserved1,
-        reserved2,
+        reserved1: 0,
+        reserved2: 0,
       }
     }
   }
@@ -576,6 +583,12 @@ impl ops::BitAndAssign for ExtFlags {
     use ops::BitAnd;
     *self = self.bitand(rhs);
   }
+}
+
+impl ops::Not for ExtFlags {
+  type Output = Self;
+
+  fn not(self) -> Self::Output { Self(!self.0) }
 }
 
 /// Integer bitsets for the chimera library.
@@ -676,6 +689,12 @@ pub mod chimera {
     }
   }
 
+  impl ops::Not for ChimeraFlags {
+    type Output = Self;
+
+    fn not(self) -> Self::Output { Self(!self.0) }
+  }
+
   /// Compiler mode flags that affect the database as a whole.
   ///
   /// The mode flags are used as values for the mode parameter of the various
@@ -729,5 +748,11 @@ pub mod chimera {
       use ops::BitAnd;
       *self = self.bitand(rhs);
     }
+  }
+
+  impl ops::Not for ChimeraMode {
+    type Output = Self;
+
+    fn not(self) -> Self::Output { Self(!self.0) }
   }
 }
