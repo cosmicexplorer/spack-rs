@@ -741,9 +741,17 @@ pub mod alloc {
     }
   }
 
+  /// Wrapper over a misc or rust-level allocation.
+  ///
+  /// Used to provide [`super::SerializedDb`] with the ability to source data
+  /// allocated by the hyperscan library itself or by other Rust code.
   #[derive(Debug)]
   pub enum DbAllocation<'a> {
+    /// Memory was allocated with a `'static` lifetime using the registered misc
+    /// allocator.
     Misc(MiscAllocation),
+    /// Memory was allocated with a known lifetime and may be owned or
+    /// referenced.
     Rust(Cow<'a, [u8]>),
   }
 
@@ -762,10 +770,12 @@ pub mod alloc {
       }
     }
 
+    /// Return a view over the backing memory region, wherever it may come from.
     pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
   }
 
   impl DbAllocation<'static> {
+    /// Copy the referenced data into a new Rust-level`'static` allocation.
     pub fn from_cloned_data(s: &DbAllocation) -> Self {
       let newly_allocated: Vec<u8> = s.as_slice().to_vec();
       Self::Rust(Cow::Owned(newly_allocated))
