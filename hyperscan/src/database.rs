@@ -755,6 +755,7 @@ pub mod alloc {
     Rust(Cow<'a, [u8]>),
   }
 
+  /// Methods available to all types of allocations.
   impl<'a> DbAllocation<'a> {
     pub(crate) fn as_ptr(&self) -> *const u8 {
       match self {
@@ -774,6 +775,9 @@ pub mod alloc {
     pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
   }
 
+  /// Methods that produce new owned (`'static`) allocations.
+  ///
+  /// A [`Clone`] impl is also available for such owned allocations.
   impl DbAllocation<'static> {
     /// Copy the referenced data into a new Rust-level`'static` allocation.
     pub fn from_cloned_data(s: &DbAllocation) -> Self {
@@ -822,10 +826,15 @@ impl DbInfo {
   }
 }
 
+/// Wrapper for a serialized state machine which can read data from a variety of
+/// sources via [`alloc::DbAllocation`].
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct SerializedDb<'a>(pub alloc::DbAllocation<'a>);
 
+/// Methods that produce new owned (`'static`) allocations.
+///
+/// A [`Clone`] impl is also available for such owned allocations.
 impl SerializedDb<'static> {
   pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut data = ptr::null_mut();
@@ -853,6 +862,7 @@ impl Clone for SerializedDb<'static> {
   fn clone(&self) -> Self { Self::from_cloned_data(self) }
 }
 
+/// Methods available to all types of allocations.
 impl<'a> SerializedDb<'a> {
   ///```
   /// #[cfg(feature = "compiler")]
@@ -886,7 +896,7 @@ impl<'a> SerializedDb<'a> {
 
   fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
-  pub fn len(&self) -> usize { self.0.len() }
+  fn len(&self) -> usize { self.0.len() }
 
   pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
