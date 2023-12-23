@@ -164,12 +164,13 @@ impl Database {
 ///   assert!(db_with_avx2.database_size()? == db_no_avx2.database_size()?);
 ///   assert!(db_with_avx2.stream_size()? == db_no_avx2.stream_size()?);
 ///
+///   // Now create a db with None for the platform:
 ///   let db_local = Database::compile(&expr, Flags::default(), Mode::STREAM, None)?;
 ///   assert!(db_with_avx2.database_size()? == db_local.database_size()?);
 ///   let n = db_with_avx2.database_size()?;
 ///
 ///   // Using None produces the same db as Platform::local():
-///   assert_eq!(db_with_avx2.info()?, db_local.info()?);
+///   assert!(db_with_avx2.info()? == db_local.info()?);
 ///   assert!(db_no_avx2.info()? != db_local.info()?);
 ///
 ///   // The "same" db even applies to the in-memory representation:
