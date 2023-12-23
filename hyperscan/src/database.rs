@@ -697,9 +697,22 @@ unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
 /// Wrappers over allocations from various sources.
+///
+/// In particular, this module contains [`DbAllocation`](alloc::DbAllocation),
+/// which provides the logic needed to abstract over different sources of
+/// backing data used to contain a [`SerializedDb`].
 pub mod alloc {
   use std::{borrow::Cow, ops, slice};
 
+  /// An allocation of memory using the misc allocator.
+  ///
+  /// The allocator used for this memory can be modified or accessed with
+  /// [`crate::alloc::set_misc_allocator()`] and
+  /// [`crate::alloc::get_misc_allocator()`], if the `"alloc"` feature is
+  /// enabled.
+  ///
+  /// The backing memory will be deallocated by the misc allocator upon drop
+  /// unless this is wrapped with a [`ManuallyDrop`](std::mem::ManuallyDrop).
   #[derive(Debug)]
   pub struct MiscAllocation {
     pub(crate) data: *mut u8,
@@ -714,13 +727,14 @@ pub mod alloc {
 
     pub(crate) const fn len(&self) -> usize { self.len }
 
+    /// Return a view over the backing memory region.
     pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
 
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [u8] {
       unsafe { slice::from_raw_parts_mut(self.data, self.len) }
     }
 
-    pub unsafe fn free(&mut self) { crate::free_misc(self.data) }
+    unsafe fn free(&mut self) { crate::free_misc(self.data) }
   }
 
   impl ops::Drop for MiscAllocation {

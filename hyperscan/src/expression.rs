@@ -658,7 +658,7 @@ pub mod info {
   }
 
   impl UnorderedMatchBehavior {
-    pub const fn from_native(x: c_char) -> Self {
+    pub(crate) const fn from_native(x: c_char) -> Self {
       if x == 0 {
         Self::OnlyOrdered
       } else {
@@ -689,7 +689,7 @@ pub mod info {
   }
 
   impl MatchAtEndBehavior {
-    pub fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
+    pub(crate) fn from_native(matches_at_eod: c_char, matches_only_at_eod: c_char) -> Self {
       match (matches_at_eod, matches_only_at_eod) {
         (0, 0) => Self::WillNeverMatchAtEOD,
         (x, 0) if x != 0 => Self::MayMatchAtEOD,
