@@ -67,7 +67,7 @@ use std::{
 /// Note that as the underlying hyperscan library interprets pattern strings as
 /// null-terminated [`CStr`]s, null bytes are *not* supported within
 /// `Expression` strings. Use a [`Literal`] or [`LiteralSet`] database if you
-/// need to match against patterns with null bytes.
+/// need to match against pattern strings containing explicit null bytes.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -272,6 +272,10 @@ impl str::FromStr for Expression {
 /// literal patterns with a pointer and a length instead of a `NULL`-terminated
 /// string. **Importantly, this allows it to contain `\0` or `NULL` bytes
 /// itself!**
+///
+/// Finally note that literal expressions do not support an "info" interface
+/// like [`Expression::info()`] and [`Expression::ext_info()`], since most of
+/// these properties can be inferred from the literal string itself.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -1278,7 +1282,13 @@ pub mod chimera {
   ///
   /// Note that as the underlying chimera library interprets pattern strings as
   /// null-terminated [`CStr`]s, null bytes are *not* supported within
-  /// `ChimeraExpression` strings (or by the chimera library in general).
+  /// `ChimeraExpression` strings. If matching against patterns containing
+  /// explicit null bytes is necessary, consider [`super::Literal`] or
+  /// [`super::LiteralSet`] from the base hyperscan library.
+  ///
+  /// Note also that the chimera library does not support an "info" interface
+  /// such as [`super::Expression::info()`] and
+  /// [`super::Expression::ext_info()`] from the base hyperscan library.
   ///
   /// Instances can be created equivalently with [`Self::new()`] or
   /// [`str::parse()`] via the [`str::FromStr`] impl:

@@ -864,6 +864,9 @@ impl Clone for SerializedDb<'static> {
 
 /// Methods available to all types of allocations.
 impl<'a> SerializedDb<'a> {
+  /// Extract metadata about the serialized database into a new string
+  /// allocation.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
