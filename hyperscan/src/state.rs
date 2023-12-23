@@ -23,7 +23,6 @@ use crate::{
 use {
   futures_core::stream::Stream,
   tokio::{sync::mpsc, task},
-  tokio_stream::wrappers::UnboundedReceiverStream,
 };
 
 use std::{
@@ -407,7 +406,7 @@ impl Scratch {
         Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
     });
-    UnboundedReceiverStream::new(matches_rx)
+    async_utils::UnboundedReceiverStream(matches_rx)
   }
 
   ///```
@@ -510,7 +509,7 @@ impl Scratch {
         Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
     });
-    UnboundedReceiverStream::new(matches_rx)
+    async_utils::UnboundedReceiverStream(matches_rx)
   }
 
   pub async fn scan_stream<'data>(
@@ -1021,7 +1020,7 @@ pub mod chimera {
           Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
         }
       });
-      UnboundedReceiverStream::new(matches_rx)
+      async_utils::UnboundedReceiverStream(matches_rx)
     }
   }
 
@@ -1073,6 +1072,30 @@ pub mod chimera {
       unsafe {
         self.try_drop().unwrap();
       }
+    }
+  }
+}
+
+#[cfg(feature = "async")]
+mod async_utils {
+  use futures_core::stream::Stream;
+  use tokio::sync::mpsc;
+
+  use std::{
+    pin::Pin,
+    task::{Context, Poll},
+  };
+
+  /* Reimplementation of tokio_stream::wrappers::UnboundedReceiverStream. */
+  #[derive(Debug)]
+  #[repr(transparent)]
+  pub struct UnboundedReceiverStream<T>(pub mpsc::UnboundedReceiver<T>);
+
+  impl<T> Stream for UnboundedReceiverStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+      self.0.poll_recv(cx)
     }
   }
 }

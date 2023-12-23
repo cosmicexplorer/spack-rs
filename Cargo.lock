@@ -932,7 +932,6 @@ dependencies = [
  "static_assertions",
  "thiserror",
  "tokio",
- "tokio-stream",
  "tokio-test",
 ]
 
