@@ -7,15 +7,9 @@
 use crate::{
   error::HyperscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
-  flags::{
-    platform::{CpuFeatures, TuneFamily},
-    Flags, Mode,
-  },
+  flags::{platform::Platform, Flags, Mode},
 };
 use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
-
-#[cfg(feature = "compiler")]
-use once_cell::sync::Lazy;
 
 use std::{
   cmp,
@@ -27,6 +21,8 @@ use std::{
   ptr, slice, str,
 };
 
+/// Pointer type for db allocations used in [`Database#Managing
+/// Allocations`](Database#managing-allocations).
 pub type NativeDb = hs::hs_database;
 
 /// Read-only description of an in-memory state machine.
@@ -143,7 +139,7 @@ impl Database {
 ///   let expr: Expression = "a+".parse()?;
 ///
 ///   // Verify that the current platform has AVX2 instructions, and make a db:
-///   let plat = Platform::get();
+///   let plat = Platform::local();
 ///   assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
 ///   assert_ne!(plat, &Platform::GENERIC);
 ///   let db_with_avx2 = Database::compile(
@@ -690,7 +686,7 @@ impl Database {
   /// ## Only Frees Memory
   /// This method performs no processing other than freeing the allocated
   /// memory, so it can be skipped without leaking resources if the
-  /// underlying db allocation is freed by some other means.
+  /// underlying [`NativeDb`] allocation is freed by some other means.
   pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
   }
@@ -922,11 +918,11 @@ impl<'a> SerializedDb<'a> {
   }
 
   /// Like [`Self::deserialize_db()`], but points into an existing allocation
-  /// instead of making a new allocation through the allocator from
-  /// [`crate::alloc::set_db_allocator()`]!
+  /// instead of making a new allocation.
   ///
-  /// **Safety: `db` must point to an allocation at least
-  /// [`Self::deserialized_size()`] in size!**
+  /// # Safety
+  /// `db` must point to an allocation at least
+  /// [`Self::deserialized_size()`] bytes in size!
   ///
   ///```
   /// #[cfg(feature = "compiler")]
@@ -997,10 +993,13 @@ impl<'a> SerializedDb<'a> {
   }
 }
 
+/// # Owned Allocations
 /// Methods that produce new owned (`'static`) allocations.
 ///
 /// A [`Clone`] impl is also available for such owned allocations.
 impl SerializedDb<'static> {
+  /// Write a serialized representation of `db` into a newly allocated region of
+  /// memory.
   pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
     let mut data = ptr::null_mut();
     let mut len: usize = 0;
@@ -1017,6 +1016,8 @@ impl SerializedDb<'static> {
     })))
   }
 
+  /// Allocate a new region of memory and copy over the referenced data from
+  /// `s`.
   pub fn from_cloned_data(s: &SerializedDb) -> Self {
     let SerializedDb(ref s) = s;
     Self(alloc::DbAllocation::from_cloned_data(s))
@@ -1025,67 +1026,6 @@ impl SerializedDb<'static> {
 
 impl Clone for SerializedDb<'static> {
   fn clone(&self) -> Self { Self::from_cloned_data(self) }
-}
-
-#[cfg(feature = "compiler")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Platform {
-  pub tune: TuneFamily,
-  pub cpu_features: CpuFeatures,
-  pub reserved1: u64,
-  pub reserved2: u64,
-}
-
-#[cfg(feature = "compiler")]
-static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
-
-#[cfg(feature = "compiler")]
-impl Platform {
-  fn populate() -> Result<Self, HyperscanRuntimeError> {
-    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
-    Ok(Self::from_native(unsafe { s.assume_init() }))
-  }
-
-  pub const GENERIC: Self = Self {
-    tune: TuneFamily::Generic,
-    cpu_features: CpuFeatures::NONE,
-    reserved1: 0,
-    reserved2: 0,
-  };
-
-  pub fn get() -> &'static Self { &CACHED_PLATFORM }
-
-  pub(crate) fn from_native(x: hs::hs_platform_info) -> Self {
-    let hs::hs_platform_info {
-      tune,
-      cpu_features,
-      reserved1,
-      reserved2,
-    } = x;
-    Self {
-      tune: TuneFamily::from_native(tune),
-      cpu_features: CpuFeatures::from_native(cpu_features),
-      reserved1,
-      reserved2,
-    }
-  }
-
-  pub(crate) fn into_native(self) -> hs::hs_platform_info {
-    let Self {
-      tune,
-      cpu_features,
-      reserved1,
-      reserved2,
-    } = self;
-    hs::hs_platform_info {
-      tune: tune.into_native(),
-      cpu_features: cpu_features.into_native(),
-      reserved1,
-      reserved2,
-    }
-  }
 }
 
 #[cfg(feature = "chimera")]

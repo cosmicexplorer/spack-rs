@@ -311,9 +311,14 @@ impl ops::BitAndAssign for Mode {
   }
 }
 
-/// Flags used in [`Platform`](crate::database::Platform).
+/// Flags used for instruction selection with [`platform::Platform`].
 pub mod platform {
   use super::*;
+  use crate::error::HyperscanRuntimeError;
+
+  use once_cell::sync::Lazy;
+
+  use std::mem::MaybeUninit;
 
   /// CPU feature support flags
   #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -429,6 +434,90 @@ pub mod platform {
     }
 
     pub(crate) fn from_native(x: c_uint) -> Self { (x as u8).into() }
+  }
+
+  /// A collection of bitsets used for instruction selection.
+  ///
+  /// In particular this configuration is consumed by the various pattern
+  /// compilers. See [`Database#Platform
+  /// Compatibility`](crate::database::Database#platform-compatibility) for
+  /// further reference.
+  #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct Platform {
+    pub tune: TuneFamily,
+    pub cpu_features: CpuFeatures,
+    pub reserved1: u64,
+    pub reserved2: u64,
+  }
+
+  static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
+
+  impl Platform {
+    fn populate() -> Result<Self, HyperscanRuntimeError> {
+      let mut s = MaybeUninit::<hs::hs_platform_info>::uninit();
+      HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
+      Ok(Self::from_native(unsafe { s.assume_init() }))
+    }
+
+    /// Configuration to build for the most general possible database target.
+    ///
+    /// This will produce a maximally compatible database when deserialized, but
+    /// won't be able to take advantage of any specialized instructions.
+    pub const GENERIC: Self = Self {
+      tune: TuneFamily::Generic,
+      cpu_features: CpuFeatures::NONE,
+      reserved1: 0,
+      reserved2: 0,
+    };
+
+    /// Configuration to build for the current platform.
+    ///
+    /// This will enable all features the currently executing processor has
+    /// access to when building a database.
+    pub fn local() -> &'static Self { &CACHED_PLATFORM }
+
+    pub(crate) fn from_native(x: hs::hs_platform_info) -> Self {
+      let hs::hs_platform_info {
+        tune,
+        cpu_features,
+        reserved1,
+        reserved2,
+      } = x;
+      Self {
+        tune: TuneFamily::from_native(tune),
+        cpu_features: CpuFeatures::from_native(cpu_features),
+        reserved1,
+        reserved2,
+      }
+    }
+
+    pub(crate) fn into_native(self) -> hs::hs_platform_info {
+      let Self {
+        tune,
+        cpu_features,
+        reserved1,
+        reserved2,
+      } = self;
+      hs::hs_platform_info {
+        tune: tune.into_native(),
+        cpu_features: cpu_features.into_native(),
+        reserved1,
+        reserved2,
+      }
+    }
+  }
+
+
+  #[cfg(test)]
+  mod test {
+    use super::*;
+
+    #[test]
+    fn test_generic_platform_is_default() {
+      assert_eq!(TuneFamily::Generic, TuneFamily::default());
+      assert_eq!(CpuFeatures::NONE, CpuFeatures::default());
+      assert_eq!(Platform::GENERIC, Platform::default());
+    }
   }
 }
 
