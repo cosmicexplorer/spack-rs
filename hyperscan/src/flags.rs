@@ -38,6 +38,11 @@ pub trait BitSet:
 #[repr(transparent)]
 pub struct Flags(c_uint);
 
+impl Flags {
+  /// Disable all flags.
+  pub const NONE: Self = Self(0);
+}
+
 /// # Basic Expression Matching
 /// Basic expression matching option switches.
 impl Flags {
@@ -316,6 +321,9 @@ pub mod platform {
   pub struct CpuFeatures(u8);
 
   impl CpuFeatures {
+    /// Disable all cpu feature support flags.
+    pub const NONE: Self = Self(0);
+
     /// Intel(R) Advanced Vector Extensions 2 (Intel(R) AVX2)
     ///
     /// Setting this flag indicates that the target platform supports AVX2
@@ -502,6 +510,8 @@ pub mod chimera {
   pub struct ChimeraFlags(c_uint);
 
   impl ChimeraFlags {
+    /// Disable all flags.
+    pub const NONE: Self = Self(0);
     /// Set case-insensitive matching.
     ///
     /// This flag sets the expression to be matched case-insensitively by

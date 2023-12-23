@@ -275,7 +275,7 @@ impl str::FromStr for Expression {
 ///
 /// Finally note that literal expressions do not support an "info" interface
 /// like [`Expression::info()`] and [`Expression::ext_info()`], since most of
-/// these properties can be inferred from the literal string itself.
+/// those properties can be inferred from the literal string itself.
 ///
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:

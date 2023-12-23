@@ -141,13 +141,22 @@ impl Database {
 ///   let expr: Expression = "a+".parse()?;
 ///
 ///   // Verify that the current platform has AVX2 instructions, and make a db:
-///   let mut plat = Platform::get().clone();
-///   assert!(plat.cpu_features().contains(&CpuFeatures::AVX2));
-///   let db_with_avx2 = Database::compile(&expr, Flags::default(), Mode::BLOCK, Some(&plat))?;
+///   let plat = Platform::get();
+///   assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
+///   let db_with_avx2 = Database::compile(
+///     &expr,
+///     Flags::default(),
+///     Mode::BLOCK,
+///     Some(*plat),
+///   )?;
 ///
 ///   // Avoid using AVX2 instructions:
-///   plat.set_cpu_features(CpuFeatures::default());
-///   let db_no_avx2 = Database::compile(&expr, Flags::default(), Mode::BLOCK, Some(&plat))?;
+///   let db_no_avx2 = Database::compile(
+///     &expr,
+///     Flags::default(),
+///     Mode::BLOCK,
+///     Some(Platform::GENERIC),
+///   )?;
 ///
 ///   // Instruction selection does not affect the size of the state machine:
 ///   assert_eq!(db_with_avx2.database_size()?, db_no_avx2.database_size()?);
@@ -203,7 +212,7 @@ impl Database {
     expression: &Expression,
     flags: Flags,
     mode: Mode,
-    platform: Option<&Platform>,
+    platform: Option<Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -214,7 +223,7 @@ impl Database {
           flags.into_native(),
           mode.into_native(),
           platform
-            .map(|p| mem::transmute(p.as_ref_native()))
+            .map(|p| &p.into_native() as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -280,7 +289,7 @@ impl Database {
   pub fn compile_multi(
     expression_set: &ExpressionSet,
     mode: Mode,
-    platform: Option<&Platform>,
+    platform: Option<Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -295,7 +304,7 @@ impl Database {
             expression_set.num_elements(),
             mode.into_native(),
             platform
-              .map(|p| mem::transmute(p.as_ref_native()))
+              .map(|p| &p.into_native() as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -308,7 +317,7 @@ impl Database {
             expression_set.num_elements(),
             mode.into_native(),
             platform
-              .map(|p| mem::transmute(p.as_ref_native()))
+              .map(|p| &p.into_native() as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -350,7 +359,7 @@ impl Database {
     literal: &Literal,
     flags: Flags,
     mode: Mode,
-    platform: Option<&Platform>,
+    platform: Option<Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -362,7 +371,7 @@ impl Database {
           literal.as_bytes().len(),
           mode.into_native(),
           platform
-            .map(|p| mem::transmute(p.as_ref_native()))
+            .map(|p| &p.into_native() as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -421,7 +430,7 @@ impl Database {
   pub fn compile_multi_literal(
     literal_set: &LiteralSet,
     mode: Mode,
-    platform: Option<&Platform>,
+    platform: Option<Platform>,
   ) -> Result<Self, HyperscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
@@ -435,7 +444,7 @@ impl Database {
           literal_set.num_elements(),
           mode.into_native(),
           platform
-            .map(|p| mem::transmute(p.as_ref_native()))
+            .map(|p| &p.into_native() as *const hs::hs_platform_info)
             .unwrap_or(ptr::null()),
           &mut db,
           &mut compile_err,
@@ -832,36 +841,6 @@ impl DbInfo {
 #[repr(transparent)]
 pub struct SerializedDb<'a>(pub alloc::DbAllocation<'a>);
 
-/// Methods that produce new owned (`'static`) allocations.
-///
-/// A [`Clone`] impl is also available for such owned allocations.
-impl SerializedDb<'static> {
-  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
-    let mut data = ptr::null_mut();
-    let mut len: usize = 0;
-
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_serialize_database(db.as_ref_native(), &mut data, &mut len)
-    })?;
-
-    let data = data as *mut u8;
-
-    Ok(Self(alloc::DbAllocation::Misc(alloc::MiscAllocation {
-      data,
-      len,
-    })))
-  }
-
-  pub fn from_cloned_data(s: &SerializedDb) -> Self {
-    let SerializedDb(ref s) = s;
-    Self(alloc::DbAllocation::from_cloned_data(s))
-  }
-}
-
-impl Clone for SerializedDb<'static> {
-  fn clone(&self) -> Self { Self::from_cloned_data(self) }
-}
-
 /// Methods available to all types of allocations.
 impl<'a> SerializedDb<'a> {
   /// Extract metadata about the serialized database into a new string
@@ -972,48 +951,95 @@ impl<'a> SerializedDb<'a> {
   }
 }
 
+/// Methods that produce new owned (`'static`) allocations.
+///
+/// A [`Clone`] impl is also available for such owned allocations.
+impl SerializedDb<'static> {
+  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
+    let mut data = ptr::null_mut();
+    let mut len: usize = 0;
+
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_serialize_database(db.as_ref_native(), &mut data, &mut len)
+    })?;
+
+    let data = data as *mut u8;
+
+    Ok(Self(alloc::DbAllocation::Misc(alloc::MiscAllocation {
+      data,
+      len,
+    })))
+  }
+
+  pub fn from_cloned_data(s: &SerializedDb) -> Self {
+    let SerializedDb(ref s) = s;
+    Self(alloc::DbAllocation::from_cloned_data(s))
+  }
+}
+
+impl Clone for SerializedDb<'static> {
+  fn clone(&self) -> Self { Self::from_cloned_data(self) }
+}
+
 #[cfg(feature = "compiler")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct Platform(hs::hs_platform_info);
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Platform {
+  pub tune: TuneFamily,
+  pub cpu_features: CpuFeatures,
+  pub reserved1: u64,
+  pub reserved2: u64,
+}
 
 #[cfg(feature = "compiler")]
 static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
 
 #[cfg(feature = "compiler")]
 impl Platform {
-  pub fn tune(&self) -> TuneFamily { TuneFamily::from_native(self.0.tune) }
-
-  pub fn set_tune(&mut self, tune: TuneFamily) { self.0.tune = tune.into_native(); }
-
-  pub fn cpu_features(&self) -> CpuFeatures { CpuFeatures::from_native(self.0.cpu_features) }
-
-  pub fn set_cpu_features(&mut self, cpu_features: CpuFeatures) {
-    self.0.cpu_features = cpu_features.into_native();
-  }
-
   fn populate() -> Result<Self, HyperscanRuntimeError> {
     let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
     HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
-    Ok(unsafe { Self(s.assume_init()) })
+    Ok(Self::from_native(unsafe { s.assume_init() }))
   }
 
-  pub fn generic() -> Self {
-    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
-    let p = s.as_mut_ptr();
-    unsafe {
-      let tune = ptr::addr_of_mut!((*p).tune);
-      tune.write(TuneFamily::default().into_native());
-      let cpu_features = ptr::addr_of_mut!((*p).cpu_features);
-      cpu_features.write(CpuFeatures::default().into_native());
-      Self(s.assume_init())
-    }
-  }
+  pub const GENERIC: Self = Self {
+    tune: TuneFamily::Generic,
+    cpu_features: CpuFeatures::NONE,
+    reserved1: 0,
+    reserved2: 0,
+  };
 
   pub fn get() -> &'static Self { &CACHED_PLATFORM }
 
-  pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
+  pub(crate) fn from_native(x: hs::hs_platform_info) -> Self {
+    let hs::hs_platform_info {
+      tune,
+      cpu_features,
+      reserved1,
+      reserved2,
+    } = x;
+    Self {
+      tune: TuneFamily::from_native(tune),
+      cpu_features: CpuFeatures::from_native(cpu_features),
+      reserved1,
+      reserved2,
+    }
+  }
+
+  pub(crate) fn into_native(self) -> hs::hs_platform_info {
+    let Self {
+      tune,
+      cpu_features,
+      reserved1,
+      reserved2,
+    } = self;
+    hs::hs_platform_info {
+      tune: tune.into_native(),
+      cpu_features: cpu_features.into_native(),
+      reserved1,
+      reserved2,
+    }
+  }
 }
 
 #[cfg(feature = "chimera")]
@@ -1060,7 +1086,7 @@ pub mod chimera {
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
       mode: ChimeraMode,
-      platform: Option<&Platform>,
+      platform: Option<Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
@@ -1071,7 +1097,7 @@ pub mod chimera {
             flags.into_native(),
             mode.into_native(),
             platform
-              .map(|p| mem::transmute(p.as_ref_native()))
+              .map(|p| &p.into_native() as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -1110,7 +1136,7 @@ pub mod chimera {
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
-      platform: Option<&Platform>,
+      platform: Option<Platform>,
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
@@ -1130,7 +1156,7 @@ pub mod chimera {
               match_limit,
               match_limit_recursion,
               platform
-                .map(|p| mem::transmute(p.as_ref_native()))
+                .map(|p| &p.into_native() as *const hs::hs_platform_info)
                 .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
@@ -1143,7 +1169,7 @@ pub mod chimera {
               exprs.num_elements(),
               mode.into_native(),
               platform
-                .map(|p| mem::transmute(p.as_ref_native()))
+                .map(|p| &p.into_native() as *const hs::hs_platform_info)
                 .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
