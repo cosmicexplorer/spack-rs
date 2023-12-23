@@ -2,6 +2,28 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Compile state machines from expressions or deserialize them from bytes.
+//!
+//! Hyperscan supports two distinct types of databases:
+//! - [`Database`]: from the base hyperscan library and supports [`Expression`]
+//!   and [`Literal`] patterns.
+//! - [`chimera::ChimeraDb`]: from the chimera library and supports
+//!   [`ChimeraExpression`](crate::expression::chimera::ChimeraExpression)
+//!   patterns.
+//!
+//! Each database type serves as the entry point to the pattern compiler
+//! methods, such as [`Database::compile()`] and
+//! [`chimera::ChimeraDb::compile()`].
+//!
+//! # Database Instantiation
+//! The base hyperscan library offers a serialization interface for database
+//! objects which allows them to be transferred across hosts. The
+//! [`SerializedDb`] type provides an interface to locate serialized data from
+//! multiple locations. Consumers of this crate which disable the `"compiler"`
+//! feature can still search against strings by deserializing a database from
+//! bytes.
+//!
+//! The chimera library does not support database serialization, so databases
+//! must be created by compilation.
 
 #[cfg(feature = "compiler")]
 use crate::{
@@ -54,7 +76,7 @@ pub struct Database(*mut NativeDb);
 /// a variety of sources with [`alloc::DbAllocation`], [`Self::serialize()`]
 /// simply returns a newly allocated region of bytes.
 impl Database {
-  /// Call [`Scratch::setup_for_db()`] on a newly allocated [`Scratch`].
+  /// Call [`Scratch::setup_for_db()`] on a newly allocated [`Scratch::blank`].
   ///
   ///```
   /// #[cfg(feature = "compiler")]
@@ -752,7 +774,7 @@ pub mod alloc {
   ///
   /// The allocator used for this memory can be modified or accessed with
   /// [`crate::alloc::set_misc_allocator()`] and
-  /// [`crate::alloc::get_misc_allocator()`], if the `"alloc"` feature is
+  /// [`crate::alloc::get_misc_allocator()`] if the `"alloc"` feature is
   /// enabled.
   ///
   /// The backing memory will be deallocated by the misc allocator upon drop
@@ -772,7 +794,9 @@ pub mod alloc {
     pub(crate) const fn len(&self) -> usize { self.len }
 
     /// Return a view over the backing memory region.
-    pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
+    pub const fn as_slice(&self) -> &[u8] {
+      unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+    }
 
     unsafe fn free(&mut self) { crate::free_misc(self.data) }
   }
@@ -832,6 +856,56 @@ pub mod alloc {
 
   impl Clone for DbAllocation<'static> {
     fn clone(&self) -> Self { Self::from_cloned_data(self) }
+  }
+
+  /// Wrappers over allocations performed by the chimera library.
+  ///
+  /// Since chimera does not support database deserialization like the base
+  /// hyperscan library, there is no analogy to [`DbAllocation`].
+  #[cfg(feature = "chimera")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
+  pub mod chimera {
+    use std::{ops, slice};
+
+    /// An allocation of memory using the chimera misc allocator.
+    ///
+    /// The allocator used for this memory can be modified or accessed with
+    /// [`crate::alloc::chimera::set_chimera_misc_allocator()`] and
+    /// [`crate::alloc::chimera::get_chimera_misc_allocator()`] if the `"alloc"`
+    /// feature is enabled.
+    ///
+    /// The backing memory will be deallocated by the chimera misc allocator
+    /// upon drop unless this is wrapped with a
+    /// [`ManuallyDrop`](std::mem::ManuallyDrop).
+    #[derive(Debug)]
+    pub struct ChimeraMiscAllocation {
+      pub(crate) data: *mut u8,
+      pub(crate) len: usize,
+    }
+
+    unsafe impl Send for ChimeraMiscAllocation {}
+    unsafe impl Sync for ChimeraMiscAllocation {}
+
+    impl ChimeraMiscAllocation {
+      pub(crate) const fn as_ptr(&self) -> *mut u8 { self.data }
+
+      pub(crate) const fn len(&self) -> usize { self.len }
+
+      /// Return a view over the backing memory region.
+      pub const fn as_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) }
+      }
+
+      unsafe fn free(&mut self) { crate::free_misc_chimera(self.data) }
+    }
+
+    impl ops::Drop for ChimeraMiscAllocation {
+      fn drop(&mut self) {
+        unsafe {
+          self.free();
+        }
+      }
+    }
   }
 }
 
@@ -1065,9 +1139,16 @@ impl Clone for SerializedDb<'static> {
   fn clone(&self) -> Self { Self::from_cloned_data(self) }
 }
 
+/// Compile chimera state machines from expressions.
+///
+/// Unlike the base hyperscan library, chimera does not support database
+/// serialization, so new [`chimera::ChimeraDb`] instances can only be created
+/// by compiling them. That is why the `"chimera"` feature for this crate
+/// requires the `"compiler"` feature.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
+  use super::alloc::chimera::ChimeraMiscAllocation;
   #[cfg(feature = "compiler")]
   use super::Platform;
   #[cfg(feature = "compiler")]
@@ -1078,33 +1159,168 @@ pub mod chimera {
   };
   use crate::{error::chimera::ChimeraRuntimeError, hs, state::chimera::ChimeraScratch};
 
-  use std::{ffi::CStr, mem, ops, ptr, slice, str};
+  use std::{cmp, ffi::CStr, fmt, hash, mem, ops, ptr, slice, str};
 
+  /// Pointer type for chimera db allocations used in [`ChimeraDb#Managing
+  /// Allocations`](ChimeraDb#managing-allocations).
+  pub type NativeChimeraDb = hs::ch_database;
+
+  /// Read-only description of an in-memory PCRE state machine.
+  ///
+  /// This type also serves as the entry point to the various types of [pattern
+  /// compilers](#pattern-compilers), including single expressions and
+  /// expression sets.
   #[derive(Debug)]
   #[repr(transparent)]
   pub struct ChimeraDb(*mut NativeChimeraDb);
 
-  pub type NativeChimeraDb = hs::ch_database;
-
+  /// # Convenience Methods
+  /// These methods prepare some resource within a new heap allocation and are
+  /// useful for doctests and examples.
+  ///
+  /// ## Scratch Setup
+  /// Databases already require their own heap allocation, which can be managed
+  /// with the methods in [Managing Allocations](#managing-allocations).
+  /// However, databases also impose a sort of implicit dynamic lifetime
+  /// constraint on [`ChimeraScratch`] objects, which must be initialized
+  /// against a db with [`ChimeraScratch::setup_for_db()`] before hyperscan
+  /// can do any searching.
+  ///
+  /// It is encouraged to re-use [`ChimeraScratch`] objects across databases
+  /// where possible to minimize unnecessary allocations, but
+  /// [`Self::allocate_scratch()`] is provided as a convenience method to
+  /// quickly produce a 1:1 db:scratch mapping.
   impl ChimeraDb {
-    pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
-
-    pub fn as_ref_native(&self) -> &hs::ch_database { unsafe { &*self.0 } }
-
-    pub fn as_mut_native(&mut self) -> &mut hs::ch_database { unsafe { &mut *self.0 } }
-
+    /// Call [`ChimeraScratch::setup_for_db()`] on a newly allocated
+    /// [`ChimeraScratch::blank()`].
+    ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     ///
-    /// let expr: ChimeraExpression = "(he)ll".parse()?;
-    /// # #[allow(unused_variables)]
-    /// let db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::NOGROUPS, None)?;
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch
+    ///   .scan_sync(&db, "aardvark".into(), |ChimeraMatch { source, .. }| {
+    ///     matches.push(unsafe { source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &["aa", "a"]);
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "compiler")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
+    pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
+      let mut scratch = ChimeraScratch::blank();
+      scratch.setup_for_db(self)?;
+      Ok(scratch)
+    }
+  }
+
+  /// # Pattern Compilers
+  /// Chimera supports compiling state machines for single PCRE pattern strings
+  /// as well as parallel sets of those patterns. Each compile method currently
+  /// supports all [`ChimeraFlags`] arguments.
+  ///
+  /// ## Platform Compatibility
+  /// Each method also accepts an optional [`Platform`] object,
+  /// which is used to select processor features to compile the database for.
+  /// While the default of [`None`] will enable all features available to the
+  /// current processor, some features can be disabled in order to produce a
+  /// database which can execute on a wider variety of target platforms.
+  /// **However, note that since chimera does not support deserialization like
+  /// the base hyperscan library, there currently seems to be no real benefit to
+  /// a more-generic but less-performant compiled database, so using [`None`]
+  /// is recommended in all cases.**
+  ///
+  ///```
+  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+  /// use hyperscan::{expression::chimera::*, flags::{*, chimera::*, platform::*}, database::chimera::*};
+  ///
+  /// let expr: ChimeraExpression = "a+".parse()?;
+  ///
+  /// // Verify that the current platform has AVX2 instructions, and make a db:
+  /// let plat = Platform::local();
+  /// assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
+  /// assert!(plat != &Platform::GENERIC);
+  /// let db_with_avx2 = ChimeraDb::compile(
+  ///   &expr,
+  ///   ChimeraFlags::default(),
+  ///   ChimeraMode::NOGROUPS,
+  ///   Some(plat),
+  /// )?;
+  ///
+  /// // The only specialized instructions we have available are AVX2:
+  /// assert!(CpuFeatures::NONE == plat.cpu_features & !CpuFeatures::AVX2);
+  /// // Avoid using AVX2 instructions:
+  /// let db_no_avx2 = ChimeraDb::compile(
+  ///   &expr,
+  ///   ChimeraFlags::default(),
+  ///   ChimeraMode::NOGROUPS,
+  ///   Some(&Platform::GENERIC),
+  /// )?;
+  ///
+  /// // Instruction selection does not affect the size of the state machine:
+  /// assert!(db_with_avx2.database_size()? == db_no_avx2.database_size()?);
+  ///
+  /// // Now create a db with None for the platform:
+  /// let db_local = ChimeraDb::compile(
+  ///   &expr,
+  ///   ChimeraFlags::default(),
+  ///   ChimeraMode::NOGROUPS,
+  ///   None,
+  /// )?;
+  /// assert!(db_with_avx2.database_size()? == db_local.database_size()?);
+  ///
+  /// // Using None produces the same type of db as Platform::local():
+  /// assert!(db_with_avx2.info()? == db_local.info()?);
+  /// assert!(db_no_avx2.info()? != db_local.info()?);
+  /// # Ok(())
+  /// # }
+  /// ```
+  ///
+  /// ## Dynamic Memory Allocation
+  /// These methods allocate a new region of memory using the db allocator
+  /// (which can be overridden with
+  /// [`crate::alloc::chimera::set_chimera_db_allocator()`]). That allocation
+  /// can be manipulated as described in [Managing Allocations](#
+  /// managing-allocations).
+  #[cfg(feature = "compiler")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
+  impl ChimeraDb {
+    /// Single pattern compiler.
+    ///
+    /// # Accepted Flags
+    /// - [`CASELESS`](ChimeraFlags::CASELESS)
+    /// - [`DOTALL`](ChimeraFlags::DOTALL)
+    /// - [`MULTILINE`](ChimeraFlags::MULTILINE)
+    /// - [`SINGLEMATCH`](ChimeraFlags::SINGLEMATCH)
+    /// - [`UTF8`](ChimeraFlags::UTF8)
+    /// - [`UCP`](ChimeraFlags::UCP)
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, matchers::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "hell(o)?".parse()?;
+    /// let db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::GROUPS, None)?;
+    ///
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let mut matches: Vec<(&str, Option<&str>)> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch
+    ///   .scan_sync(&db, "hello".into(), |m| {
+    ///     matches.push(unsafe { (m.source.as_str(), m.captures[1].map(|c| c.as_str())) });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &[("hello", Some("o"))]);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn compile(
       expression: &ChimeraExpression,
       flags: ChimeraFlags,
@@ -1113,6 +1329,7 @@ pub mod chimera {
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
+      let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
       ChimeraRuntimeError::copy_from_native_compile_error(
         unsafe {
           hs::ch_compile(
@@ -1120,7 +1337,8 @@ pub mod chimera {
             flags.into_native(),
             mode.into_native(),
             platform
-              .map(|p| &p.into_native() as *const hs::hs_platform_info)
+              .as_ref()
+              .map(|p| p as *const hs::hs_platform_info)
               .unwrap_or(ptr::null()),
             &mut db,
             &mut compile_err,
@@ -1131,6 +1349,16 @@ pub mod chimera {
       Ok(unsafe { Self::from_native(db) })
     }
 
+    /// Multiple pattern compiler.
+    ///
+    /// # Accepted Flags
+    /// - [`CASELESS`](ChimeraFlags::CASELESS)
+    /// - [`DOTALL`](ChimeraFlags::DOTALL)
+    /// - [`MULTILINE`](ChimeraFlags::MULTILINE)
+    /// - [`SINGLEMATCH`](ChimeraFlags::SINGLEMATCH)
+    /// - [`UTF8`](ChimeraFlags::UTF8)
+    /// - [`UCP`](ChimeraFlags::UCP)
+    ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
@@ -1154,8 +1382,6 @@ pub mod chimera {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(feature = "compiler")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
     pub fn compile_multi(
       exprs: &ChimeraExpressionSet,
       mode: ChimeraMode,
@@ -1163,6 +1389,7 @@ pub mod chimera {
     ) -> Result<Self, ChimeraCompileError> {
       let mut db = ptr::null_mut();
       let mut compile_err = ptr::null_mut();
+      let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
       ChimeraRuntimeError::copy_from_native_compile_error(
         unsafe {
           if let Some(ChimeraMatchLimits {
@@ -1179,7 +1406,8 @@ pub mod chimera {
               match_limit,
               match_limit_recursion,
               platform
-                .map(|p| &p.into_native() as *const hs::hs_platform_info)
+                .as_ref()
+                .map(|p| p as *const hs::hs_platform_info)
                 .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
@@ -1192,7 +1420,8 @@ pub mod chimera {
               exprs.num_elements(),
               mode.into_native(),
               platform
-                .map(|p| &p.into_native() as *const hs::hs_platform_info)
+                .as_ref()
+                .map(|p| p as *const hs::hs_platform_info)
                 .unwrap_or(ptr::null()),
               &mut db,
               &mut compile_err,
@@ -1203,8 +1432,67 @@ pub mod chimera {
       )?;
       Ok(unsafe { Self::from_native(db) })
     }
+  }
 
-    pub fn get_db_size(&self) -> Result<usize, ChimeraRuntimeError> {
+  /// # Introspection
+  /// These methods extract various bits of runtime information from the db.
+  impl ChimeraDb {
+    /// Return the size of the db allocation.
+    ///
+    /// Using [`ChimeraFlags::UCP`] explodes the size of character classes,
+    /// which increases the size of the state machine:
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = r"\w".parse()?;
+    /// let utf8_db = expr.compile(
+    ///   ChimeraFlags::UTF8 | ChimeraFlags::UCP,
+    ///   ChimeraMode::NOGROUPS,
+    /// )?;
+    /// let ascii_db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    ///
+    /// // Including UTF-8 classes increases the size:
+    /// assert!(utf8_db.database_size()? > ascii_db.database_size()?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// This size corresponds to the requested allocation size passed to the db
+    /// allocator:
+    ///
+    ///```
+    /// #[cfg(all(feature = "alloc"))]
+    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    ///   use std::alloc::System;
+    ///
+    ///   // Wrap the standard Rust System allocator.
+    ///   let tracker = LayoutTracker::new(System.into());
+    ///   // Register it as the allocator for databases.
+    ///   assert!(set_chimera_db_allocator(tracker)?.is_none());
+    ///
+    ///   let expr: ChimeraExpression = r"\w".parse()?;
+    ///   let utf8_db = expr.compile(
+    ///     ChimeraFlags::UTF8 | ChimeraFlags::UCP,
+    ///     ChimeraMode::NOGROUPS,
+    ///   )?;
+    ///
+    ///   // Get the database allocator we just registered and view its live allocations:
+    ///   let allocs = get_chimera_db_allocator().as_ref().unwrap().current_allocations();
+    ///   // Verify that only the single known db was allocated:
+    ///   assert_eq!(1, allocs.len());
+    ///   let (_p, layout) = allocs[0];
+    ///
+    ///   // Verify that the allocation size is the same as reported:
+    ///   assert_eq!(layout.size(), utf8_db.database_size()?);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(all(feature = "alloc")))]
+    /// # fn main() {}
+    /// ```
+    pub fn database_size(&self) -> Result<usize, ChimeraRuntimeError> {
       let mut database_size: usize = 0;
       ChimeraRuntimeError::from_native(unsafe {
         hs::ch_database_size(self.as_ref_native(), &mut database_size)
@@ -1212,16 +1500,113 @@ pub mod chimera {
       Ok(database_size)
     }
 
+    /// Extract metadata about the current database into a new string
+    /// allocation.
+    ///
+    /// This is a convenience method that simply calls
+    /// [`ChimeraDbInfo::extract_db_info()`].
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// let info = ChimeraDbInfo::extract_db_info(&db)?;
+    /// assert_eq!(info.as_str(), "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn info(&self) -> Result<ChimeraDbInfo, ChimeraRuntimeError> {
       ChimeraDbInfo::extract_db_info(self)
     }
+  }
 
-    pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
-      let mut scratch = ChimeraScratch::blank();
-      scratch.setup_for_db(self)?;
-      Ok(scratch)
-    }
+  /// # Managing Allocations
+  /// These methods provide access to the underlying memory allocation
+  /// containing the data for the in-memory state machine. They can be used to
+  /// control the memory location used for the state machine, or to preserve
+  /// db allocations across weird lifetime constraints.
+  ///
+  /// Note that [`Self::database_size()`] can be used to determine the size of
+  /// the memory allocation pointed to by [`Self::as_ref_native()`] and
+  /// [`Self::as_mut_native()`].
+  impl ChimeraDb {
+    /// Wrap the provided allocation `p`.
+    ///
+    /// # Safety
+    /// The pointer `p` must point to an initialized db allocation prepared by
+    /// one of the compile methods.
+    ///
+    /// This method also makes it especially easy to create multiple references
+    /// to the same allocation, which will then cause a double free when
+    /// [`Self::try_drop()`] is called more than once for the same db
+    /// allocation. To avoid this, wrap the result in a
+    /// [`ManuallyDrop`](mem::ManuallyDrop):
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, database::chimera::*, state::chimera::*};
+    /// use std::mem::ManuallyDrop;
+    ///
+    /// // Compile a legitimate db:
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let mut db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    ///
+    /// // Create two new references to that allocation,
+    /// // wrapped to avoid calling the drop code:
+    /// let db_ptr: *mut NativeChimeraDb = db.as_mut_native();
+    /// let db_ref_1 = ManuallyDrop::new(unsafe { ChimeraDb::from_native(db_ptr) });
+    /// let db_ref_2 = ManuallyDrop::new(unsafe { ChimeraDb::from_native(db_ptr) });
+    ///
+    /// // Both db references are valid and can be used for matching.
+    /// let mut scratch = ChimeraScratch::blank();
+    /// scratch.setup_for_db(&db_ref_1)?;
+    /// scratch.setup_for_db(&db_ref_2)?;
+    ///
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch
+    ///   .scan_sync(&db_ref_1, "aardvark".into(), |ChimeraMatch { source, .. }| {
+    ///     matches.push(unsafe { source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// scratch
+    ///   .scan_sync(&db_ref_2, "aardvark".into(), |ChimeraMatch { source, .. }| {
+    ///     matches.push(unsafe { source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &["aa", "a", "aa", "a"]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub const unsafe fn from_native(p: *mut NativeChimeraDb) -> Self { Self(p) }
 
+    /// Get a read-only reference to the db allocation.
+    ///
+    /// This method is mostly used internally and cast to a pointer to provide
+    /// to the chimera native library methods.
+    pub fn as_ref_native(&self) -> &NativeChimeraDb { unsafe { &*self.0 } }
+
+    /// Get a mutable reference to the db allocation.
+    ///
+    /// The result of this method can be cast to a pointer and provided to
+    /// [`Self::from_native()`].
+    pub fn as_mut_native(&mut self) -> &mut NativeChimeraDb { unsafe { &mut *self.0 } }
+
+    /// Free the underlying db allocation.
+    ///
+    /// # Safety
+    /// This method must be called at most once over the lifetime of each db
+    /// allocation. It is called by default on drop, so
+    /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap instances
+    /// that reference external data in order to avoid attempting to free the
+    /// referenced data.
+    ///
+    /// ## Only Frees Memory
+    /// This method performs no processing other than freeing the allocated
+    /// memory, so it can be skipped without leaking resources if the
+    /// underlying [`NativeChimeraDb`] allocation is freed by some other means.
     pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
       ChimeraRuntimeError::from_native(hs::ch_free_database(self.as_mut_native()))
     }
@@ -1235,40 +1620,7 @@ pub mod chimera {
     }
   }
 
-  #[derive(Debug)]
-  pub struct ChimeraMiscAllocation {
-    data: *mut u8,
-    len: usize,
-  }
-
-  unsafe impl Send for ChimeraMiscAllocation {}
-  unsafe impl Sync for ChimeraMiscAllocation {}
-
-  impl ChimeraMiscAllocation {
-    pub const fn as_ptr(&self) -> *mut u8 { self.data }
-
-    pub const fn len(&self) -> usize { self.len }
-
-    pub const fn is_empty(&self) -> bool { self.len() == 0 }
-
-    pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
-
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-      unsafe { slice::from_raw_parts_mut(self.data, self.len) }
-    }
-
-    pub unsafe fn free(&mut self) { crate::free_misc_chimera(self.data) }
-  }
-
-  impl ops::Drop for ChimeraMiscAllocation {
-    fn drop(&mut self) {
-      unsafe {
-        self.free();
-      }
-    }
-  }
-
-  #[derive(Debug)]
+  /// Wrapper for allocated string data returned by [`ChimeraDb::info()`].
   pub struct ChimeraDbInfo(ChimeraMiscAllocation);
 
   impl ChimeraDbInfo {
@@ -1276,26 +1628,16 @@ pub mod chimera {
       ..(self.0.len() - 1)
     }
 
+    /// Return a view of the allocated string data.
+    ///
+    /// Chimera will always return valid UTF-8 data for this string, so it skips
+    /// the validity check. Note that the returned string does not include
+    /// the trailing null byte allocated by the underlying chimera library.
     pub fn as_str(&self) -> &str {
       unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
     }
 
-    pub fn as_mut_str(&mut self) -> &mut str {
-      let without_null = self.without_null();
-      unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
-    }
-
-    ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
-    ///
-    /// let expr: ChimeraExpression = "a+".parse()?;
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
-    /// let info = ChimeraDbInfo::extract_db_info(&db)?;
-    /// assert_eq!(info.as_str(), "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Write out metadata for `db` into a newly allocated region.
     pub fn extract_db_info(db: &ChimeraDb) -> Result<Self, ChimeraRuntimeError> {
       let mut info = ptr::null_mut();
       ChimeraRuntimeError::from_native(unsafe {
@@ -1310,6 +1652,37 @@ pub mod chimera {
       };
 
       Ok(Self(ret))
+    }
+  }
+
+  impl fmt::Debug for ChimeraDbInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+      write!(f, "ChimeraDbInfo({:?})", self.as_str())
+    }
+  }
+
+  impl fmt::Display for ChimeraDbInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.as_str()) }
+  }
+
+  impl cmp::PartialEq for ChimeraDbInfo {
+    fn eq(&self, other: &Self) -> bool { self.as_str().eq(other.as_str()) }
+  }
+
+  impl cmp::Eq for ChimeraDbInfo {}
+
+  impl cmp::PartialOrd for ChimeraDbInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
+  }
+
+  impl cmp::Ord for ChimeraDbInfo {
+    fn cmp(&self, other: &Self) -> cmp::Ordering { self.as_str().cmp(other.as_str()) }
+  }
+
+  impl hash::Hash for ChimeraDbInfo {
+    fn hash<H>(&self, state: &mut H)
+    where H: hash::Hasher {
+      self.as_str().hash(state);
     }
   }
 }

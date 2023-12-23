@@ -12,9 +12,9 @@ default                 = ["static", "compiler"]
 static                  = ["hyperscan-async-sys/static"]
 compiler                = ["hyperscan-async-sys/compiler", "dep:once_cell"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
-chimera                 = ["hyperscan-async-sys/chimera"]
+chimera                 = ["compiler", "static", "hyperscan-async-sys/chimera"]
 async                   = ["dep:async-stream", "dep:futures-core", "dep:futures-util", "dep:tokio"]
-alloc                   = ["dep:indexmap", "dep:parking_lot"]
+alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 
 [lib]
 name                    = "hyperscan"

@@ -526,7 +526,7 @@ pub fn set_allocator(
 /// // although we have to be careful not to run the drop code:
 /// let db = ManuallyDrop::new(unsafe { ChimeraDb::from_native(p.as_ptr() as *mut NativeChimeraDb) });
 /// // We can inspect properties of the database with this reference:
-/// assert_eq!(db.get_db_size()?, 1452);
+/// assert_eq!(db.database_size()?, 1452);
 /// # Ok(())
 /// # }
 /// ```
@@ -581,7 +581,7 @@ pub mod chimera {
   ];
 
   /// Reset the allocator used for
-  /// [`ChimeraMiscAllocation`](crate::database::chimera::ChimeraMiscAllocation)
+  /// [`ChimeraMiscAllocation`](crate::database::alloc::chimera::ChimeraMiscAllocation)
   /// instances.
   pub fn set_chimera_misc_allocator(
     tracker: LayoutTracker,
@@ -594,7 +594,7 @@ pub mod chimera {
   }
 
   /// Get the allocator used for
-  /// [`ChimeraMiscAllocation`](crate::database::chimera::ChimeraMiscAllocation)
+  /// [`ChimeraMiscAllocation`](crate::database::alloc::chimera::ChimeraMiscAllocation)
   /// instances.
   pub fn get_chimera_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
     CHIMERA_MISC_ALLOCATOR.read()
