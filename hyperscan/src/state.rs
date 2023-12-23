@@ -21,9 +21,9 @@ use crate::{
 
 #[cfg(feature = "async")]
 use {
-  async_stream::try_stream,
   futures_core::stream::Stream,
   tokio::{sync::mpsc, task},
+  tokio_stream::wrappers::UnboundedReceiverStream,
 };
 
 use std::{
@@ -123,6 +123,8 @@ impl Scratch {
 /// preserved after each invocation of `f`, so the match callback must modify
 /// some external state to store match results.
 impl Scratch {
+  /// Synchronously scan a single contiguous string.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -176,6 +178,58 @@ impl Scratch {
     })
   }
 
+  /// Synchronously scan a slice of vectored string data.
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
+  ///
+  ///   let a_plus: Expression = "a+".parse()?;
+  ///   let b_plus: Expression = "b+".parse()?;
+  ///   let asdf: Expression = "asdf(.)".parse()?;
+  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
+  ///     .with_flags([flags, flags, flags])
+  ///     .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
+  ///   let db = expr_set.compile(Mode::VECTORED)?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   let data: [ByteSlice; 4] = [
+  ///     "aardvark".into(),
+  ///     "imbibbe".into(),
+  ///     "leas".into(),
+  ///     "dfeg".into(),
+  ///   ];
+  ///   let mut matches: Vec<(u32, String)> = Vec::new();
+  ///   scratch
+  ///     .scan_sync_vectored(
+  ///       &db,
+  ///       data.as_ref().into(),
+  ///       |VectoredMatch { id: ExpressionIndex(id), source, .. }| {
+  ///         let joined = source.iter_slices()
+  ///           .map(|s| unsafe { s.as_str() })
+  ///           .collect::<Vec<_>>()
+  ///           .concat();
+  ///         matches.push((id, joined));
+  ///         MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(matches, vec![
+  ///     (0, "a".to_string()),
+  ///     (0, "aa".to_string()),
+  ///     (0, "a".to_string()),
+  ///     (3, "b".to_string()),
+  ///     (3, "b".to_string()),
+  ///     (3, "bb".to_string()),
+  ///     (0, "a".to_string()),
+  ///     // NB: This match result crosses a slice boundary!
+  ///     (2, "asdfe".to_string()),
+  ///   ]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub fn scan_sync_vectored<'data>(
     &mut self,
     db: &Database,
@@ -199,6 +253,10 @@ impl Scratch {
     })
   }
 
+  /// Write `data` into the stream object `sink`.
+  ///
+  /// This method is mostly used internally; consumers of this crate will likely
+  /// prefer to call [`StreamSink::scan()`].
   pub fn scan_sync_stream<'data>(
     &mut self,
     data: ByteSlice<'data>,
@@ -218,6 +276,10 @@ impl Scratch {
     })
   }
 
+  /// Process any EOD (end-of-data) matches for the stream object `sink`.
+  ///
+  /// This method is mostly used internally; consumers of this crate will likely
+  /// prefer to call [`StreamSink::flush_eod()`].
   pub fn flush_eod_sync(&mut self, sink: &mut StreamSink) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
@@ -231,15 +293,18 @@ impl Scratch {
 }
 
 /// # Asynchronous String Scanning
-///
-/// ## Search and Blocking Callbacks
-/// Because the match callback is invoked synchronously, it also stops the regex
-/// engine from making any further progress while it executes, which can harm
-/// search performance via cache effects. One common pattern is to write the
-/// match object to a queue, then read it from a separate thread to
-/// decouple match processing from text searching. `async` code provides a
+/// Because the match callback from [Synchronous String
+/// Scanning](#synchronous-string-scanning) is invoked synchronously, it also
+/// stops the regex engine from making any further progress while it executes,
+/// which can harm search performance via cache effects. One common pattern is
+/// to write the match object to a queue, then read it from a separate thread to
+/// decouple match processing from text searching. `async` streams provide a
 /// natural way to achieve this, so these methods use a channel to
-/// implement a producer-consumer pattern for this use case.
+/// implement a producer-consumer pattern for this use case. The match callback
+/// for these methods accepts a reference to the match object to clarify that
+/// the callback only determines whether to continue matching, while the
+/// underlying match object is written into the stream and should be retrieved
+/// from there instead.
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl Scratch {
@@ -312,16 +377,18 @@ impl Scratch {
     let db = Self::into_db(db);
     let f: &mut (dyn FnMut(&Match<'data>) -> MatchResult+Send+Sync) = &mut f;
 
-    /* Create a channel for match results alone, *not* errors. */
-    let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
+    /* Create a channel for both success and error results. */
+    let (matches_tx, matches_rx) = mpsc::unbounded_channel();
 
     /* Convert parameterized lifetimes to 'static so they can be moved into
      * spawn_blocking(): */
     let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
     let f: &'static mut (dyn FnMut(&Match<'static>) -> MatchResult+Send+Sync) =
       unsafe { mem::transmute(f) };
-    let matches_tx: mpsc::UnboundedSender<Match<'static>> = unsafe { mem::transmute(matches_tx) };
+    let matches_tx: mpsc::UnboundedSender<Result<Match<'static>, ScanError>> =
+      unsafe { mem::transmute(matches_tx) };
 
+    let matches_tx2 = matches_tx.clone();
     let scan_task = task::spawn_blocking(move || {
       /* Dereference pointer arguments. */
       let scratch: &mut Self = Self::from_scratch(scratch);
@@ -329,17 +396,18 @@ impl Scratch {
 
       scratch.scan_sync(db, data, |m| {
         let result = f(&m);
-        matches_tx.send(m).unwrap();
+        matches_tx2.send(Ok(m)).unwrap();
         result
       })
     });
-
-    try_stream! {
-      while let Some(m) = matches_rx.recv().await {
-        yield m;
+    task::spawn(async move {
+      match scan_task.await {
+        Ok(Ok(())) => (),
+        Err(e) => matches_tx.send(Err(e.into())).unwrap(),
+        Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
-      scan_task.await??;
-    }
+    });
+    UnboundedReceiverStream::new(matches_rx)
   }
 
   ///```
@@ -412,17 +480,18 @@ impl Scratch {
     let db = Self::into_db(db);
     let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync) = &mut f;
 
-    /* Create a channel for match results alone, *not* errors. */
-    let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
+    /* Create a channel for both success and error results. */
+    let (matches_tx, matches_rx) = mpsc::unbounded_channel();
 
     /* Convert parameterized lifetimes to 'static so they can be moved into
      * spawn_blocking(): */
     let data: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(data) };
     let f: &'static mut (dyn FnMut(&VectoredMatch<'static>) -> MatchResult+Send+Sync) =
       unsafe { mem::transmute(f) };
-    let matches_tx: mpsc::UnboundedSender<VectoredMatch<'static>> =
+    let matches_tx: mpsc::UnboundedSender<Result<VectoredMatch<'static>, ScanError>> =
       unsafe { mem::transmute(matches_tx) };
 
+    let matches_tx2 = matches_tx.clone();
     let scan_task = task::spawn_blocking(move || {
       /* Dereference pointer arguments. */
       let scratch: &mut Self = Self::from_scratch(scratch);
@@ -430,17 +499,18 @@ impl Scratch {
 
       scratch.scan_sync_vectored(db, data, |m| {
         let result = f(&m);
-        matches_tx.send(m).unwrap();
+        matches_tx2.send(Ok(m)).unwrap();
         result
       })
     });
-
-    try_stream! {
-      while let Some(m) = matches_rx.recv().await {
-        yield m;
+    task::spawn(async move {
+      match scan_task.await {
+        Ok(Ok(())) => (),
+        Err(e) => matches_tx.send(Err(e.into())).unwrap(),
+        Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
-      scan_task.await??;
-    }
+    });
+    UnboundedReceiverStream::new(matches_rx)
   }
 
   pub async fn scan_stream<'data>(
@@ -789,9 +859,6 @@ pub mod chimera {
   use super::*;
   use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
 
-  #[cfg(feature = "async")]
-  use async_stream::stream;
-
   pub type NativeChimeraScratch = hs::ch_scratch;
 
   #[derive(Debug)]
@@ -809,31 +876,9 @@ pub mod chimera {
       self.0 = NonNull::new(scratch_ptr);
       Ok(())
     }
+  }
 
-    pub fn as_ref_native(&self) -> Option<&NativeChimeraScratch> {
-      self.0.map(|p| unsafe { p.as_ref() })
-    }
-
-    pub fn as_mut_native(&mut self) -> Option<&mut NativeChimeraScratch> {
-      self.0.map(|mut p| unsafe { p.as_mut() })
-    }
-
-    fn into_db(db: &ChimeraDb) -> usize {
-      let db: *const ChimeraDb = db;
-      db as usize
-    }
-
-    fn from_db<'a>(db: usize) -> &'a ChimeraDb { unsafe { &*(db as *const ChimeraDb) } }
-
-    fn into_scratch(scratch: &mut ChimeraScratch) -> usize {
-      let scratch: *mut ChimeraScratch = scratch;
-      scratch as usize
-    }
-
-    fn from_scratch<'a>(scratch: usize) -> &'a mut ChimeraScratch {
-      unsafe { &mut *(scratch as *mut ChimeraScratch) }
-    }
-
+  impl ChimeraScratch {
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
@@ -878,6 +923,24 @@ pub mod chimera {
         )
       })
     }
+  }
+
+  impl ChimeraScratch {
+    fn into_db(db: &ChimeraDb) -> usize {
+      let db: *const ChimeraDb = db;
+      db as usize
+    }
+
+    fn from_db<'a>(db: usize) -> &'a ChimeraDb { unsafe { &*(db as *const ChimeraDb) } }
+
+    fn into_scratch(scratch: &mut ChimeraScratch) -> usize {
+      let scratch: *mut ChimeraScratch = scratch;
+      scratch as usize
+    }
+
+    fn from_scratch<'a>(scratch: usize) -> &'a mut ChimeraScratch {
+      unsafe { &mut *(scratch as *mut ChimeraScratch) }
+    }
 
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
@@ -910,61 +973,65 @@ pub mod chimera {
       mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync,
       mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync,
     ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>> {
+      /* Convert all references into pointers cast to usize to strip lifetime
+       * information so it can be moved into spawn_blocking(): */
       let scratch = Self::into_scratch(self);
       let db = Self::into_db(db);
-      let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
       let m: &mut (dyn FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync) = &mut m;
       let e: &mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) = &mut e;
-      let (matches_tx, mut matches_rx) = mpsc::unbounded_channel();
-      let (errors_tx, mut errors_rx) = mpsc::unbounded_channel();
 
+      /* Create a channel for all success and error results. */
+      let (matches_tx, matches_rx) = mpsc::unbounded_channel();
+
+      /* Convert parameterized lifetimes to 'static so they can be moved into
+       * spawn_blocking(): */
+      let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
       let m: &'static mut (dyn FnMut(&ChimeraMatch<'static>) -> ChimeraMatchResult+Send+Sync) =
         unsafe { mem::transmute(m) };
       let e: &'static mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) =
         unsafe { mem::transmute(e) };
-      let matches_tx: mpsc::UnboundedSender<ChimeraMatch<'static>> =
+      let matches_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =
         unsafe { mem::transmute(matches_tx) };
+
+      let matches_tx2 = matches_tx.clone();
       let scan_task = task::spawn_blocking(move || {
+        /* Dereference pointer arguments. */
         let scratch: &mut Self = Self::from_scratch(scratch);
         let db: &ChimeraDb = Self::from_db(db);
+
         scratch.scan_sync(
           db,
           data,
           |cm| {
             let result = m(&cm);
-            matches_tx.send(cm).unwrap();
+            matches_tx2.send(Ok(cm)).unwrap();
             result
           },
           |ce| {
             let result = e(&ce);
-            errors_tx.send(ce).unwrap();
+            matches_tx2.send(Err(ce.into())).unwrap();
             result
           },
         )
       });
-
-      /* Need to use stream! instead of try_stream! in order to yield an Err inside
-       * of a select! expression! */
-      stream! {
-        while tokio::select! {
-          biased;
-          Some(e) = errors_rx.recv() => { yield Err(e.into()); true },
-          Some(m) = matches_rx.recv() => { yield Ok(m); true },
-          else => false,
-        } {}
-        /* Propagate the error result of the scan task, or any internal panic that
-         * occurred in the scan task, into an Err instance in the merged
-         * Result stream. */
+      task::spawn(async move {
         match scan_task.await {
-          Err(e) => {
-            yield Err(e.into());
-          },
-          Ok(Err(e)) => {
-            yield Err(e.into());
-          },
           Ok(Ok(())) => (),
+          Err(e) => matches_tx.send(Err(e.into())).unwrap(),
+          Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
         }
-      }
+      });
+      UnboundedReceiverStream::new(matches_rx)
+    }
+  }
+
+  impl ChimeraScratch {
+    pub fn as_ref_native(&self) -> Option<&NativeChimeraScratch> {
+      self.0.map(|p| unsafe { p.as_ref() })
+    }
+
+    pub fn as_mut_native(&mut self) -> Option<&mut NativeChimeraScratch> {
+      self.0.map(|mut p| unsafe { p.as_mut() })
     }
 
     pub fn scratch_size(&self) -> Result<usize, ChimeraRuntimeError> {
