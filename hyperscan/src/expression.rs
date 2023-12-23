@@ -484,7 +484,7 @@ impl<'a> ExpressionSet<'a> {
   ///   .with_ids([ExprId(300), ExprId(12)])
   ///   .compile(Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::new();
+  /// let mut scratch = Scratch::blank();
   /// scratch.setup_for_db(&set1)?;
   /// scratch.setup_for_db(&set2)?;
   ///
@@ -1154,7 +1154,7 @@ impl<'a> LiteralSet<'a> {
   ///   .with_ids([ExprId(300), ExprId(12)])
   ///   .compile(Mode::BLOCK)?;
   ///
-  /// let mut scratch = Scratch::new();
+  /// let mut scratch = Scratch::blank();
   /// scratch.setup_for_db(&set1)?;
   /// scratch.setup_for_db(&set2)?;
   ///
@@ -1507,7 +1507,7 @@ pub mod chimera {
     ///   .with_ids([ExprId(300), ExprId(12)])
     ///   .compile(ChimeraMode::NOGROUPS)?;
     ///
-    /// let mut scratch = ChimeraScratch::new();
+    /// let mut scratch = ChimeraScratch::blank();
     /// scratch.setup_for_db(&set1)?;
     /// scratch.setup_for_db(&set2)?;
     ///
@@ -1560,7 +1560,7 @@ pub mod chimera {
     ///   .with_limits(ChimeraMatchLimits { match_limit: 1, match_limit_recursion: 1 })
     ///   .compile(ChimeraMode::GROUPS)?;
     ///
-    /// let mut scratch = ChimeraScratch::new();
+    /// let mut scratch = ChimeraScratch::blank();
     /// scratch.setup_for_db(&set1)?;
     /// scratch.setup_for_db(&set2)?;
     ///

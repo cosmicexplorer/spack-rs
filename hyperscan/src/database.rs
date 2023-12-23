@@ -18,12 +18,16 @@ use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 use once_cell::sync::Lazy;
 
 use std::{
+  cmp,
   ffi::CStr,
+  fmt, hash,
   mem::{self, MaybeUninit},
   ops,
   os::raw::c_char,
   ptr, slice, str,
 };
+
+pub type NativeDb = hs::hs_database;
 
 /// Read-only description of an in-memory state machine.
 ///
@@ -32,8 +36,6 @@ use std::{
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Database(*mut NativeDb);
-
-pub type NativeDb = hs::hs_database;
 
 /// # Convenience Methods
 /// These methods prepare some resource within a new heap allocation and are
@@ -80,7 +82,7 @@ impl Database {
   /// # fn main() {}
   /// ```
   pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
-    let mut scratch = Scratch::new();
+    let mut scratch = Scratch::blank();
     scratch.setup_for_db(self)?;
     Ok(scratch)
   }
@@ -126,7 +128,7 @@ impl Database {
 /// supports a subset of all [`Flags`] arguments, documented in each method.
 ///
 /// ## Platform Compatibility
-/// Each method also accepts an optional reference to a [`Platform`] object,
+/// Each method also accepts an optional [`Platform`] object,
 /// which is used to select processor features to compile the database for.
 /// While the default of [`None`] will enable all features available to the
 /// current processor, some features can be disabled in order to produce a
@@ -143,10 +145,11 @@ impl Database {
 ///   // Verify that the current platform has AVX2 instructions, and make a db:
 ///   let plat = Platform::get();
 ///   assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
+///   assert_ne!(plat, &Platform::GENERIC);
 ///   let db_with_avx2 = Database::compile(
 ///     &expr,
 ///     Flags::default(),
-///     Mode::BLOCK,
+///     Mode::STREAM,
 ///     Some(*plat),
 ///   )?;
 ///
@@ -154,12 +157,13 @@ impl Database {
 ///   let db_no_avx2 = Database::compile(
 ///     &expr,
 ///     Flags::default(),
-///     Mode::BLOCK,
+///     Mode::STREAM,
 ///     Some(Platform::GENERIC),
 ///   )?;
 ///
 ///   // Instruction selection does not affect the size of the state machine:
 ///   assert_eq!(db_with_avx2.database_size()?, db_no_avx2.database_size()?);
+///   assert_eq!(db_with_avx2.stream_size()?, db_no_avx2.stream_size()?);
 ///   Ok(())
 /// }
 /// # #[cfg(not(feature = "compiler"))]
@@ -474,9 +478,7 @@ impl Database {
   ///   let ascii_db = expr.compile(Flags::default(), Mode::BLOCK)?;
   ///
   ///   // Including UTF-8 classes increases the size:
-  ///   let utf8_db_size = utf8_db.database_size()?;
-  ///   let ascii_db_size = ascii_db.database_size()?;
-  ///   assert!(utf8_db_size > ascii_db_size);
+  ///   assert!(utf8_db.database_size()? > ascii_db.database_size()?);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
@@ -641,18 +643,18 @@ impl Database {
   ///   let db_ref_2 = ManuallyDrop::new(unsafe { Database::from_native(db_ptr) });
   ///
   ///   // Both db references are valid and can be used for matching.
-  ///   let mut scratch = Scratch::new();
+  ///   let mut scratch = Scratch::blank();
   ///   scratch.setup_for_db(&db_ref_1)?;
   ///   scratch.setup_for_db(&db_ref_2)?;
   ///
   ///   let mut matches: Vec<&str> = Vec::new();
   ///   scratch
-  ///     .scan_sync(&db_ref_1, "aardvark".into(), |Match { source, ..}| {
+  ///     .scan_sync(&db_ref_1, "aardvark".into(), |Match { source, .. }| {
   ///       matches.push(unsafe { source.as_str() });
   ///       MatchResult::Continue
   ///     })?;
   ///   scratch
-  ///     .scan_sync(&db_ref_2, "aardvark".into(), |Match { source, ..}| {
+  ///     .scan_sync(&db_ref_2, "aardvark".into(), |Match { source, .. }| {
   ///       matches.push(unsafe { source.as_str() });
   ///       MatchResult::Continue
   ///     })?;
@@ -801,7 +803,6 @@ pub mod alloc {
 }
 
 /// Wrapper for allocated string data returned by [`Database::info()`].
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct DbInfo(pub alloc::MiscAllocation);
 
@@ -835,16 +836,53 @@ impl DbInfo {
   }
 }
 
-/// Wrapper for a serialized state machine which can read data from a variety of
-/// sources via [`alloc::DbAllocation`].
+impl fmt::Debug for DbInfo {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "DbInfo({:?})", self.as_str()) }
+}
+
+impl fmt::Display for DbInfo {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.as_str()) }
+}
+
+impl cmp::PartialEq for DbInfo {
+  fn eq(&self, other: &Self) -> bool { self.as_str().eq(other.as_str()) }
+}
+
+impl cmp::Eq for DbInfo {}
+
+impl cmp::PartialOrd for DbInfo {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
+}
+
+impl cmp::Ord for DbInfo {
+  fn cmp(&self, other: &Self) -> cmp::Ordering { self.as_str().cmp(other.as_str()) }
+}
+
+impl hash::Hash for DbInfo {
+  fn hash<H>(&self, state: &mut H)
+  where H: hash::Hasher {
+    self.as_str().hash(state);
+  }
+}
+
+/// Wrapper for a serialized form of a [`Database`].
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct SerializedDb<'a>(pub alloc::DbAllocation<'a>);
+pub struct SerializedDb<'a>(
+  /// This serialization data can be sourced from a variety of places.
+  pub alloc::DbAllocation<'a>,
+);
 
 /// Methods available to all types of allocations.
 impl<'a> SerializedDb<'a> {
-  /// Extract metadata about the serialized database into a new string
-  /// allocation.
+  fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
+
+  fn len(&self) -> usize { self.0.len() }
+
+  /// Deserialize into a new db allocation.
+  ///
+  /// This will make a new allocation through the allocator from
+  /// [`crate::alloc::set_db_allocator()`].
   ///
   ///```
   /// #[cfg(feature = "compiler")]
@@ -852,34 +890,17 @@ impl<'a> SerializedDb<'a> {
   ///   use hyperscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
-  ///   let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
-  ///   let info = serialized_db.extract_db_info()?;
-  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
+  ///   let db = serialized_db.deserialize_db()?;
+  ///
+  ///   // Note that the expected deserialized size is the same
+  ///   // as the resulting in-memory database size:
+  ///   assert_eq!(db.database_size()?, serialized_db.deserialized_size()?);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
-    let mut info = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_serialized_database_info(self.as_ptr(), self.len(), &mut info)
-    })?;
-    let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
-    assert!(len > 0);
-
-    let ret = alloc::MiscAllocation {
-      data: info as *mut u8,
-      len,
-    };
-
-    Ok(DbInfo(ret))
-  }
-
-  fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
-
-  fn len(&self) -> usize { self.0.len() }
-
   pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
     HyperscanRuntimeError::from_native(unsafe {
@@ -910,7 +931,7 @@ impl<'a> SerializedDb<'a> {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*};
+  ///   use hyperscan::{expression::*, flags::*, database::*};
   ///   use std::mem;
   ///
   ///   let expr: Expression = "a+".parse()?;
@@ -927,16 +948,6 @@ impl<'a> SerializedDb<'a> {
   ///   // Note that the expected deserialized size is the same
   ///   // as the resulting in-memory database size:
   ///   assert_eq!(db.database_size()?, serialized_db.deserialized_size()?);
-  ///
-  ///   let mut scratch = db.allocate_scratch()?;
-  ///
-  ///   let mut matches: Vec<&str> = Vec::new();
-  ///   scratch
-  ///     .scan_sync(&db, "aardvark".into(), |Match { source, ..}| {
-  ///       matches.push(unsafe { source.as_str() });
-  ///       MatchResult::Continue
-  ///     })?;
-  ///   assert_eq!(&matches, &["a", "aa", "a"]);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
@@ -948,6 +959,41 @@ impl<'a> SerializedDb<'a> {
       self.len(),
       db,
     ))
+  }
+
+  /// Extract metadata about the serialized database into a new string
+  /// allocation.
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
+  ///   let info = serialized_db.extract_db_info()?;
+  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   // Info is the same as would have been provided from deserializing:
+  ///   assert_eq!(info, serialized_db.deserialize_db()?.info()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
+    let mut info = ptr::null_mut();
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_serialized_database_info(self.as_ptr(), self.len(), &mut info)
+    })?;
+    let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
+    assert!(len > 0);
+
+    let ret = alloc::MiscAllocation {
+      data: info as *mut u8,
+      len,
+    };
+
+    Ok(DbInfo(ret))
   }
 }
 
@@ -1194,7 +1240,7 @@ pub mod chimera {
     }
 
     pub fn allocate_scratch(&self) -> Result<ChimeraScratch, ChimeraRuntimeError> {
-      let mut scratch = ChimeraScratch::new();
+      let mut scratch = ChimeraScratch::blank();
       scratch.setup_for_db(self)?;
       Ok(scratch)
     }

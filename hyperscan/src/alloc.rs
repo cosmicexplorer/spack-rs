@@ -218,12 +218,15 @@ pub trait MallocLikeAllocator {
 /// assert_eq!(allocs.len(), 2);
 /// let (p1_p, p1_layout) = allocs[0];
 /// let (p2_p, p2_layout) = allocs[1];
-/// assert_eq!(p1_p, p1);
-/// assert!(p1_layout.size() >= 32);
-/// assert!(p1_layout.align() >= 8);
-/// assert_eq!(p2_p, p2);
-/// assert!(p2_layout.size() >= 64);
-/// assert!(p2_layout.align() >= 8);
+/// // The pointer value is the same as that returned by the allocate method:
+/// assert!(p1_p == p1);
+/// assert!(p2_p == p2);
+/// // The requested alignment is always 8:
+/// assert!(p1_layout.align() == 8);
+/// assert!(p2_layout.align() == 8);
+/// // The size itself may differ per allocation, though:
+/// assert!(p1_layout.size() == 32);
+/// assert!(p2_layout.size() == 64);
 ///
 /// // Note that modifying pointers in use by other threads may cause race conditions
 /// // and undefined behavior!

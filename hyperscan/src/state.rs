@@ -37,8 +37,11 @@ pub type NativeScratch = hs::hs_scratch;
 #[repr(transparent)]
 pub struct Scratch(Option<NonNull<NativeScratch>>);
 
+unsafe impl Send for Scratch {}
+unsafe impl Sync for Scratch {}
+
 impl Scratch {
-  pub const fn new() -> Self { Self(None) }
+  pub const fn blank() -> Self { Self(None) }
 
   ///```
   /// #[cfg(feature = "compiler")]
@@ -46,12 +49,12 @@ impl Scratch {
   ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
-  ///   let a_db = a_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let a_db = a_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
   ///
   ///   let b_expr: Expression = "b+".parse()?;
-  ///   let b_db = b_expr.compile(Flags::UTF8 | Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let b_db = b_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
   ///
-  ///   let mut scratch = Scratch::new();
+  ///   let mut scratch = Scratch::blank();
   ///   scratch.setup_for_db(&a_db)?;
   ///   scratch.setup_for_db(&b_db)?;
   ///
@@ -78,13 +81,21 @@ impl Scratch {
   /// # fn main() {}
   /// ```
   pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanRuntimeError> {
+    /* NB: this method always overwrites self.0, because `hs_alloc_scratch()` may
+     * modify the pointer location if the scratch space needs to be resized! */
     let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
     })?;
+    /* *self = unsafe { Self::from_native(scratch_ptr) }; */
     self.0 = NonNull::new(scratch_ptr);
     Ok(())
   }
+}
+
+impl Scratch {
+  /* TODO: NonNull::new is not const yet! */
+  pub unsafe fn from_native(x: *mut NativeScratch) -> Self { Self(NonNull::new(x)) }
 
   pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
 
@@ -92,26 +103,49 @@ impl Scratch {
     self.0.map(|mut p| unsafe { p.as_mut() })
   }
 
-  #[cfg(feature = "async")]
-  fn into_db(db: &Database) -> usize {
-    let db: *const Database = db;
-    db as usize
+  pub fn get_size(&self) -> Result<usize, HyperscanRuntimeError> {
+    match self.as_ref_native() {
+      None => Ok(0),
+      Some(p) => {
+        let mut n: usize = 0;
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
+        Ok(n)
+      },
+    }
   }
 
-  #[cfg(feature = "async")]
-  fn from_db<'a>(db: usize) -> &'a Database { unsafe { &*(db as *const Database) } }
-
-  #[cfg(feature = "async")]
-  fn into_scratch(scratch: &mut Scratch) -> usize {
-    let scratch: *mut Scratch = scratch;
-    scratch as usize
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+    match self.as_ref_native() {
+      None => Ok(Self::blank()),
+      Some(p) => {
+        let mut scratch_ptr = ptr::null_mut();
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
+        Ok(Self(NonNull::new(scratch_ptr)))
+      },
+    }
   }
 
-  #[cfg(feature = "async")]
-  fn from_scratch<'a>(scratch: usize) -> &'a mut Scratch {
-    unsafe { &mut *(scratch as *mut Scratch) }
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+    if let Some(p) = self.as_mut_native() {
+      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
+    }
+    Ok(())
   }
+}
 
+impl Clone for Scratch {
+  fn clone(&self) -> Self { self.try_clone().unwrap() }
+}
+
+impl ops::Drop for Scratch {
+  fn drop(&mut self) {
+    unsafe {
+      self.try_drop().unwrap();
+    }
+  }
+}
+
+impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -165,44 +199,118 @@ impl Scratch {
     })
   }
 
+  pub fn scan_sync_vectored<'data>(
+    &mut self,
+    db: &Database,
+    data: VectoredByteSlices<'data, 'data>,
+    mut f: impl FnMut(VectoredMatch<'data>) -> MatchResult,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let mut matcher = VectoredMatcher::new(data, &mut f);
+    let (data_pointers, lengths) = matcher.parent_slices().pointers_and_lengths();
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_scan_vector(
+        db.as_ref_native(),
+        data_pointers.as_ptr(),
+        lengths.as_ptr(),
+        matcher.parent_slices().native_len(),
+        /* NB: ignoring flags for now! */
+        0,
+        self.as_mut_native().unwrap(),
+        Some(match_slice_vectored),
+        mem::transmute(&mut matcher),
+      )
+    })
+  }
+
+  pub fn scan_sync_stream<'data>(
+    &mut self,
+    data: ByteSlice<'data>,
+    sink: &mut StreamSink,
+  ) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_scan_stream(
+        sink.live.as_mut_native(),
+        data.as_ptr(),
+        data.native_len(),
+        /* NB: ignore flags for now! */
+        0,
+        self.as_mut_native().unwrap(),
+        Some(match_slice_stream),
+        mem::transmute(&mut sink.matcher),
+      )
+    })
+  }
+
+  pub fn flush_eod_sync(&mut self, sink: &mut StreamSink) -> Result<(), HyperscanRuntimeError> {
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_direct_flush_stream(
+        sink.live.as_mut_native(),
+        self.as_mut_native().unwrap(),
+        Some(match_slice_stream),
+        mem::transmute(&mut sink.matcher),
+      )
+    })
+  }
+}
+
+#[cfg(feature = "async")]
+#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
+impl Scratch {
+  fn into_db(db: &Database) -> usize {
+    let db: *const Database = db;
+    db as usize
+  }
+
+  fn from_db<'a>(db: usize) -> &'a Database { unsafe { &*(db as *const Database) } }
+
+  fn into_scratch(scratch: &mut Scratch) -> usize {
+    let scratch: *mut Scratch = scratch;
+    scratch as usize
+  }
+
+  fn from_scratch<'a>(scratch: usize) -> &'a mut Scratch {
+    unsafe { &mut *(scratch as *mut Scratch) }
+  }
+
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
-  /// use futures_util::TryStreamExt;
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  ///   use futures_util::TryStreamExt;
   ///
-  /// let a_expr: Expression = "a+".parse()?;
-  /// let b_expr: Expression = "b+".parse()?;
-  /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
-  /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
-  ///   .with_flags([flags, flags])
-  ///   .with_ids([ExprId(1), ExprId(2)]);
-  /// let db = expr_set.compile(Mode::BLOCK)?;
-  /// let mut scratch = db.allocate_scratch()?;
+  ///   let a_expr: Expression = "a+".parse()?;
+  ///   let b_expr: Expression = "b+".parse()?;
+  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
+  ///     .with_flags([flags, flags])
+  ///     .with_ids([ExprId(1), ExprId(2)]);
+  ///   let db = expr_set.compile(Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   let matches: Vec<&str> = scratch
+  ///     .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
+  ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
+  ///     .try_collect()
+  ///     .await?;
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
   ///
-  /// let matches: Vec<&str> = scratch
-  ///   .scan_channel(&db, "imbibbe".into(), |_| MatchResult::Continue)
-  ///   .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(&matches, &["b", "b", "bb"]);
+  ///   let matches: Vec<&str> = scratch
+  ///     .scan_channel(&db, "imbibbe".into(), |_| MatchResult::Continue)
+  ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
+  ///     .try_collect()
+  ///     .await?;
+  ///   assert_eq!(&matches, &["b", "b", "bb"]);
   ///
-  /// let ret = scratch
-  ///   .scan_channel(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
-  ///   .try_for_each(|_| async { Ok(()) })
-  ///   .await;
-  /// assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
-  /// # Ok(())
-  /// # })}
+  ///   let ret = scratch
+  ///     .scan_channel(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching)
+  ///     .try_for_each(|_| async { Ok(()) })
+  ///     .await;
+  ///   assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
+  ///   Ok(())
+  /// })}
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
-  #[cfg(feature = "async")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub fn scan_channel<'data>(
     &mut self,
     db: &Database,
@@ -236,76 +344,55 @@ impl Scratch {
     }
   }
 
-  pub fn scan_sync_vectored<'data>(
-    &mut self,
-    db: &Database,
-    data: VectoredByteSlices<'data, 'data>,
-    mut f: impl FnMut(VectoredMatch<'data>) -> MatchResult,
-  ) -> Result<(), HyperscanRuntimeError> {
-    let mut matcher = VectoredMatcher::new(data, &mut f);
-    let (data_pointers, lengths) = matcher.parent_slices().pointers_and_lengths();
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_scan_vector(
-        db.as_ref_native(),
-        data_pointers.as_ptr(),
-        lengths.as_ptr(),
-        matcher.parent_slices().native_len(),
-        /* NB: ignoring flags for now! */
-        0,
-        self.as_mut_native().unwrap(),
-        Some(match_slice_vectored),
-        mem::transmute(&mut matcher),
-      )
-    })
-  }
-
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  /// use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
-  /// use futures_util::TryStreamExt;
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
+  ///   use futures_util::TryStreamExt;
   ///
-  /// let a_plus: Expression = "a+".parse()?;
-  /// let b_plus: Expression = "b+".parse()?;
-  /// let asdf: Expression = "asdf(.)".parse()?;
-  /// let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
-  /// let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
-  ///   .with_flags([flags, flags, flags])
-  ///   .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
-  /// let db = expr_set.compile(Mode::VECTORED)?;
-  /// let mut scratch = db.allocate_scratch()?;
+  ///   let a_plus: Expression = "a+".parse()?;
+  ///   let b_plus: Expression = "b+".parse()?;
+  ///   let asdf: Expression = "asdf(.)".parse()?;
+  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
+  ///     .with_flags([flags, flags, flags])
+  ///     .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
+  ///   let db = expr_set.compile(Mode::VECTORED)?;
+  ///   let mut scratch = db.allocate_scratch()?;
   ///
-  /// let data: [ByteSlice; 4] = [
-  ///   "aardvark".into(),
-  ///   "imbibbe".into(),
-  ///   "leas".into(),
-  ///   "dfeg".into(),
-  /// ];
-  /// let matches: Vec<(u32, String)> = scratch
-  ///   .scan_channel_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
-  ///   .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
-  ///     let joined = source.iter_slices()
-  ///       .map(|s| unsafe { s.as_str() })
-  ///       .collect::<Vec<_>>()
-  ///       .concat();
-  ///     Ok((id, joined))
-  ///   })
-  ///   .try_collect()
-  ///   .await?;
-  /// assert_eq!(matches, vec![
-  ///   (0, "a".to_string()),
-  ///   (0, "aa".to_string()),
-  ///   (0, "a".to_string()),
-  ///   (3, "b".to_string()),
-  ///   (3, "b".to_string()),
-  ///   (3, "bb".to_string()),
-  ///   (0, "a".to_string()),
-  ///   (2, "asdfe".to_string()),
-  /// ]);
-  /// # Ok(())
-  /// # })}
+  ///   let data: [ByteSlice; 4] = [
+  ///     "aardvark".into(),
+  ///     "imbibbe".into(),
+  ///     "leas".into(),
+  ///     "dfeg".into(),
+  ///   ];
+  ///   let matches: Vec<(u32, String)> = scratch
+  ///     .scan_channel_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
+  ///     .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
+  ///       let joined = source.iter_slices()
+  ///         .map(|s| unsafe { s.as_str() })
+  ///         .collect::<Vec<_>>()
+  ///         .concat();
+  ///       Ok((id, joined))
+  ///     })
+  ///     .try_collect()
+  ///     .await?;
+  ///   assert_eq!(matches, vec![
+  ///     (0, "a".to_string()),
+  ///     (0, "aa".to_string()),
+  ///     (0, "a".to_string()),
+  ///     (3, "b".to_string()),
+  ///     (3, "b".to_string()),
+  ///     (3, "bb".to_string()),
+  ///     (0, "a".to_string()),
+  ///     // NB: This match result crosses a slice boundary!
+  ///     (2, "asdfe".to_string()),
+  ///   ]);
+  ///   Ok(())
+  /// })}
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
   /// ```
-  #[cfg(feature = "async")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub fn scan_channel_vectored<'data>(
     &mut self,
     db: &Database,
@@ -349,27 +436,6 @@ impl Scratch {
     }
   }
 
-  pub fn scan_sync_stream<'data>(
-    &mut self,
-    data: ByteSlice<'data>,
-    sink: &mut StreamSink,
-  ) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_scan_stream(
-        sink.live.as_mut_native(),
-        data.as_ptr(),
-        data.native_len(),
-        /* NB: ignore flags for now! */
-        0,
-        self.as_mut_native().unwrap(),
-        Some(match_slice_stream),
-        mem::transmute(&mut sink.matcher),
-      )
-    })
-  }
-
-  #[cfg(feature = "async")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub async fn scan_stream<'data>(
     &mut self,
     data: ByteSlice<'data>,
@@ -398,19 +464,6 @@ impl Scratch {
     )
   }
 
-  pub fn flush_eod_sync(&mut self, sink: &mut StreamSink) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe {
-      hs::hs_direct_flush_stream(
-        sink.live.as_mut_native(),
-        self.as_mut_native().unwrap(),
-        Some(match_slice_stream),
-        mem::transmute(&mut sink.matcher),
-      )
-    })
-  }
-
-  #[cfg(feature = "async")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
   pub async fn flush_eod(&mut self, sink: &mut StreamSinkChannel) -> Result<(), ScanError> {
     let s: &'static mut Self = unsafe { mem::transmute(self) };
     let sink: &'static mut StreamSinkChannel = unsafe { mem::transmute(sink) };
@@ -429,51 +482,7 @@ impl Scratch {
       .await??,
     )
   }
-
-  pub fn get_size(&self) -> Result<usize, HyperscanRuntimeError> {
-    match self.as_ref_native() {
-      None => Ok(0),
-      Some(p) => {
-        let mut n: usize = 0;
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
-        Ok(n)
-      },
-    }
-  }
-
-  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
-    match self.as_ref_native() {
-      None => Ok(Self::new()),
-      Some(p) => {
-        let mut scratch_ptr = ptr::null_mut();
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
-        Ok(Self(NonNull::new(scratch_ptr)))
-      },
-    }
-  }
-
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
-    if let Some(p) = self.as_mut_native() {
-      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
-    }
-    Ok(())
-  }
 }
-
-impl Clone for Scratch {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-}
-
-impl ops::Drop for Scratch {
-  fn drop(&mut self) {
-    unsafe {
-      self.try_drop().unwrap();
-    }
-  }
-}
-
-unsafe impl Send for Scratch {}
-unsafe impl Sync for Scratch {}
 
 #[cfg(all(test, feature = "compiler", feature = "async"))]
 mod test {
@@ -555,7 +564,7 @@ pub mod chimera {
   pub struct ChimeraScratch(Option<NonNull<NativeChimeraScratch>>);
 
   impl ChimeraScratch {
-    pub const fn new() -> Self { Self(None) }
+    pub const fn blank() -> Self { Self(None) }
 
     pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraRuntimeError> {
       let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
@@ -736,7 +745,7 @@ pub mod chimera {
 
     pub fn try_clone(&self) -> Result<Self, ChimeraRuntimeError> {
       match self.as_ref_native() {
-        None => Ok(Self::new()),
+        None => Ok(Self::blank()),
         Some(p) => {
           let mut scratch_ptr = ptr::null_mut();
           ChimeraRuntimeError::from_native(unsafe { hs::ch_clone_scratch(p, &mut scratch_ptr) })?;
