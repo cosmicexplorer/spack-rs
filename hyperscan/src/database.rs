@@ -730,10 +730,6 @@ pub mod alloc {
     /// Return a view over the backing memory region.
     pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
 
-    pub(crate) fn as_mut_slice(&mut self) -> &mut [u8] {
-      unsafe { slice::from_raw_parts_mut(self.data, self.len) }
-    }
-
     unsafe fn free(&mut self) { crate::free_misc(self.data) }
   }
 
@@ -796,14 +792,6 @@ impl DbInfo {
   /// trailing null byte allocated by the underlying hyperscan library.
   pub fn as_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
-  }
-
-  /* This method is used in a test case, which is a useful check that
-   * MiscAllocation::as_mut_slice() works, even if there's no use for it now. */
-  #[allow(dead_code)]
-  fn as_mut_str(&mut self) -> &mut str {
-    let without_null = self.without_null();
-    unsafe { str::from_utf8_unchecked_mut(&mut self.0.as_mut_slice()[without_null]) }
   }
 
   /// Write out metadata for `db` into a newly allocated region.
@@ -990,9 +978,12 @@ impl Platform {
 
   pub fn generic() -> Self {
     let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
+    let p = s.as_mut_ptr();
     unsafe {
-      (*s.as_mut_ptr()).tune = TuneFamily::default().into_native();
-      (*s.as_mut_ptr()).cpu_features = CpuFeatures::default().into_native();
+      let tune = ptr::addr_of_mut!((*p).tune);
+      tune.write(TuneFamily::default().into_native());
+      let cpu_features = ptr::addr_of_mut!((*p).cpu_features);
+      cpu_features.write(CpuFeatures::default().into_native());
       Self(s.assume_init())
     }
   }
@@ -1000,24 +991,6 @@ impl Platform {
   pub fn get() -> &'static Self { &CACHED_PLATFORM }
 
   pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
-}
-
-#[cfg(all(test, feature = "compiler"))]
-mod test {
-  use crate::{expression::*, flags::*};
-
-  #[test]
-  fn test_db_info_mut_str() {
-    let expr: Expression = "a+".parse().unwrap();
-    let db = expr.compile(Flags::default(), Mode::BLOCK).unwrap();
-    let mut info = db.info().unwrap();
-
-    assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-    unsafe {
-      info.as_mut_str().as_bytes_mut()[9] = b'6';
-    }
-    assert!(info.as_str().starts_with("Version: 6.4.2"));
-  }
 }
 
 #[cfg(feature = "chimera")]
