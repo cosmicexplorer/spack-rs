@@ -18,7 +18,6 @@ use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
 use once_cell::sync::Lazy;
 
 use std::{
-  borrow::Cow,
   ffi::CStr,
   mem::{self, MaybeUninit},
   ops,
@@ -54,8 +53,8 @@ pub type NativeDb = hs::hs_database;
 ///
 /// ## Serialization
 /// While [`SerializedDb`] offers a rich interface to wrap serialized bytes from
-/// a variety of sources with [`DbAllocation`], [`Self::serialize()`] simply
-/// returns a newly allocated region of bytes.
+/// a variety of sources with [`alloc::DbAllocation`], [`Self::serialize()`]
+/// simply returns a newly allocated region of bytes.
 impl Database {
   /// Call [`Scratch::setup_for_db()`] on a newly allocated [`Scratch`].
   ///
@@ -674,8 +673,8 @@ impl Database {
   /// This method must be called at most once over the lifetime of each db
   /// allocation. It is called by default on drop, so
   /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap instances
-  /// that reference external data to avoid attempting to free the referenced
-  /// data.
+  /// that reference external data in order to avoid attempting to free the
+  /// referenced data.
   ///
   /// ## Only Frees Memory
   /// This method performs no processing other than freeing the allocated
@@ -697,43 +696,81 @@ impl ops::Drop for Database {
 unsafe impl Send for Database {}
 unsafe impl Sync for Database {}
 
-#[derive(Debug)]
-pub struct MiscAllocation {
-  data: *mut u8,
-  len: usize,
-}
+/// Wrappers over allocations from various sources.
+pub mod alloc {
+  use std::{borrow::Cow, ops, slice};
 
-unsafe impl Send for MiscAllocation {}
-unsafe impl Sync for MiscAllocation {}
-
-impl MiscAllocation {
-  pub const fn as_ptr(&self) -> *mut u8 { self.data }
-
-  pub const fn len(&self) -> usize { self.len }
-
-  pub const fn is_empty(&self) -> bool { self.len() == 0 }
-
-  pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
-
-  pub fn as_mut_slice(&mut self) -> &mut [u8] {
-    unsafe { slice::from_raw_parts_mut(self.data, self.len) }
+  #[derive(Debug)]
+  pub struct MiscAllocation {
+    pub(crate) data: *mut u8,
+    pub(crate) len: usize,
   }
 
-  pub unsafe fn free(&mut self) { crate::free_misc(self.data) }
-}
+  unsafe impl Send for MiscAllocation {}
+  unsafe impl Sync for MiscAllocation {}
 
-impl ops::Drop for MiscAllocation {
-  fn drop(&mut self) {
-    unsafe {
-      self.free();
+  impl MiscAllocation {
+    pub(crate) const fn as_ptr(&self) -> *mut u8 { self.data }
+
+    pub(crate) const fn len(&self) -> usize { self.len }
+
+    pub const fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.data, self.len) } }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+      unsafe { slice::from_raw_parts_mut(self.data, self.len) }
     }
+
+    pub unsafe fn free(&mut self) { crate::free_misc(self.data) }
+  }
+
+  impl ops::Drop for MiscAllocation {
+    fn drop(&mut self) {
+      unsafe {
+        self.free();
+      }
+    }
+  }
+
+  #[derive(Debug)]
+  pub enum DbAllocation<'a> {
+    Misc(MiscAllocation),
+    Rust(Cow<'a, [u8]>),
+  }
+
+  impl<'a> DbAllocation<'a> {
+    pub(crate) fn as_ptr(&self) -> *const u8 {
+      match self {
+        Self::Misc(misc) => misc.as_ptr(),
+        Self::Rust(cow) => cow.as_ptr(),
+      }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+      match self {
+        Self::Misc(misc) => misc.len(),
+        Self::Rust(cow) => cow.len(),
+      }
+    }
+
+    pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
+  }
+
+  impl DbAllocation<'static> {
+    pub fn from_cloned_data(s: &DbAllocation) -> Self {
+      let newly_allocated: Vec<u8> = s.as_slice().to_vec();
+      Self::Rust(Cow::Owned(newly_allocated))
+    }
+  }
+
+  impl Clone for DbAllocation<'static> {
+    fn clone(&self) -> Self { Self::from_cloned_data(self) }
   }
 }
 
 /// Wrapper for allocated string data returned by [`Database::info()`].
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct DbInfo(pub MiscAllocation);
+pub struct DbInfo(pub alloc::MiscAllocation);
 
 impl DbInfo {
   const fn without_null(&self) -> impl slice::SliceIndex<[u8], Output=[u8]> { ..(self.0.len() - 1) }
@@ -747,6 +784,8 @@ impl DbInfo {
     unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
   }
 
+  /* This method is used in a test case, which is a useful check that
+   * MiscAllocation::as_mut_slice() works, even if there's no use for it now. */
   #[allow(dead_code)]
   fn as_mut_str(&mut self) -> &mut str {
     let without_null = self.without_null();
@@ -762,7 +801,7 @@ impl DbInfo {
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
     assert!(len > 0);
 
-    let ret = MiscAllocation {
+    let ret = alloc::MiscAllocation {
       data: unsafe { mem::transmute(info) },
       len,
     };
@@ -772,45 +811,8 @@ impl DbInfo {
 }
 
 #[derive(Debug)]
-pub enum DbAllocation<'a> {
-  Misc(MiscAllocation),
-  Rust(Cow<'a, [u8]>),
-}
-
-impl<'a> DbAllocation<'a> {
-  pub fn as_ptr(&self) -> *const u8 {
-    match self {
-      Self::Misc(misc) => misc.as_ptr(),
-      Self::Rust(cow) => cow.as_ptr(),
-    }
-  }
-
-  pub fn len(&self) -> usize {
-    match self {
-      Self::Misc(misc) => misc.len(),
-      Self::Rust(cow) => cow.len(),
-    }
-  }
-
-  pub fn is_empty(&self) -> bool { self.len() == 0 }
-
-  pub fn as_slice(&self) -> &[u8] { unsafe { slice::from_raw_parts(self.as_ptr(), self.len()) } }
-}
-
-impl DbAllocation<'static> {
-  pub fn from_cloned_data(s: &DbAllocation) -> Self {
-    let newly_allocated: Vec<u8> = s.as_slice().to_vec();
-    Self::Rust(Cow::Owned(newly_allocated))
-  }
-}
-
-impl Clone for DbAllocation<'static> {
-  fn clone(&self) -> Self { Self::from_cloned_data(self) }
-}
-
-#[derive(Debug)]
 #[repr(transparent)]
-pub struct SerializedDb<'a>(pub DbAllocation<'a>);
+pub struct SerializedDb<'a>(pub alloc::DbAllocation<'a>);
 
 impl SerializedDb<'static> {
   pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
@@ -823,12 +825,15 @@ impl SerializedDb<'static> {
 
     let data = data as *mut u8;
 
-    Ok(Self(DbAllocation::Misc(MiscAllocation { data, len })))
+    Ok(Self(alloc::DbAllocation::Misc(alloc::MiscAllocation {
+      data,
+      len,
+    })))
   }
 
   pub fn from_cloned_data(s: &SerializedDb) -> Self {
     let SerializedDb(ref s) = s;
-    Self(DbAllocation::from_cloned_data(s))
+    Self(alloc::DbAllocation::from_cloned_data(s))
   }
 }
 
@@ -859,7 +864,7 @@ impl<'a> SerializedDb<'a> {
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
     assert!(len > 0);
 
-    let ret = MiscAllocation {
+    let ret = alloc::MiscAllocation {
       data: info as *mut u8,
       len,
     };
@@ -870,8 +875,6 @@ impl<'a> SerializedDb<'a> {
   fn as_ptr(&self) -> *const c_char { unsafe { mem::transmute(self.0.as_ptr()) } }
 
   pub fn len(&self) -> usize { self.0.len() }
-
-  pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
   pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
@@ -971,11 +974,37 @@ impl Platform {
     Ok(unsafe { Self(s.assume_init()) })
   }
 
+  pub fn generic() -> Self {
+    let mut s = mem::MaybeUninit::<hs::hs_platform_info>::uninit();
+    unsafe {
+      (*s.as_mut_ptr()).tune = TuneFamily::default().into_native();
+      (*s.as_mut_ptr()).cpu_features = CpuFeatures::default().into_native();
+      Self(s.assume_init())
+    }
+  }
+
   pub fn get() -> &'static Self { &CACHED_PLATFORM }
 
   pub(crate) fn as_ref_native(&self) -> &hs::hs_platform_info { &self.0 }
 }
 
+#[cfg(all(test, feature = "compiler"))]
+mod test {
+  use crate::{expression::*, flags::*};
+
+  #[test]
+  fn test_db_info_mut_str() {
+    let expr: Expression = "a+".parse().unwrap();
+    let db = expr.compile(Flags::default(), Mode::BLOCK).unwrap();
+    let mut info = db.info().unwrap();
+
+    assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    unsafe {
+      info.as_mut_str().as_bytes_mut()[9] = b'6';
+    }
+    assert!(info.as_str().starts_with("Version: 6.4.2"));
+  }
+}
 
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
@@ -1223,23 +1252,5 @@ pub mod chimera {
 
       Ok(Self(ret))
     }
-  }
-}
-
-#[cfg(all(test, feature = "compiler"))]
-mod test {
-  use crate::{expression::*, flags::*};
-
-  #[test]
-  fn test_db_info_mut_str() {
-    let expr: Expression = "a+".parse().unwrap();
-    let db = expr.compile(Flags::default(), Mode::BLOCK).unwrap();
-    let mut info = db.info().unwrap();
-
-    assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
-    unsafe {
-      info.as_mut_str().as_bytes_mut()[9] = b'6';
-    }
-    assert!(info.as_str().starts_with("Version: 6.4.2"));
   }
 }

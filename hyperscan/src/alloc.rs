@@ -355,7 +355,7 @@ pub fn get_db_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> { DB_
 allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 
 /// Reset the allocator used for
-/// [`MiscAllocation`](crate::database::MiscAllocation) instances.
+/// [`MiscAllocation`](crate::database::alloc::MiscAllocation) instances.
 pub fn set_misc_allocator(
   tracker: LayoutTracker,
 ) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
@@ -367,7 +367,7 @@ pub fn set_misc_allocator(
 }
 
 /// Get the allocator used for
-/// [`MiscAllocation`](crate::database::MiscAllocation) instances.
+/// [`MiscAllocation`](crate::database::alloc::MiscAllocation) instances.
 pub fn get_misc_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
   MISC_ALLOCATOR.read()
 }

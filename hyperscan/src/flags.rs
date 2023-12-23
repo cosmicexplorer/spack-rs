@@ -372,6 +372,7 @@ pub mod platform {
   /// Tuning flags
   #[derive(
     Debug,
+    Default,
     Copy,
     Clone,
     PartialEq,
@@ -388,7 +389,7 @@ pub mod platform {
     ///
     /// This indicates that the compiled database should not be tuned for any
     /// particular target platform.
-    #[num_enum(default)]
+    #[default]
     Generic = hs::HS_TUNE_FAMILY_GENERIC,
     /// Intel(R) microarchitecture code name Sandy Bridge
     SandyBridge = hs::HS_TUNE_FAMILY_SNB,
