@@ -1,6 +1,8 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Types used in match callbacks.
+
 use displaydoc::Display;
 
 use std::{
@@ -24,6 +26,7 @@ impl fmt::Display for ExpressionIndex {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "<{}>", self.0) }
 }
 
+/// Return value for all match callbacks.
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 #[ignore_extra_doc_attributes]

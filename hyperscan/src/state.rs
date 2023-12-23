@@ -40,9 +40,21 @@ pub struct Scratch(Option<NonNull<NativeScratch>>);
 unsafe impl Send for Scratch {}
 unsafe impl Sync for Scratch {}
 
+/// # Setup Methods
+/// These methods create a new scratch space or initialize it against a
+/// database. [`Database::allocate_scratch()`] is also provided as a convenience
+/// method to combine the creation and initialization steps.
 impl Scratch {
+  /// Return an uninitialized scratch space without allocation.
   pub const fn blank() -> Self { Self(None) }
 
+  /// Initialize this scratch space against the given `db`.
+  ///
+  /// A single scratch space can be initialized against multiple databases, but
+  /// exclusive mutable access is required to perform a search, so
+  /// [`Self::try_clone()`] can be used to obtain multiple copies of a
+  /// multiply-initialized scratch space.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -93,58 +105,23 @@ impl Scratch {
   }
 }
 
-impl Scratch {
-  /* TODO: NonNull::new is not const yet! */
-  pub unsafe fn from_native(x: *mut NativeScratch) -> Self { Self(NonNull::new(x)) }
-
-  pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
-
-  pub fn as_mut_native(&mut self) -> Option<&mut NativeScratch> {
-    self.0.map(|mut p| unsafe { p.as_mut() })
-  }
-
-  pub fn get_size(&self) -> Result<usize, HyperscanRuntimeError> {
-    match self.as_ref_native() {
-      None => Ok(0),
-      Some(p) => {
-        let mut n: usize = 0;
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
-        Ok(n)
-      },
-    }
-  }
-
-  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
-    match self.as_ref_native() {
-      None => Ok(Self::blank()),
-      Some(p) => {
-        let mut scratch_ptr = ptr::null_mut();
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
-        Ok(Self(NonNull::new(scratch_ptr)))
-      },
-    }
-  }
-
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
-    if let Some(p) = self.as_mut_native() {
-      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
-    }
-    Ok(())
-  }
-}
-
-impl Clone for Scratch {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-}
-
-impl ops::Drop for Scratch {
-  fn drop(&mut self) {
-    unsafe {
-      self.try_drop().unwrap();
-    }
-  }
-}
-
+/// # Synchronous String Scanning
+/// Hyperscan's string search interface requires a C function pointer to call
+/// synchronously upon each match. This guarantee of synchronous invocation
+/// enables the function to mutate data under the expectation of exclusive
+/// access (we formalize this guarantee as [`FnMut`]). While Rust closures
+/// cannot be converted into C function pointers automatically, hyperscan also
+/// passes in a `*mut c_void` context pointer to each invocation of the match
+/// callback, and this can be used to hold a type-erased container for a
+/// Rust-level closure.
+///
+/// ## Ephemeral Match Objects
+/// In all of these synchronous search methods, the provided match callback `f`
+/// is converted into a `dyn` reference and invoked within the C function
+/// pointer provided to the hyperscan library. Match objects like [`Match`]
+/// provided to the match callback are synthesized by this crate and are not
+/// preserved after each invocation of `f`, so the match callback must modify
+/// some external state to store match results.
 impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
@@ -253,6 +230,16 @@ impl Scratch {
   }
 }
 
+/// # Asynchronous String Scanning
+///
+/// ## Search and Blocking Callbacks
+/// Because the match callback is invoked synchronously, it also stops the regex
+/// engine from making any further progress while it executes, which can harm
+/// search performance via cache effects. One common pattern is to write the
+/// match object to a queue, then read it from a separate thread to
+/// decouple match processing from text searching. `async` code provides a
+/// natural way to achieve this, so these methods use a channel to
+/// implement a producer-consumer pattern for this use case.
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl Scratch {
@@ -504,6 +491,234 @@ impl Scratch {
   }
 }
 
+/// # Managing Allocations
+/// These methods provide access to the underlying memory allocation
+/// containing the data for the scratch space. They can be used to
+/// control the memory location used for the scratch space, or to preserve
+/// scratch allocations across weird lifetime constraints.
+///
+/// Note that [`Self::scratch_size()`] can be used to determine the size of
+/// the memory allocation pointed to by [`Self::as_ref_native()`] and
+/// [`Self::as_mut_native()`].
+impl Scratch {
+  /* TODO: NonNull::new is not const yet! */
+  /// Wrap the provided allocation `p`.
+  ///
+  /// # Safety
+  /// The pointer `p` must be null or have been produced by
+  /// [`Self::as_mut_native()`].
+  ///
+  /// This method also makes it especially easy to create multiple references to
+  /// the same allocation, which will then cause a double free when
+  /// [`Self::try_drop()`] is called more than once for the same scratch
+  /// allocation. To avoid this, wrap the result in a
+  /// [`ManuallyDrop`](mem::ManuallyDrop):
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, state::*};
+  ///   use std::{mem::ManuallyDrop, ptr};
+  ///
+  ///   // Compile a legitimate db:
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   // Create two new references to that allocation,
+  ///   // wrapped to avoid calling the drop code:
+  ///   let scratch_ptr: *mut NativeScratch = scratch
+  ///     .as_mut_native()
+  ///     .map(|p| p as *mut NativeScratch)
+  ///     .unwrap_or(ptr::null_mut());
+  ///   let mut scratch_ref_1 = ManuallyDrop::new(unsafe { Scratch::from_native(scratch_ptr) });
+  ///   let mut scratch_ref_2 = ManuallyDrop::new(unsafe { Scratch::from_native(scratch_ptr) });
+  ///
+  ///   // Both scratch references are valid and can be used for matching.
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch_ref_1
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   scratch_ref_2
+  ///     .scan_sync(&db, "aardvark".into(), |Match { source, .. }| {
+  ///       matches.push(unsafe { source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///   assert_eq!(&matches, &["a", "aa", "a", "a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub unsafe fn from_native(p: *mut NativeScratch) -> Self { Self(NonNull::new(p)) }
+
+  /// Get a read-only reference to the scratch allocation.
+  ///
+  /// This method is mostly used internally and converted to a nullable pointer
+  /// to provide to the hyperscan native library methods.
+  pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
+
+  /// Get a mutable reference to the scratch allocation.
+  ///
+  /// The result of this method can be converted to a nullable pointer and
+  /// provided to [`Self::from_native()`].
+  pub fn as_mut_native(&mut self) -> Option<&mut NativeScratch> {
+    self.0.map(|mut p| unsafe { p.as_mut() })
+  }
+
+  /// Return the size of the scratch allocation.
+  ///
+  /// Using [`Flags::UCP`](crate::flags::Flags::UCP) explodes the size of
+  /// character classes, which increases the size of the scratch space:
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
+  ///
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
+  ///   let ascii_db = expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///
+  ///   let utf8_scratch = utf8_db.allocate_scratch()?;
+  ///   let ascii_scratch = ascii_db.allocate_scratch()?;
+  ///
+  ///   // Including UTF-8 classes increases the size:
+  ///   assert!(utf8_scratch.scratch_size()? > ascii_scratch.scratch_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  ///
+  /// This size corresponds to the requested allocation size passed to the db
+  /// allocator:
+  ///
+  ///```
+  /// #[cfg(all(feature = "alloc", feature = "compiler"))]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, state::*, alloc::*};
+  ///   use std::alloc::System;
+  ///
+  ///   // Wrap the standard Rust System allocator.
+  ///   let tracker = LayoutTracker::new(System.into());
+  ///   // Register it as the allocator for databases.
+  ///   assert!(set_scratch_allocator(tracker)?.is_none());
+  ///
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
+  ///   let mut utf8_scratch = utf8_db.allocate_scratch()?;
+  ///
+  ///   // Get the scratch allocator we just registered and view its live allocations:
+  ///   let allocs = get_scratch_allocator().as_ref().unwrap().current_allocations();
+  ///   // Verify that only the single known scratch was allocated:
+  ///   assert_eq!(1, allocs.len());
+  ///   let (p, layout) = allocs[0];
+  ///   // The allocation was made 30 bytes to the left of the returned scratch pointer.
+  ///   assert_eq!(
+  ///     unsafe { p.as_ptr().add(0x30) },
+  ///     utf8_scratch.as_mut_native().unwrap() as *mut NativeScratch as *mut u8,
+  ///   );
+  ///
+  ///   // Verify that the allocation size is the same as reported:
+  ///   assert_eq!(layout.size(), utf8_scratch.scratch_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
+  /// # fn main() {}
+  /// ```
+  pub fn scratch_size(&self) -> Result<usize, HyperscanRuntimeError> {
+    match self.as_ref_native() {
+      None => Ok(0),
+      Some(p) => {
+        let mut n: usize = 0;
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
+        Ok(n)
+      },
+    }
+  }
+
+  /// Generate a new scratch space which can be applied to the same databases as
+  /// the original.
+  ///
+  /// This new scratch space is allocated in a new region of memory provided by
+  /// the scratch allocator. This is used to implement [`Clone`].
+  ///
+  ///```
+  /// #[cfg(all(feature = "alloc", feature = "compiler"))]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, alloc::*};
+  ///   use std::alloc::System;
+  ///
+  ///   // Wrap the standard Rust System allocator.
+  ///   let tracker = LayoutTracker::new(System.into());
+  ///   // Register it as the allocator for databases.
+  ///   assert!(set_scratch_allocator(tracker)?.is_none());
+  ///
+  ///   let expr: Expression = r"\w".parse()?;
+  ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
+  ///   let scratch1 = utf8_db.allocate_scratch()?;
+  ///   let _scratch2 = scratch1.try_clone()?;
+  ///
+  ///   // Get the database allocator we just registered and view its live allocations:
+  ///   let allocs = get_scratch_allocator().as_ref().unwrap().current_allocations();
+  ///   // Verify that only two scratches were allocated:
+  ///   assert_eq!(2, allocs.len());
+  ///   let (p1, l1) = allocs[0];
+  ///   let (p2, l2) = allocs[1];
+  ///   assert!(p1 != p2);
+  ///   assert!(l1 == l2);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
+  /// # fn main() {}
+  /// ```
+  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+    match self.as_ref_native() {
+      None => Ok(Self::blank()),
+      Some(p) => {
+        let mut scratch_ptr = ptr::null_mut();
+        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
+        Ok(Self(NonNull::new(scratch_ptr)))
+      },
+    }
+  }
+
+  /// Free the underlying scratch allocation.
+  ///
+  /// # Safety
+  /// This method must be called at most once over the lifetime of each scratch
+  /// allocation. It is called by default on drop, so
+  /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap
+  /// instances that reference external data in order to avoid attempting to
+  /// free the referenced data.
+  ///
+  /// Because the pointer returned by [`Self::as_mut_native()`] does not
+  /// correspond to the entire scratch allocation, this method *must* be
+  /// executed in order to avoid leaking resources associated with a scratch
+  /// space. The memory *must not* be deallocated elsewhere.
+  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+    if let Some(p) = self.as_mut_native() {
+      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
+    }
+    Ok(())
+  }
+}
+
+impl Clone for Scratch {
+  fn clone(&self) -> Self { self.try_clone().unwrap() }
+}
+
+impl ops::Drop for Scratch {
+  fn drop(&mut self) {
+    unsafe {
+      self.try_drop().unwrap();
+    }
+  }
+}
+
 #[cfg(all(test, feature = "compiler", feature = "async"))]
 mod test {
   use crate::{
@@ -752,7 +967,7 @@ pub mod chimera {
       }
     }
 
-    pub fn get_size(&self) -> Result<usize, ChimeraRuntimeError> {
+    pub fn scratch_size(&self) -> Result<usize, ChimeraRuntimeError> {
       match self.as_ref_native() {
         None => Ok(0),
         Some(p) => {
