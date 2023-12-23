@@ -1463,7 +1463,7 @@ pub mod chimera {
     /// allocator:
     ///
     ///```
-    /// #[cfg(all(feature = "alloc"))]
+    /// #[cfg(feature = "alloc")]
     /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
     ///   use std::alloc::System;
@@ -1489,7 +1489,7 @@ pub mod chimera {
     ///   assert_eq!(layout.size(), utf8_db.database_size()?);
     ///   Ok(())
     /// }
-    /// # #[cfg(not(all(feature = "alloc")))]
+    /// # #[cfg(not(feature = "alloc"))]
     /// # fn main() {}
     /// ```
     pub fn database_size(&self) -> Result<usize, ChimeraRuntimeError> {

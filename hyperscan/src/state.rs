@@ -1,6 +1,8 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Allocate and initialize mutable scratch space required for string searching.
+
 use crate::{
   database::Database,
   error::HyperscanRuntimeError,
@@ -30,8 +32,15 @@ use std::{
   ptr::{self, NonNull},
 };
 
+/// Pointer type for scratch allocations used in [`Scratch#Managing
+/// Allocations`](Scratch#managing-allocations).
 pub type NativeScratch = hs::hs_scratch;
 
+/// Mutable workspace required by all search methods.
+///
+/// This type also serves as the most general entry point to the various
+/// [synchronous](#synchronous-string-scanning) and
+/// [asynchronous](#asynchronous-string-scanning) string search methods.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Scratch(Option<NonNull<NativeScratch>>);
@@ -255,7 +264,8 @@ impl Scratch {
   /// Write `data` into the stream object `sink`.
   ///
   /// This method is mostly used internally; consumers of this crate will likely
-  /// prefer to call [`StreamSink::scan()`].
+  /// prefer to call
+  /// [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan).
   pub fn scan_sync_stream<'data>(
     &mut self,
     data: ByteSlice<'data>,
@@ -278,7 +288,8 @@ impl Scratch {
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
   ///
   /// This method is mostly used internally; consumers of this crate will likely
-  /// prefer to call [`StreamSink::flush_eod()`].
+  /// prefer to call
+  /// [`ScratchStreamSink::flush_eod()`](crate::stream::ScratchStreamSink::flush_eod).
   pub fn flush_eod_sync(&mut self, sink: &mut StreamSink) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
@@ -323,6 +334,8 @@ impl Scratch {
     unsafe { &mut *(scratch as *mut Scratch) }
   }
 
+  /// Asynchronously scan a single contiguous string.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
@@ -409,6 +422,8 @@ impl Scratch {
     async_utils::UnboundedReceiverStream(matches_rx)
   }
 
+  /// Asynchronously scan a slice of vectored string data.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
@@ -512,6 +527,11 @@ impl Scratch {
     async_utils::UnboundedReceiverStream(matches_rx)
   }
 
+  /// Write `data` into the stream object `sink`.
+  ///
+  /// This method is mostly used internally; consumers of this crate will likely
+  /// prefer to call
+  /// [`ScratchStreamSinkChannel::scan()`](crate::stream::channel::ScratchStreamSinkChannel::scan).
   pub async fn scan_stream<'data>(
     &mut self,
     data: ByteSlice<'data>,
@@ -540,6 +560,12 @@ impl Scratch {
     )
   }
 
+  /// Process any EOD (end-of-data) matches for the stream object `sink`.
+  ///
+  /// This method is mostly used internally; consumers of this crate will likely
+  /// prefer to call
+  /// [`ScratchStreamSinkChannel::flush_eod()`](crate::stream::channel::ScratchStreamSinkChannel::flush_eod).
+  /// .
   pub async fn flush_eod(&mut self, sink: &mut StreamSinkChannel) -> Result<(), ScanError> {
     let s: &'static mut Self = unsafe { mem::transmute(self) };
     let sink: &'static mut StreamSinkChannel = unsafe { mem::transmute(sink) };
@@ -662,8 +688,8 @@ impl Scratch {
   /// # fn main() {}
   /// ```
   ///
-  /// This size corresponds to the requested allocation size passed to the db
-  /// allocator:
+  /// This size corresponds to the requested allocation size passed to the
+  /// scratch allocator:
   ///
   ///```
   /// #[cfg(all(feature = "alloc", feature = "compiler"))]
@@ -685,7 +711,7 @@ impl Scratch {
   ///   // Verify that only the single known scratch was allocated:
   ///   assert_eq!(1, allocs.len());
   ///   let (p, layout) = allocs[0];
-  ///   // The allocation was made 30 bytes to the left of the returned scratch pointer.
+  ///   // The allocation was made 0x30 bytes to the left of the returned scratch pointer.
   ///   assert_eq!(
   ///     unsafe { p.as_ptr().add(0x30) },
   ///     utf8_scratch.as_mut_native().unwrap() as *mut NativeScratch as *mut u8,
@@ -731,7 +757,7 @@ impl Scratch {
   ///   let scratch1 = utf8_db.allocate_scratch()?;
   ///   let _scratch2 = scratch1.try_clone()?;
   ///
-  ///   // Get the database allocator we just registered and view its live allocations:
+  ///   // Get the scratch allocator we just registered and view its live allocations:
   ///   let allocs = get_scratch_allocator().as_ref().unwrap().current_allocations();
   ///   // Verify that only two scratches were allocated:
   ///   assert_eq!(2, allocs.len());
@@ -852,21 +878,79 @@ mod test {
   }
 }
 
+/// Allocate and initialize mutable scratch space for the chimera library.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
   use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
 
+  /// Pointer type for scratch allocations used in [`ChimeraScratch#Managing
+  /// Allocations`](ChimeraScratch#managing-allocations).
   pub type NativeChimeraScratch = hs::ch_scratch;
 
+  /// Mutable workspace required by all search methods.
+  ///
+  /// This type also serves as the most general entry point to the various
+  /// [synchronous](#synchronous-string-scanning) and
+  /// [asynchronous](#asynchronous-string-scanning) string search methods.
   #[derive(Debug)]
   #[repr(transparent)]
   pub struct ChimeraScratch(Option<NonNull<NativeChimeraScratch>>);
 
+  unsafe impl Send for ChimeraScratch {}
+  unsafe impl Sync for ChimeraScratch {}
+
+  /// # Setup Methods
+  /// These methods create a new scratch space or initialize it against a
+  /// database. [`ChimeraDb::allocate_scratch()`] is also provided as a
+  /// convenience method to combine the creation and initialization steps.
   impl ChimeraScratch {
+    /// Return an uninitialized scratch space without allocation.
     pub const fn blank() -> Self { Self(None) }
 
+    /// Initialize this scratch space against the given `db`.
+    ///
+    /// A single scratch space can be initialized against multiple databases,
+    /// but exclusive mutable access is required to perform a search, so
+    /// [`Self::try_clone()`] can be used to obtain multiple copies of a
+    /// multiply-initialized scratch space.
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
+    ///
+    /// let a_expr: ChimeraExpression = "a+".parse()?;
+    /// let a_db = a_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    ///
+    /// let b_expr: ChimeraExpression = "b+".parse()?;
+    /// let b_db = b_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    ///
+    /// let mut scratch = ChimeraScratch::blank();
+    /// scratch.setup_for_db(&a_db)?;
+    /// scratch.setup_for_db(&b_db)?;
+    ///
+    /// let s: ByteSlice = "ababaabb".into();
+    ///
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch
+    ///   .scan_sync(&a_db, s, |m| {
+    ///     matches.push(unsafe { m.source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &["a", "a", "aa"]);
+    ///
+    /// matches.clear();
+    /// scratch
+    ///   .scan_sync(&b_db, s, |m| {
+    ///     matches.push(unsafe { m.source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &["b", "b", "bb"]);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn setup_for_db(&mut self, db: &ChimeraDb) -> Result<(), ChimeraRuntimeError> {
       let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
       ChimeraRuntimeError::from_native(unsafe {
@@ -877,7 +961,16 @@ pub mod chimera {
     }
   }
 
+  /// # Synchronous String Scanning
+  /// The chimera string search interface is very similar to the [Synchronous
+  /// String Scanning](super::Scratch#synchronous-string-scanning) API
+  /// provided by the base hyperscan library. The biggest difference is that
+  /// chimera requires two separate callbacks, one for match objects and one
+  /// for PCRE match errors (which can often simply be ignored). Chimera also
+  /// does not support vectored or stream searches.
   impl ChimeraScratch {
+    /// Synchronously scan a single contiguous string.
+    ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
@@ -924,6 +1017,14 @@ pub mod chimera {
     }
   }
 
+  /// # Asynchronous String Scanning
+  /// The chimera `async` string search interface is very similar to the
+  /// [Asynchronous String
+  /// Scanning](super::Scratch#asynchronous-string-scanning) API provided by the
+  /// base hyperscan library, and the async match callbacks also take
+  /// references before writing match objects to the returned stream. The
+  /// biggest difference is that vectored and stream searching are not
+  /// supported.
   impl ChimeraScratch {
     fn into_db(db: &ChimeraDb) -> usize {
       let db: *const ChimeraDb = db;
@@ -941,6 +1042,8 @@ pub mod chimera {
       unsafe { &mut *(scratch as *mut ChimeraScratch) }
     }
 
+    /// Asynchronously scan a single contiguous string.
+    ///
     ///```
     /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
@@ -1024,15 +1127,147 @@ pub mod chimera {
     }
   }
 
+  /// # Managing Allocations
+  /// These methods provide access to the underlying memory allocation
+  /// containing the data for the scratch space. They can be used to
+  /// control the memory location used for the scratch space, or to preserve
+  /// scratch allocations across weird lifetime constraints.
+  ///
+  /// Note that [`Self::scratch_size()`] can be used to determine the size of
+  /// the memory allocation pointed to by [`Self::as_ref_native()`] and
+  /// [`Self::as_mut_native()`].
   impl ChimeraScratch {
+    /* TODO: NonNull::new is not const yet! */
+    /// Wrap the provided allocation `p`.
+    ///
+    /// # Safety
+    /// The pointer `p` must be null or have been produced by
+    /// [`Self::as_mut_native()`].
+    ///
+    /// This method also makes it especially easy to create multiple references
+    /// to the same allocation, which will then cause a double free when
+    /// [`Self::try_drop()`] is called more than once for the same scratch
+    /// allocation. To avoid this, wrap the result in a
+    /// [`ManuallyDrop`](mem::ManuallyDrop):
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*};
+    /// use std::{mem::ManuallyDrop, ptr};
+    ///
+    /// // Compile a legitimate db:
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// // Create two new references to that allocation,
+    /// // wrapped to avoid calling the drop code:
+    /// let scratch_ptr: *mut NativeChimeraScratch = scratch
+    ///   .as_mut_native()
+    ///   .map(|p| p as *mut NativeChimeraScratch)
+    ///   .unwrap_or(ptr::null_mut());
+    /// let mut scratch_ref_1 = ManuallyDrop::new(unsafe {
+    ///   ChimeraScratch::from_native(scratch_ptr)
+    /// });
+    /// let mut scratch_ref_2 = ManuallyDrop::new(unsafe {
+    ///   ChimeraScratch::from_native(scratch_ptr)
+    /// });
+    ///
+    /// // Both scratch references are valid and can be used for matching.
+    /// let mut matches: Vec<&str> = Vec::new();
+    /// let e = |_| ChimeraMatchResult::Continue;
+    /// scratch_ref_1
+    ///   .scan_sync(&db, "aardvark".into(), |ChimeraMatch { source, .. }| {
+    ///     matches.push(unsafe { source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// scratch_ref_2
+    ///   .scan_sync(&db, "aardvark".into(), |ChimeraMatch { source, .. }| {
+    ///     matches.push(unsafe { source.as_str() });
+    ///     ChimeraMatchResult::Continue
+    ///   }, e)?;
+    /// assert_eq!(&matches, &["aa", "a", "aa", "a"]);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub unsafe fn from_native(p: *mut NativeChimeraScratch) -> Self { Self(NonNull::new(p)) }
+
+    /// Get a read-only reference to the scratch allocation.
+    ///
+    /// This method is mostly used internally and converted to a nullable
+    /// pointer to provide to the chimera native library methods.
     pub fn as_ref_native(&self) -> Option<&NativeChimeraScratch> {
       self.0.map(|p| unsafe { p.as_ref() })
     }
 
+    /// Get a mutable reference to the scratch allocation.
+    ///
+    /// The result of this method can be converted to a nullable pointer and
+    /// provided to [`Self::from_native()`].
     pub fn as_mut_native(&mut self) -> Option<&mut NativeChimeraScratch> {
       self.0.map(|mut p| unsafe { p.as_mut() })
     }
 
+    /// Return the size of the scratch allocation.
+    ///
+    /// Using [`Flags::UCP`](crate::flags::Flags::UCP) explodes the size of
+    /// character classes, which increases the size of the scratch space:
+    ///
+    ///```
+    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// use hyperscan::{expression::chimera::*, flags::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = r"\w".parse()?;
+    /// let utf8_db = expr.compile(
+    ///   ChimeraFlags::UTF8 | ChimeraFlags::UCP,
+    ///   ChimeraMode::NOGROUPS,
+    /// )?;
+    /// let ascii_db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    ///
+    /// let utf8_scratch = utf8_db.allocate_scratch()?;
+    /// let ascii_scratch = ascii_db.allocate_scratch()?;
+    ///
+    /// // Including UTF-8 classes increases the size:
+    /// assert!(utf8_scratch.scratch_size()? > ascii_scratch.scratch_size()?);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// This size corresponds to the requested allocation sizes passed to the
+    /// scratch allocator:
+    ///
+    ///```
+    /// #[cfg(feature = "alloc")]
+    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    ///   use std::alloc::System;
+    ///
+    ///   // Wrap the standard Rust System allocator.
+    ///   let tracker = LayoutTracker::new(System.into());
+    ///   // Register it as the allocator for databases.
+    ///   assert!(set_chimera_scratch_allocator(tracker)?.is_none());
+    ///
+    ///   let expr: ChimeraExpression = r"\w".parse()?;
+    ///   let utf8_db = expr.compile(
+    ///     ChimeraFlags::UTF8 | ChimeraFlags::UCP,
+    ///     ChimeraMode::NOGROUPS,
+    ///   )?;
+    ///   let utf8_scratch = utf8_db.allocate_scratch()?;
+    ///
+    ///   // Get the scratch allocator we just registered and view its live allocations:
+    ///   let allocs = get_chimera_scratch_allocator().as_ref().unwrap().current_allocations();
+    ///   // Verify that only the single known scratch was allocated:
+    ///   assert_eq!(2, allocs.len());
+    ///   let (_p1, l1) = allocs[0];
+    ///   let (_p2, l2) = allocs[1];
+    ///
+    ///   // Verify that the sum of allocation sizes is the same as reported:
+    ///   assert_eq!(l1.size() + l2.size(), utf8_scratch.scratch_size()?);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "alloc"))]
+    /// # fn main() {}
+    /// ```
     pub fn scratch_size(&self) -> Result<usize, ChimeraRuntimeError> {
       match self.as_ref_native() {
         None => Ok(0),
@@ -1044,6 +1279,48 @@ pub mod chimera {
       }
     }
 
+    /// Generate a new scratch space which can be applied to the same databases
+    /// as the original.
+    ///
+    /// This new scratch space is allocated in a new region of memory provided
+    /// by the scratch allocator. This is used to implement [`Clone`].
+    ///
+    ///```
+    /// #[cfg(feature = "alloc")]
+    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    ///   use std::alloc::System;
+    ///
+    ///   // Wrap the standard Rust System allocator.
+    ///   let tracker = LayoutTracker::new(System.into());
+    ///   // Register it as the allocator for databases.
+    ///   assert!(set_chimera_scratch_allocator(tracker)?.is_none());
+    ///
+    ///   let expr: ChimeraExpression = r"\w".parse()?;
+    ///   let utf8_db = expr.compile(
+    ///     ChimeraFlags::UTF8 | ChimeraFlags::UCP,
+    ///     ChimeraMode::NOGROUPS,
+    ///   )?;
+    ///   let scratch1 = utf8_db.allocate_scratch()?;
+    ///   let _scratch2 = scratch1.try_clone()?;
+    ///
+    ///   // Get the scratch allocator we just registered and view its live allocations:
+    ///   let allocs = get_chimera_scratch_allocator().as_ref().unwrap().current_allocations();
+    ///   // Verify that only two scratches were allocated:
+    ///   assert_eq!(4, allocs.len());
+    ///   let (p1, l1) = allocs[0];
+    ///   let (p2, l2) = allocs[1];
+    ///   let (p3, l3) = allocs[2];
+    ///   let (p4, l4) = allocs[3];
+    ///   assert!(p1 != p3);
+    ///   assert!(p2 != p4);
+    ///   assert!(l1 == l3);
+    ///   assert!(l2 == l4);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "alloc"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_clone(&self) -> Result<Self, ChimeraRuntimeError> {
       match self.as_ref_native() {
         None => Ok(Self::blank()),
@@ -1055,6 +1332,19 @@ pub mod chimera {
       }
     }
 
+    /// Free the underlying scratch allocation.
+    ///
+    /// # Safety
+    /// This method must be called at most once over the lifetime of each
+    /// scratch allocation. It is called by default on drop, so
+    /// [`ManuallyDrop`](mem::ManuallyDrop) is recommended to wrap
+    /// instances that reference external data in order to avoid attempting to
+    /// free the referenced data.
+    ///
+    /// Because the pointer returned by [`Self::as_mut_native()`] does not
+    /// correspond to the entire scratch allocation, this method *must* be
+    /// executed in order to avoid leaking resources associated with a scratch
+    /// space. The memory *must not* be deallocated elsewhere.
     pub unsafe fn try_drop(&mut self) -> Result<(), ChimeraRuntimeError> {
       if let Some(p) = self.as_mut_native() {
         ChimeraRuntimeError::from_native(unsafe { hs::ch_free_scratch(p) })?;
