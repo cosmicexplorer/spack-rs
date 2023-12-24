@@ -9,7 +9,7 @@ use std::{
   fmt, mem, ops,
   os::raw::{c_int, c_uint, c_ulonglong, c_void},
   pin::Pin,
-  ptr, str,
+  ptr,
 };
 
 /// Reference to the source expression that produced a match result.
@@ -27,7 +27,9 @@ impl fmt::Display for ExpressionIndex {
 }
 
 /// Return value for all match callbacks.
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+  Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
+)]
 #[repr(u8)]
 #[ignore_extra_doc_attributes]
 pub enum MatchResult {
@@ -42,17 +44,15 @@ pub enum MatchResult {
   /// for the same stream will immediately return with
   /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
   /// In block or vectored mode, the scan will simply terminate immediately.
+  /* This is documented to be just any non-zero value at the moment. */
   CeaseMatching = 1,
 }
 
 impl MatchResult {
   /* TODO: num_enum for const IntoPrimitive! */
-  pub(crate) const fn into_native(self) -> c_int {
-    match self {
-      Self::Continue => 0,
-      /* This is documented to be just any non-zero value at the moment. */
-      Self::CeaseMatching => 1,
-    }
+  pub(crate) fn into_native(self) -> c_int {
+    let x: u8 = self.into();
+    x.into()
   }
 }
 
@@ -428,17 +428,7 @@ pub mod chimera {
   };
 
   #[derive(
-    Debug,
-    Display,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    num_enum::TryFromPrimitive,
-    num_enum::IntoPrimitive,
+    Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
   )]
   #[repr(u8)]
   pub enum ChimeraMatchResult {
@@ -451,6 +441,7 @@ pub mod chimera {
   }
 
   impl ChimeraMatchResult {
+    /* TODO: num_enum for const IntoPrimitive! */
     pub(crate) fn into_native(self) -> hs::ch_callback_t {
       let x: u8 = self.into();
       x.into()
