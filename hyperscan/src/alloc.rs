@@ -162,6 +162,51 @@
 //! # #[cfg(not(feature = "compiler"))]
 //! # fn main() {}
 //! ```
+//!
+//! # Allocation Failures
+//! Allocation failure should cause hyperscan methods to fail with
+//! [`HyperscanRuntimeError::NoMem`]:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//!   use hyperscan::{expression::*, flags::*, matchers::*, alloc::*, error::*};
+//!   use std::{alloc::{GlobalAlloc, Layout}, mem::ManuallyDrop, ptr};
+//!
+//!   let expr: Expression = "asdf".parse()?;
+//!   // Wrap in ManuallyDrop because we will be clobbering the allocator,
+//!   // including the free methods.
+//!   let db = ManuallyDrop::new(expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?);
+//!
+//!   struct BadAllocator;
+//!   unsafe impl GlobalAlloc for BadAllocator {
+//!     unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { ptr::null_mut() }
+//!     // If we wanted to cover allocations made before registering this one,
+//!     // we could fall back to libc::free() for unrecognized pointers.
+//!     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+//!   }
+//!
+//!   set_allocator(BadAllocator.into())?;
+//!
+//!   // Most allocation methods fail with NoMem:
+//!   assert!(matches!(
+//!     db.allocate_scratch(),
+//!     Err(HyperscanRuntimeError::NoMem),
+//!   ));
+//!
+//!   // Compile allocation errors fail slightly differently:
+//!   match expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK) {
+//!     Err(HyperscanCompileError::Compile(CompileError { message, expression })) => {
+//!       assert!(message == "Unable to allocate memory.");
+//!       assert!(expression == Some(ExpressionIndex(0)));
+//!     },
+//!     _ => unreachable!(),
+//!   }
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
 
 use crate::{error::HyperscanRuntimeError, hs};
 
@@ -544,6 +589,48 @@ pub fn set_allocator(
 /// [`hyperscan#Lifetimes`](crate::alloc#lifetimes-and-dangling-pointers) can be
 /// used to handle object lifetimes if multiple allocators are used over the
 /// lifetime of the program.
+///
+/// # Allocation Failures
+/// Allocation failure should cause chimera methods to fail with
+/// [`ChimeraRuntimeError::NoMem`](crate::error::chimera::ChimeraRuntimeError::NoMem):
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::*, alloc::chimera::*, error::chimera::*};
+/// use std::{alloc::{GlobalAlloc, Layout}, mem::ManuallyDrop, ptr};
+///
+/// let expr: ChimeraExpression = "asdf".parse()?;
+/// // Wrap in ManuallyDrop because we will be clobbering the allocator,
+/// // including the free methods.
+/// let db = ManuallyDrop::new(expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?);
+///
+/// struct BadAllocator;
+/// unsafe impl GlobalAlloc for BadAllocator {
+///   unsafe fn alloc(&self, _layout: Layout) -> *mut u8 { ptr::null_mut() }
+///   // If we wanted to cover allocations made before registering this one,
+///   // we could fall back to libc::free() for unrecognized pointers.
+///   unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+/// }
+///
+/// set_chimera_allocator(BadAllocator.into())?;
+///
+/// // Most allocation methods fail with NoMem:
+/// assert!(matches!(
+///   db.allocate_scratch(),
+///   Err(ChimeraRuntimeError::NoMem),
+/// ));
+///
+/// // Compile allocation errors fail slightly differently:
+/// match expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS) {
+///   Err(ChimeraCompileError::Compile(ChimeraInnerCompileError { message, expression })) => {
+///     assert!(message == "Unable to allocate memory.");
+///     assert!(expression == Some(ExpressionIndex(0)));
+///   },
+///   _ => unreachable!(),
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {

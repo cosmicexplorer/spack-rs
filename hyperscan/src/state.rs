@@ -136,7 +136,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, error::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let b_expr: Expression = "b+".parse()?;
@@ -191,7 +191,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
+  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::*};
   ///
   ///   let a_plus: Expression = "a+".parse()?;
   ///   let b_plus: Expression = "b+".parse()?;
@@ -339,7 +339,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, error::*};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, error::*};
   ///   use futures_util::TryStreamExt;
   ///
   ///   let a_expr: Expression = "a+".parse()?;
@@ -427,7 +427,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::{*, vectored_slice::*}};
+  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::*};
   ///   use futures_util::TryStreamExt;
   ///
   ///   let a_plus: Expression = "a+".parse()?;
@@ -612,7 +612,7 @@ impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, state::*};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*};
   ///   use std::{mem::ManuallyDrop, ptr};
   ///
   ///   // Compile a legitimate db:

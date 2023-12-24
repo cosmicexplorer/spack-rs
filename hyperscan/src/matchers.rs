@@ -41,10 +41,12 @@ pub enum MatchResult {
   /// or [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream)
   /// for the same stream will immediately return with
   /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
+  /// In block or vectored mode, the scan will simply terminate immediately.
   CeaseMatching = 1,
 }
 
 impl MatchResult {
+  /* TODO: num_enum for const IntoPrimitive! */
   pub(crate) const fn into_native(self) -> c_int {
     match self {
       Self::Continue => 0,
@@ -91,13 +93,19 @@ impl MatchEvent {
   }
 }
 
-pub mod contiguous_slice {
+pub(crate) mod contiguous_slice {
   use super::*;
   use crate::sources::ByteSlice;
 
+  /// Match object returned when searching a single contiguous string.
+  ///
+  /// This is returned by e.g.
+  /// [`Scratch::scan_sync()`](crate::state::Scratch::scan_sync).
   #[derive(Debug)]
   pub struct Match<'a> {
+    /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
+    /// The entire text matching the given pattern.
     pub source: ByteSlice<'a>,
   }
 
@@ -149,8 +157,9 @@ pub mod contiguous_slice {
   /* TODO: only available on nightly! */
   /* pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult; */
 }
+pub use contiguous_slice::Match;
 
-pub mod vectored_slice {
+pub(crate) mod vectored_slice {
   use super::*;
   use crate::sources::{VectoredByteSlices, VectoredSubset};
 
@@ -209,6 +218,7 @@ pub mod vectored_slice {
   /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
    * MatchResult; */
 }
+pub use vectored_slice::VectoredMatch;
 
 pub mod stream {
   use super::*;

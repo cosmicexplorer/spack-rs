@@ -81,7 +81,7 @@ impl Database {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -111,7 +111,7 @@ impl Database {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*};
   ///
   ///   // Create a db to match against:
   ///   let expr: Expression = "a+".parse()?;
@@ -448,7 +448,7 @@ impl Database {
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::{*, contiguous_slice::*}};
+  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
   /// let free_lit: Literal = "fr\0e\0e".parse()?;
@@ -684,7 +684,7 @@ impl Database {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::{*, contiguous_slice::*}, database::*, state::*};
+  ///   use hyperscan::{expression::*, flags::*, matchers::*, database::*, state::*};
   ///   use std::mem::ManuallyDrop;
   ///
   ///   // Compile a legitimate db:

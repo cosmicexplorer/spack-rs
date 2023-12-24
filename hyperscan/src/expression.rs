@@ -349,8 +349,8 @@ impl str::FromStr for Literal {
 ///
 /// When provided to an expression set, this value is converted into an
 /// [`ExpressionIndex`](crate::matchers::ExpressionIndex) in a
-/// [`Match`](crate::matchers::contiguous_slice::Match),
-/// [`VectoredMatch`](crate::matchers::vectored_slice::VectoredMatch), or
+/// [`Match`](crate::matchers::Match),
+/// [`VectoredMatch`](crate::matchers::VectoredMatch), or
 /// [`ChimeraMatch`](crate::matchers::chimera::ChimeraMatch) upon matching the
 /// given pattern.
 ///

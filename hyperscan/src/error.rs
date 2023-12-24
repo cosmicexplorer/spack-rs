@@ -234,7 +234,7 @@ pub struct CompileError {
   /// ```
   ///
   /// Note that while this uses the same [`ExpressionIndex`] type as in
-  /// [`Match`](crate::matchers::contiguous_slice::Match), the value is *not*
+  /// [`Match`](crate::matchers::Match), the value is *not*
   /// calculated from any [`ExprId`](crate::expression::ExprId) instances
   /// provided to
   /// [`ExpressionSet::with_ids()`](crate::expression::ExpressionSet::with_ids),

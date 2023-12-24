@@ -6,7 +6,7 @@
 //! These objects are used to provide string data for inputs to search functions
 //! like [`scan_sync()`](crate::state::Scratch::scan_sync), and subsets of those
 //! arguments are received as outputs by match callbacks to produce match info
-//! such as [`Match`](crate::matchers::contiguous_slice::Match).
+//! such as [`Match`](crate::matchers::Match).
 
 use std::{
   cmp, fmt, mem, ops,
@@ -190,7 +190,7 @@ impl<'a> ByteSlice<'a> {
 /// This struct wraps non-contiguous slices of string data to pass to the
 /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) search
 /// method, which produces match results of type
-/// [`VectoredMatch`](crate::matchers::vectored_slice::VectoredMatch)
+/// [`VectoredMatch`](crate::matchers::VectoredMatch)
 /// pointing to a subset of the original data.
 ///
 /// This is currently implemented as
@@ -394,7 +394,7 @@ impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
 /// or end component which does not span the entirety of the corresponding slice
 /// from the input data. This allows the match callback provided to
 /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) to
-/// receive [`VectoredMatch`](crate::matchers::vectored_slice::VectoredMatch)
+/// receive [`VectoredMatch`](crate::matchers::VectoredMatch)
 /// instances that reference the input data without introducing
 /// any additional dynamic allocations.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
