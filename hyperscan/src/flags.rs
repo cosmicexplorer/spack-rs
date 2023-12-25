@@ -123,7 +123,7 @@ impl Flags {
   /// Note: The use of this flag in combination with [`Self::SOM_LEFTMOST`]
   /// is not currently supported.
   pub const SINGLEMATCH: Self = Self(hs::HS_FLAG_SINGLEMATCH as c_uint);
-  /// Parse the expression in logical combination syntax.
+  /// Parse the expression in [logical combination] syntax.
   ///
   /// This flag instructs Hyperscan to parse this expression as logical
   /// combination syntax.
@@ -138,6 +138,11 @@ impl Flags {
   /// (101&102&103)|(104&!105)
   /// ((301|302)&303)&(304|305)
   /// ```
+  ///
+  /// [logical combination]: https://intel.github.io/hyperscan/dev-reference/compilation.html#logical-combinations
+  ///
+  /// When an expression has this flag set, it ignores all
+  /// other flags except [`Self::SINGLEMATCH`] and [`Self::QUIET`].
   pub const COMBINATION: Self = Self(hs::HS_FLAG_COMBINATION as c_uint);
   /// Compile pattern in prefiltering mode.
   ///
