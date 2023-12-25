@@ -1,7 +1,304 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Allocate and initialize mutable scratch space required for string searching.
+//! Allocate and initialize mutable [scratch space] required for string
+//! searching.
+//!
+//! [scratch space]: https://intel.github.io/hyperscan/dev-reference/runtime.html#scratch-space
+//!
+//! # Mutable State and String Searching
+//! While other regex libraries such as [`re2`](https://docs.rs/re2) and [`regex`](https://docs.rs/regex) may also
+//! internally make use of mutable state e.g. for a lazy DFA, they typically do
+//! not expose this to the user, in order to simplify the search interface.
+//! However, this often requires the regex library to juggle complicated
+//! heuristics, implement atomic locking protocols, and/or pre-allocate a
+//! multi-layer internal cache to improve performance in multi-threaded
+//! programs: see a [failed attempt from the author to implement a lock-free
+//! stack to manage these internal caches in the `regex` library](https://github.com/rust-lang/regex/issues/934#issuecomment-1703299897).
+//!
+//! ## Manual Cache Management
+//! The `re2` library goes above and beyond to avoid handing this thorny problem
+//! down to its users, implementing a re-entrant protocol for accessing the
+//! stateful lazy DFA from multiple threads.`[FIXME: citation needed]` This is
+//! impressive partially because it is considered so complex that `hyperscan`
+//! and `regex` don't plan to implement this approach at all.`[FIXME: citation
+//! needed]` **A performant implementation of a lock-free lazy DFA might
+//! therefore be useful to multiple regex engines.`[FIXME: citation needed]`**
+//!
+//! However, mechanisms like this to hide mutable state from the user often end
+//! up resorting to complex heuristics and multi-layer caches in order to cover
+//! all possible performance scenarios. One alternative which avoids the need to
+//! implement these complex heuristics is to instead just expose the mutable
+//! state to the user, since the end user is often the most
+//! knowledgeable about their code's performance characteristics anyway.
+//! Indeed, the `regex` crate exposes precisely this functionality via the
+//! separate lower-level `regex-automata` crate through methods such as
+//! [`meta::Regex::search_with()`](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#method.search_with).
+//! **The hyperscan library takes this (re-)inversion of control to the extreme
+//! in requiring the user to provide exclusive mutable access to a previously
+//! initialized scratch space for every search (see [Setup
+//! Methods](Scratch#setup-methods)).**
+//!
+//! ### Atypical Search Interface
+//! Because this scratch space represents the only mutable state involved in a
+//! search, this crate has chosen to make the [`Scratch`] type the main entry
+//! point to hyperscan's [search methods](Scratch#synchronous-string-scanning).
+//! Because a single scratch space can be initialized for multiple dbs, the
+//! immutable [`Database`] type is provided as a parameter. This is contrary to
+//! most other regex engines such as `regex` and `re2`, where the compiled regex
+//! itself is typically used as the `&self` parameter to most search methods.
+//!
+//! ## Handling Cache Contention in Rust
+//! While the hyperscan native library must expose a simple C ABI, Rust offers a
+//! much richer library of tools for sharing and explicitly cloning state in
+//! order to mutate it. **Indeed, safe Rust code should never experience scratch
+//! space contention.** While the hyperscan library performs a best-effort
+//! attempt to identify scratch space contention and error out with
+//! [`HyperscanRuntimeError::ScratchInUse`], a user of this crate should never
+//! see that error from safe Rust code.
+//!
+//! Unfortunately, the way safe Rust avoids scratch space contention is by
+//! simply refusing to compile code with multiple mutable references to the same
+//! value. This library provides the [`Database::allocate_scratch()`]
+//! convenience method to encourage the allocation of 1 scratch space per
+//! database, so that searching against separate databases doesn't introduce
+//! contention. However, there remain several use cases that require multiple
+//! separate mutable scratch spaces to be available at the same time. **In
+//! particular, invoking hyperscan recursively (inside a match callback) always
+//! requires exclusive mutable access to multiple distinct scratch
+//! allocations at once.**
+//!
+//! ### Copy-on-Write
+//! [`Scratch`] implements [`Clone`] via [`Scratch::try_clone()`] so that its
+//! contents may be copied on demand. This can be leveraged by smart pointer
+//! types to implement [copy-on-write (CoW) semantics](https://en.wikipedia.org/wiki/Copy-on-write)
+//! in single and multi-threaded regimes. Some specialized use cases that may
+//! benefit from CoW semantics include:
+//! - **minimizing allocations for complex search invocations:** Recursive
+//!   hyperscan searches are commonly used to implement a form of capturing
+//!   groups (although see [`chimera`] for complete PCRE support, including
+//!   capture groups). It often makes sense to share the scratch space used for
+//!   inner searches, but the same scratch cannot be used for the inner search
+//!   while the outer one is still ongoing.
+//! - **shallow cloning for async stream combinator APIs:** `async` interfaces
+//!   in Rust typically do no work until polled (see
+//!   [`Future::poll()`](std::future::Future::poll) or
+//!   [`AsyncWrite::poll_write()`](tokio::io::AsyncWrite::poll_write)), so when
+//!   writing adapters or combinators we often want to hold a shallow reference
+//!   that we can lazily invoke later, to set up any state but only if we
+//!   actually receive input.
+//! - **centralized registries:** in order to provide an API like `re2` or
+//!   `regex` which hides mutable state management from the end user, and/or to
+//!   implement something like regex compile caching for a high-level dynamic
+//!   language, we may want to reuse allocations from a shared memory pool.
+//!
+//! Using CoW semantics with [`Clone`]-able references may also be more
+//! performant in some cases than pre-allocating blank new scratch spaces,
+//! because the CoW process preserves all previous modifications made to the
+//! scratch space when cloning into a new allocation. This produces a sort of
+//! abstract conceptual trie in memory, where all later clones of the scratch
+//! space retain all the progress from parent clones. **FIXME: BENCHMARK THIS!**
+//!
+//! #### Synchronous
+//! In synchronous, single-threaded code, scratch space contention
+//! can only ever occur if another hyperscan search is invoked from within a
+//! match callback. Safe Rust will avoid any runtime contention, but it will
+//! refuse to compile unless a distinct mutable scratch space is allocated
+//! for the recursive search within the match callback. While the scratch space
+//! can also just be cloned ahead of time,
+//! [`Rc::make_mut()`](std::rc::Rc::make_mut) offers a method to lazily clone
+//! scratch allocations only when needed:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
+//!   use hyperscan::{expression::*, flags::*, matchers::*, state::*, error::*, sources::*};
+//!   use std::rc::Rc;
+//!
+//!   let ab_expr: Expression = "a.*b".parse()?;
+//!   let ab_db = ab_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+//!   let cd_expr: Expression = "cd".parse()?;
+//!   let cd_db = cd_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+//!
+//!   let mut scratch = Scratch::blank();
+//!   scratch.setup_for_db(&ab_db)?;
+//!   scratch.setup_for_db(&cd_db)?;
+//!
+//!   // Compose the "a.*b" and "cd" searches to form an "a(cd)b" matcher.
+//!   let msg = "acdb";
+//!   // Record the whole match and the (cd) group.
+//!   let mut matches: Vec<(&str, &str)> = Vec::new();
+//!
+//!   // Broken example to trigger ScratchInUse.
+//!   let s: *mut Scratch = &mut scratch;
+//!   // Use unsafe code to get multiple mutable references to the same allocation:
+//!   unsafe { &mut *s }
+//!     .scan_sync(&ab_db, msg.into(), |m| {
+//!       // Hyperscan was able to detect this contention!
+//!       // But this is described as an unreliable best-effort runtime check.
+//!       assert_eq!(
+//!         unsafe { &mut *s }.scan_sync(&cd_db, m.source, |_| MatchResult::Continue),
+//!         Err(HyperscanRuntimeError::ScratchInUse),
+//!       );
+//!       MatchResult::Continue
+//!     })?;
+//!
+//!   // Try again using Rc::make_mut() to avoid contention:
+//!   let mut scratch = Rc::new(scratch);
+//!   // This is a shallow copy pointing to the same memory:
+//!   let mut scratch2 = scratch.clone();
+//!   // Currently, these point to the same allocation:
+//!   assert_eq!(
+//!     scratch.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!     scratch2.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!   );
+//!   // When Rc::make_mut() is first called within the match callback,
+//!   // `scratch2` will call Scratch::try_clone() to generate
+//!   // a new heap allocation, which `scratch2` then becomes the exclusive owner of.
+//!
+//!   Rc::make_mut(&mut scratch)
+//!     // First search for "a.*b":
+//!     .scan_sync(&ab_db, msg.into(), |outer_match| {
+//!       // Strip the "^a" and "b$" in order to perform a search of the ".*":
+//!       let inner_group: ByteSlice = unsafe { outer_match.source.as_str() }
+//!         .strip_prefix('a').unwrap()
+//!         .strip_suffix('b').unwrap()
+//!         .into();
+//!       // Use a mutable flag to signal a match of the inner pattern.
+//!       let mut inner_matched: bool = false;
+//!       // Match callbacks are FnMut, so we can allocate our inner match here:
+//!       let mut captured_text: &str = "";
+//!       // Perform the inner search, cloning the scratch space upon first use:
+//!       let ret = Rc::make_mut(&mut scratch2)
+//!         // Now search for "cd" within the text matching ".*" from the original pattern:
+//!         .scan_sync(&cd_db, inner_group, |captured_match| {
+//!           inner_matched = true;
+//!           captured_text = unsafe { captured_match.source.as_str() };
+//!           // For this example, we can exit after the first match is found:
+//!           MatchResult::CeaseMatching
+//!         });
+//!       // We avoid immediately flattening with ? in order to handle early exit:
+//!       if inner_matched {
+//!         // We exited early:
+//!         assert_eq!(ret, Err(HyperscanRuntimeError::ScanTerminated));
+//!         // Record the outer and inner match text:
+//!         matches.push((unsafe { outer_match.source.as_str() }, captured_text));
+//!       } else {
+//!         assert_eq!(ret, Ok(()));
+//!       }
+//!       MatchResult::Continue
+//!     })?;
+//!
+//!   // At least one match was found, so we know the inner matcher was invoked,
+//!   // and that the lazy clone has occurred.
+//!   assert!(!matches.is_empty());
+//!   // After the CoW process, `scratch` and `scratch2` have diverged.
+//!   assert_ne!(
+//!     scratch.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!     scratch2.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!   );
+//!   assert_eq!(&matches, &[("acdb", "cd")]);
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
+//!
+//! #### Asynchronous
+//! In multi-threaded and/or asynchronous safe Rust code, scratch space
+//! contention should *still* only ever occur if another hyperscan search is
+//! invoked from within a match callback, because Rust exclusive ownership rules
+//! can *only* be broken by unsafe code, never by the use of `async` or
+//! threading. As a result, the concerns about contention are very similar to
+//! the [synchronous](#synchronous) use case, and using
+//! [`Database::allocate_scratch()`] to allocate one scratch space per db is
+//! often enough to avoid the need to explicitly manage any mutable state.
+//!
+//! ##### Parallelism Makes Copy-on-Write More Useful
+//! However, async code often finds more reasons to make use of copy-on-write.
+//!
+//! The [Asynchronous String Scanning
+//! API](Scratch#asynchronous-string-scanning) is explicitly engineered to
+//! decouple match processing from the synchronously-invoked match callback in
+//! order to maximize search performance, but that only addresses contention
+//! over the synchronously-invoked match callback. **A separate, uncontended
+//! scratch space is still necessary in order to perform any recursive hyperscan
+//! search on the results of a match in async code, especially if the matches
+//! are being processed in parallel with the search.**
+//!
+//! As a result, while the concerns about contention are very similar to the
+//! [synchronous](#synchronous) use case, asynchronous or multi-threaded code is
+//! more likely to find use cases for lazy cloning in order to take advantage of
+//! parallelism. Where a [`Send`] reference is necessary,
+//! [`Arc::make_mut()`](std::sync::Arc) can be used over `Rc` as it uses atomic
+//! operations to correctly track ownership of objects shared across threads:
+//!
+//!```
+//! #[cfg(all(feature = "compiler", feature = "async"))]
+//! fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+//!   use hyperscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
+//!   use futures_util::TryStreamExt;
+//!   use std::sync::Arc;
+//!
+//!   let ab_expr: Expression = "a.*b".parse()?;
+//!   let ab_db = ab_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+//!   let cd_expr: Expression = "cd".parse()?;
+//!   let cd_db = cd_expr.compile(Flags::default(), Mode::BLOCK)?;
+//!
+//!   let mut scratch = Scratch::blank();
+//!   scratch.setup_for_db(&ab_db)?;
+//!   scratch.setup_for_db(&cd_db)?;
+//!
+//!   let msg = "acdb";
+//!
+//!   // Use Arc::make_mut() to lazily clone.
+//!   let mut scratch = Arc::new(scratch);
+//!   // This will only call the underlying Scratch::try_clone()
+//!   // if the outer scan matches and Arc::make_mut() is called:
+//!   let mut scratch2 = scratch.clone();
+//!   // Currently, these point to the same allocation:
+//!   assert_eq!(
+//!     scratch.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!     scratch2.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!   );
+//!
+//!   let matches: Vec<(&str, &str)> = Arc::make_mut(&mut scratch)
+//!     // Match "a.*b":
+//!     .scan_channel(&ab_db, msg.into(), |_| MatchResult::Continue)
+//!     .map_ok(|outer_match| {
+//!       // Strip the "^a" and "b$" in order to perform a search of the ".*":
+//!       let inner_group: ByteSlice = unsafe { outer_match.source.as_str() }
+//!         .strip_prefix('a').unwrap()
+//!         .strip_suffix('b').unwrap()
+//!         .into();
+//!       // This callback runs in parallel with the .scan_channel() task,
+//!       // so it needs its own exclusive mutable access:
+//!       Arc::make_mut(&mut scratch2)
+//!         // Perform another scan on the contents of the match:
+//!         .scan_channel(&cd_db, inner_group, |_| MatchResult::Continue)
+//!         // Return both inner and outer match objects:
+//!         .map_ok(move |captured_match| (outer_match, captured_match))
+//!     })
+//!     // Our .map_ok() method itself returned a stream, so flatten them out:
+//!     .try_flatten()
+//!     // Extract match text from match objects:
+//!     .map_ok(|(outer_match, captured_match)| unsafe { (
+//!       outer_match.source.as_str(),
+//!       captured_match.source.as_str(),
+//!      ) })
+//!     .try_collect()
+//!     .await?;
+//!   // After the CoW process, `scratch` and `scratch2` have diverged.
+//!   assert_ne!(
+//!     scratch.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!     scratch2.as_ref().as_ref_native().unwrap() as *const NativeScratch,
+//!   );
+//!   assert_eq!(&matches, &[("acdb", "cd")]);
+//!   Ok(())
+//! })}
+//! # #[cfg(not(all(feature = "compiler", feature = "async")))]
+//! # fn main() {}
+//! ```
 
 use crate::{
   database::Database,
@@ -303,18 +600,45 @@ impl Scratch {
 }
 
 /// # Asynchronous String Scanning
-/// Because the match callback from [Synchronous String
-/// Scanning](#synchronous-string-scanning) is invoked synchronously, it also
-/// stops the regex engine from making any further progress while it executes,
-/// which can harm search performance via cache effects. One common pattern is
-/// to write the match object to a queue, then read it from a separate thread to
-/// decouple match processing from text searching. `async` streams provide a
-/// natural way to achieve this, so these methods use a channel to
-/// implement a producer-consumer pattern for this use case. The match callback
-/// for these methods accepts a reference to the match object to clarify that
-/// the callback only determines whether to continue matching, while the
-/// underlying match object is written into the stream and should be retrieved
-/// from there instead.
+/// While the synchronous search methods can be used from async or
+/// multi-threaded code, a multithreaded execution environment offers particular
+/// opportunities to improve search latency and/or throughput. These methods
+/// are written to expose an idiomatic Rust interface for highly parallel
+/// searching.
+///
+/// ## Minimizing Work in the Match Callback
+/// Because the hyperscan match callback is always invoked synchronously, it
+/// also stops the regex engine from making any further progress while it
+/// executes. If the match callback does too much work before returning control
+/// to the hyperscan library, this may harm search performance by thrashing the
+/// processor caches or other state.
+///
+/// ### Producer-Consumer Pattern
+/// Therefore, one useful pattern is to write the match object to a queue and
+/// quickly exit the match callback, then read matches from the queue in another
+/// thread of control in order to decouple match processing from text searching.
+/// Multi-processor systems in particular may be able to achieve higher search
+/// throughput if a separate thread is used to perform further match processing
+/// in parallel while a hyperscan search is executing.
+///
+/// **Note that the [Synchronous String Scanning
+/// API](#synchronous-string-scanning) can still be used to implement
+/// producer-consumer match queues!** In fact, [`Self::scan_channel()`] is
+/// implemented just by writing to a queue within the match callback provided
+/// to an internal [`Self::scan_sync()`] call! However, `async` streams provide
+/// a natural interface to wrap the output of a queue, so the methods in this
+/// section return a [`Stream`], which can be consumed or extended by external
+/// code such as [`futures_util::TryStreamExt`].
+///
+/// ### Match Objects with Lifetimes
+/// The match callbacks for these methods accept a
+/// *reference* to the match object, instead of owning the match result like the
+/// [`Ephemeral Match Objects`](#ephemeral-match-objects) from synchronous
+/// search methods. Even though most match objects are [`Copy`] anyway, this
+/// reference interface is used to clarify that the callback should only
+/// determine whether to continue matching, while the underlying match object
+/// will be written into the returned stream and should be retrieved from there
+/// instead for further processing.
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 impl Scratch {

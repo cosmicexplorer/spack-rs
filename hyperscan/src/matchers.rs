@@ -101,7 +101,7 @@ pub(crate) mod contiguous_slice {
   ///
   /// This is returned by e.g.
   /// [`Scratch::scan_sync()`](crate::state::Scratch::scan_sync).
-  #[derive(Debug)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct Match<'a> {
     /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
@@ -163,7 +163,7 @@ pub(crate) mod vectored_slice {
   use super::*;
   use crate::sources::{VectoredByteSlices, VectoredSubset};
 
-  #[derive(Debug)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct VectoredMatch<'a> {
     pub id: ExpressionIndex,
     pub source: VectoredSubset<'a, 'a>,
@@ -486,7 +486,7 @@ pub mod chimera {
     }
   }
 
-  #[derive(Debug)]
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct ChimeraMatch<'a> {
     pub id: ExpressionIndex,
     pub source: ByteSlice<'a>,
