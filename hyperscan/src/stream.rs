@@ -14,14 +14,14 @@ use crate::{error::ScanError, matchers::stream::StreamMatch};
 
 use std::{mem, ops, ptr};
 
+pub type NativeStream = hs::hs_stream;
+
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct LiveStream(*mut hs::hs_stream);
+pub struct LiveStream(*mut NativeStream);
 
 unsafe impl Send for LiveStream {}
 unsafe impl Sync for LiveStream {}
-
-pub type NativeStream = hs::hs_stream;
 
 impl LiveStream {
   pub const unsafe fn from_native(p: *mut NativeStream) -> Self { Self(p) }
