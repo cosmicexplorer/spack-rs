@@ -27,7 +27,7 @@
 //!
 //!   // Everything works as normal.
 //!   let expr: Expression = "(he)ll".parse()?;
-//!   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+//!   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
 //!
 //!   let mut scratch = db.allocate_scratch()?;
 //!
@@ -473,7 +473,7 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
 ///
 ///   // Everything works as normal.
 ///   let expr: Expression = "(he)ll".parse()?;
-///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+///   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
 ///
 ///   let mut scratch = db.allocate_scratch()?;
 ///

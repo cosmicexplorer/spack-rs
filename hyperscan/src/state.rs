@@ -496,7 +496,7 @@ impl Scratch {
   ///   let a_plus: Expression = "a+".parse()?;
   ///   let b_plus: Expression = "b+".parse()?;
   ///   let asdf: Expression = "asdf(.)".parse()?;
-  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let flags = Flags::SOM_LEFTMOST;
   ///   let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
   ///     .with_flags([flags, flags, flags])
   ///     .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
@@ -671,7 +671,7 @@ impl Scratch {
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let b_expr: Expression = "b+".parse()?;
-  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let flags = Flags::SOM_LEFTMOST;
   ///   let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
   ///     .with_flags([flags, flags])
   ///     .with_ids([ExprId(1), ExprId(2)]);
@@ -680,14 +680,14 @@ impl Scratch {
   ///
   ///   let matches: Vec<&str> = scratch
   ///     .scan_channel(&db, "aardvark".into(), |_| MatchResult::Continue)
-  ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
+  ///     .map_ok(|Match { source, .. }| unsafe { source.as_str() })
   ///     .try_collect()
   ///     .await?;
   ///   assert_eq!(&matches, &["a", "aa", "a"]);
   ///
   ///   let matches: Vec<&str> = scratch
   ///     .scan_channel(&db, "imbibbe".into(), |_| MatchResult::Continue)
-  ///     .and_then(|Match { source, .. }| async move { Ok(unsafe { source.as_str() }) })
+  ///     .map_ok(|Match { source, .. }| unsafe { source.as_str() })
   ///     .try_collect()
   ///     .await?;
   ///   assert_eq!(&matches, &["b", "b", "bb"]);
@@ -760,7 +760,7 @@ impl Scratch {
   ///   let a_plus: Expression = "a+".parse()?;
   ///   let b_plus: Expression = "b+".parse()?;
   ///   let asdf: Expression = "asdf(.)".parse()?;
-  ///   let flags = Flags::UTF8 | Flags::SOM_LEFTMOST;
+  ///   let flags = Flags::SOM_LEFTMOST;
   ///   let expr_set = ExpressionSet::from_exprs([&a_plus, &b_plus, &asdf])
   ///     .with_flags([flags, flags, flags])
   ///     .with_ids([ExprId(0), ExprId(3), ExprId(2)]);
@@ -775,12 +775,12 @@ impl Scratch {
   ///   ];
   ///   let matches: Vec<(u32, String)> = scratch
   ///     .scan_channel_vectored(&db, data.as_ref().into(), |_| MatchResult::Continue)
-  ///     .and_then(|VectoredMatch { id: ExpressionIndex(id), source, .. }| async move {
+  ///     .map_ok(|VectoredMatch { id: ExpressionIndex(id), source, .. }| {
   ///       let joined = source.iter_slices()
   ///         .map(|s| unsafe { s.as_str() })
   ///         .collect::<Vec<_>>()
   ///         .concat();
-  ///       Ok((id, joined))
+  ///       (id, joined)
   ///     })
   ///     .try_collect()
   ///     .await?;
@@ -1156,7 +1156,7 @@ mod test {
   #[tokio::test]
   async fn try_clone_still_valid() -> Result<(), eyre::Report> {
     let a_expr: Expression = "asdf$".parse()?;
-    let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
+    let db = a_expr.compile(Flags::default(), Mode::BLOCK)?;
 
     /* Allocate a new scratch. */
     let mut scratch = ManuallyDrop::new(db.allocate_scratch()?);
@@ -1186,7 +1186,7 @@ mod test {
   #[tokio::test]
   async fn make_mut() -> Result<(), eyre::Report> {
     let a_expr: Expression = "asdf$".parse()?;
-    let db = a_expr.compile(Flags::UTF8, Mode::BLOCK)?;
+    let db = a_expr.compile(Flags::default(), Mode::BLOCK)?;
 
     /* Allocate a new scratch into an Arc. */
     let scratch = Arc::new(db.allocate_scratch()?);
@@ -1508,7 +1508,7 @@ pub mod chimera {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+(.)".parse()?;
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::GROUPS)?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
     /// let mut matches: Vec<(&str, &str)> = Vec::new();
@@ -1583,14 +1583,14 @@ pub mod chimera {
     /// use futures_util::TryStreamExt;
     ///
     /// let expr: ChimeraExpression = "a+(.)".parse()?;
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::GROUPS)?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
     /// let mut scratch = db.allocate_scratch()?;
     ///
     /// let m = |_: &ChimeraMatch| ChimeraMatchResult::Continue;
     /// let e = |_: &ChimeraMatchError| ChimeraMatchResult::Continue;
     /// let matches: Vec<(&str, &str)> = scratch.scan_channel(&db, "aardvark".into(), m, e)
-    ///  .and_then(|ChimeraMatch { source, captures, .. }| async move {
-    ///    Ok(unsafe { (source.as_str(), captures.unwrap()[1].unwrap().as_str()) })
+    ///  .map_ok(|ChimeraMatch { source, captures, .. }| {
+    ///    unsafe { (source.as_str(), captures.unwrap()[1].unwrap().as_str()) }
     ///  })
     ///  .try_collect()
     ///  .await?;

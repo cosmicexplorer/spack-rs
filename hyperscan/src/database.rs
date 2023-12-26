@@ -312,7 +312,6 @@ impl Database {
   /// let ext = ExprExt::from_min_length(1);
   ///
   /// let expr_set = ExpressionSet::from_exprs([&a_expr, &b_expr])
-  ///   .with_flags([Flags::UTF8, Flags::UTF8])
   ///   .with_ids([ExprId(1), ExprId(2)])
   ///   .with_exts([None, Some(&ext)]);
   ///
@@ -648,7 +647,7 @@ impl Database {
   ///   use hyperscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::UTF8, Mode::BLOCK)?;
+  ///   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
   ///   let info = db.info()?;
   ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
   ///   Ok(())
@@ -1077,7 +1076,7 @@ impl<'a> SerializedDb<'a> {
   ///   use hyperscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
-  ///   let serialized_db = expr.compile(Flags::UTF8, Mode::BLOCK)?.serialize()?;
+  ///   let serialized_db = expr.compile(Flags::default(), Mode::BLOCK)?.serialize()?;
   ///   let info = serialized_db.extract_db_info()?;
   ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
   ///   // Info is the same as would have been provided from deserializing:
@@ -1306,7 +1305,7 @@ pub mod chimera {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     ///
     /// let expr: ChimeraExpression = "hell(o)?".parse()?;
-    /// let db = ChimeraDb::compile(&expr, ChimeraFlags::UTF8, ChimeraMode::GROUPS, None)?;
+    /// let db = ChimeraDb::compile(&expr, ChimeraFlags::default(), ChimeraMode::GROUPS, None)?;
     ///
     /// let mut scratch = db.allocate_scratch()?;
     ///
@@ -1369,7 +1368,6 @@ pub mod chimera {
     /// let a_expr: ChimeraExpression = "a+".parse()?;
     /// let b_expr: ChimeraExpression = "b+".parse()?;
     /// let exprs = ChimeraExpressionSet::from_exprs([&a_expr, &b_expr])
-    ///   .with_flags([ChimeraFlags::UTF8, ChimeraFlags::UTF8])
     ///   .with_ids([ExprId(1), ExprId(2)])
     ///   .with_limits(ChimeraMatchLimits { match_limit: 30, match_limit_recursion: 30 });
     /// let db = ChimeraDb::compile_multi(&exprs, ChimeraMode::NOGROUPS, None)?;
@@ -1514,7 +1512,7 @@ pub mod chimera {
     /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
-    /// let db = expr.compile(ChimeraFlags::UTF8, ChimeraMode::NOGROUPS)?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
     /// let info = ChimeraDbInfo::extract_db_info(&db)?;
     /// assert_eq!(info.as_str(), "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
     /// # Ok(())

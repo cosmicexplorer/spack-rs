@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Types used in match callbacks.
+//! Types used in hyperscan match callbacks.
 
 use displaydoc::Display;
 
@@ -12,15 +12,19 @@ use std::{
   ptr,
 };
 
-/// Reference to the source expression that produced a match result.
+/// Reference to the source expression that produced a match result or error.
 ///
-/// This corresponds to the value of an
-/// [`ExprId`](crate::expression::ExprId) argument provided during expression
-/// set compilation, but will be `0` if only a single expression
-/// is compiled or no expression ids are provided.
+/// This is provided to match results such as [`Match`] as well as errors like
+/// [`CompileError`](crate::error::CompileError).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct ExpressionIndex(pub c_uint);
+pub struct ExpressionIndex(
+  /// This corresponds to the value of an
+  /// [`ExprId`](crate::expression::ExprId) argument provided during expression
+  /// set compilation, but will be `0` if only a single expression
+  /// was compiled or if no expression ids were provided.
+  pub c_uint,
+);
 
 impl fmt::Display for ExpressionIndex {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "<{}>", self.0) }
@@ -37,13 +41,14 @@ pub enum MatchResult {
   Continue = 0,
   /// Immediately cease matching.
   ///
-  /// If scanning is performed in streaming mode and this value is returned, any
-  /// subsequent calls to
+  /// In scanning is performed in block or vectored mode and this value is
+  /// returned, the scan will simply terminate immediately. If scanning is
+  /// performed in streaming mode and this value is returned, any subsequent
+  /// calls to
   /// [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
   /// or [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream)
-  /// for the same stream will immediately return with
+  /// for the same stream will also immediately return with
   /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
-  /// In block or vectored mode, the scan will simply terminate immediately.
   /* This is documented to be just any non-zero value at the moment. */
   CeaseMatching = 1,
 }
@@ -163,9 +168,16 @@ pub(crate) mod vectored_slice {
   use super::*;
   use crate::sources::{VectoredByteSlices, VectoredSubset};
 
+  /// Match object returned when searching vectored string data.
+  ///
+  /// This is returned by e.g.
+  /// [`Scratch::scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored).
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct VectoredMatch<'a> {
+    /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
+    /// The entire "ragged" subset of vectored string data matching the given
+    /// pattern.
     pub source: VectoredSubset<'a, 'a>,
   }
 
@@ -414,19 +426,23 @@ pub mod stream {
   }
 }
 
+/// Types used in chimera match callbacks.
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
   use super::*;
   use crate::{error::chimera::*, hs, sources::ByteSlice};
 
+  use smallvec::SmallVec;
+
   use std::{
     ffi::{c_uint, c_ulonglong, c_void},
-    ops,
+    hash, ops,
     pin::Pin,
     ptr, slice,
   };
 
+  /// Return value for all chimera match callbacks.
   #[derive(
     Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
   )]
@@ -490,11 +506,45 @@ pub mod chimera {
     }
   }
 
-  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  /// Match object returned when searching a single contiguous string.
+  ///
+  /// This is returned by e.g.
+  /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync).
+  /// Note that unlike e.g. [`super::Match`], this does not implement [`Copy`],
+  /// as it may need to keep track of owned heap data in [`Self::captures`].
+  /// However, if
+  /// [`ChimeraMode::NOGROUPS`](crate::flags::chimera::ChimeraMode::NOGROUPS) is
+  /// used, [`Self::captures`] will always be [`None`], and `.clone()` can be
+  /// called without any heap allocation. As an additional optimization,
+  /// patterns with up to 9 capturing groups (the 0th group being the entire
+  /// match) are stored on the stack.
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
   pub struct ChimeraMatch<'a> {
+    /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
+    /// The entire text matching the given pattern.
     pub source: ByteSlice<'a>,
-    pub captures: Option<Vec<Option<ByteSlice<'a>>>>,
+    /// Captured text, if
+    /// [`ChimeraMode::GROUPS`](crate::flags::chimera::ChimeraMode::GROUPS) was
+    /// specified during compilation.
+    ///
+    /// Individual captures are themselves optional because of patterns like
+    /// `"hell(o)?"`, which would produce [`None`] for the 1st capture if
+    /// the pattern `o` isn't matched. The 0th capture always corresponds to
+    /// the entire match text, so it is always [`Some`] and should always be
+    /// equal to [`Self::source`].
+    pub captures: Option<SmallVec<Option<ByteSlice<'a>>, 10>>,
+  }
+
+  impl<'a> hash::Hash for ChimeraMatch<'a> {
+    fn hash<H>(&self, state: &mut H)
+    where H: hash::Hasher {
+      self.id.hash(state);
+      self.source.hash(state);
+      if let Some(ref captures) = self.captures {
+        captures[..].hash(state);
+      }
+    }
   }
 
   pub(crate) struct ChimeraSyncSliceMatcher<'data, 'code> {

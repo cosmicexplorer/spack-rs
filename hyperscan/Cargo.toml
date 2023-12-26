@@ -12,7 +12,7 @@ default                 = ["static", "compiler"]
 static                  = ["hyperscan-async-sys/static"]
 compiler                = ["hyperscan-async-sys/compiler", "dep:once_cell"]
 dynamic                 = ["hyperscan-async-sys/dynamic"]
-chimera                 = ["compiler", "static", "hyperscan-async-sys/chimera"]
+chimera                 = ["compiler", "static", "hyperscan-async-sys/chimera", "dep:smallvec"]
 async                   = ["dep:futures-core", "dep:futures-util", "dep:tokio"]
 alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 
@@ -31,6 +31,7 @@ libc.workspace          = true
 num_enum.workspace      = true
 once_cell               = { workspace = true, optional = true }
 parking_lot             = { workspace = true, optional = true }
+smallvec                = { version = "2.0.0-alpha.1", optional = true }
 static_assertions.workspace = true
 thiserror.workspace     = true
 tokio                   = { workspace = true, features = ["rt", "sync"], optional = true }

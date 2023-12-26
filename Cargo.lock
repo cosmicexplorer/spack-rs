@@ -333,7 +333,7 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03915af431787e6ffdcc74c645077518c6b6e01f80b761e0fbbfa288536311b3"
 dependencies = [
- "smallvec",
+ "smallvec 1.11.2",
  "target-lexicon",
 ]
 
@@ -773,7 +773,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "smallvec",
+ "smallvec 1.11.2",
  "static_assertions",
  "target-spec",
 ]
@@ -929,6 +929,7 @@ dependencies = [
  "num_enum",
  "once_cell",
  "parking_lot",
+ "smallvec 2.0.0-alpha.1",
  "static_assertions",
  "thiserror",
  "tokio",
@@ -1293,7 +1294,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "redox_syscall 0.4.1",
- "smallvec",
+ "smallvec 1.11.2",
  "windows-targets 0.48.5",
 ]
 
@@ -1765,6 +1766,12 @@ name = "smallvec"
 version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4dccd0940a2dcdf68d092b8cbab7dc0ad8fa938bf95787e1b916b0e3d0e8e970"
+
+[[package]]
+name = "smallvec"
+version = "2.0.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af12b8880f45a593fc99ac6d0a066f762861ea6822a6a6790fa1363d70a8089"
 
 [[package]]
 name = "socket2"
