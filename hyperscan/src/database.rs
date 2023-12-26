@@ -1314,7 +1314,10 @@ pub mod chimera {
     /// let e = |_| ChimeraMatchResult::Continue;
     /// scratch
     ///   .scan_sync(&db, "hello".into(), |m| {
-    ///     matches.push(unsafe { (m.source.as_str(), m.captures[1].map(|c| c.as_str())) });
+    ///     matches.push(unsafe { (
+    ///       m.source.as_str(),
+    ///       m.captures.unwrap()[1].map(|c| c.as_str()),
+    ///     ) });
     ///     ChimeraMatchResult::Continue
     ///   }, e)?;
     /// assert_eq!(&matches, &[("hello", Some("o"))]);

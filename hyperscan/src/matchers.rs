@@ -452,7 +452,7 @@ pub mod chimera {
   struct ChimeraMatchEvent<'a> {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
-    pub captures: &'a [hs::ch_capture],
+    pub captures: Option<&'a [hs::ch_capture]>,
     pub context: Option<ptr::NonNull<c_void>>,
   }
 
@@ -474,7 +474,11 @@ pub mod chimera {
           start: from as usize,
           end: to as usize,
         },
-        captures: unsafe { slice::from_raw_parts(captured, size as usize) },
+        captures: if captured.is_null() || size == 0 {
+          None
+        } else {
+          Some(unsafe { slice::from_raw_parts(captured, size as usize) })
+        },
         context: ptr::NonNull::new(context),
       }
     }
@@ -490,7 +494,7 @@ pub mod chimera {
   pub struct ChimeraMatch<'a> {
     pub id: ExpressionIndex,
     pub source: ByteSlice<'a>,
-    pub captures: Vec<Option<ByteSlice<'a>>>,
+    pub captures: Option<Vec<Option<ByteSlice<'a>>>>,
   }
 
   pub(crate) struct ChimeraSyncSliceMatcher<'data, 'code> {
@@ -548,22 +552,23 @@ pub mod chimera {
     let m = ChimeraMatch {
       id,
       source: matched_substring,
-      captures: captures
-        .iter()
-        .map(|hs::ch_capture { flags, from, to }| {
-          if *flags == hs::CH_CAPTURE_FLAG_INACTIVE as c_uint {
-            None
-          } else {
-            debug_assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
-            debug_assert!(from <= to);
-            let range = ops::Range {
-              start: *from as usize,
-              end: *to as usize,
-            };
-            Some(matcher.index_range(range))
-          }
-        })
-        .collect(),
+      captures: captures.map(|c| {
+        c.iter()
+          .map(|hs::ch_capture { flags, from, to }| {
+            if *flags == hs::CH_CAPTURE_FLAG_INACTIVE as c_uint {
+              None
+            } else {
+              debug_assert_eq!(*flags, hs::CH_CAPTURE_FLAG_ACTIVE as c_uint);
+              debug_assert!(from <= to);
+              let range = ops::Range {
+                start: *from as usize,
+                end: *to as usize,
+              };
+              Some(matcher.index_range(range))
+            }
+          })
+          .collect()
+      }),
     };
 
     let result = matcher.handle_match(m);

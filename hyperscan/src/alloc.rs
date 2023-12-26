@@ -533,7 +533,7 @@ pub fn set_allocator(
 /// let e = |_| ChimeraMatchResult::Continue;
 /// scratch
 ///   .scan_sync(&db, "hello".into(), |m| {
-///     matches.push(unsafe { m.captures[1].unwrap().as_str() });
+///     matches.push(unsafe { m.captures.unwrap()[1].unwrap().as_str() });
 ///     ChimeraMatchResult::Continue
 ///   }, e)?;
 /// assert_eq!(&matches, &["he"]);
@@ -735,7 +735,7 @@ pub mod chimera {
   /// let mut matches: Vec<&str> = Vec::new();
   /// let e = |_| ChimeraMatchResult::Continue;
   /// scratch.scan_sync(&db, "hello".into(), |m| {
-  ///   matches.push(unsafe { m.captures[1].unwrap().as_str() });
+  ///   matches.push(unsafe { m.captures.unwrap()[1].unwrap().as_str() });
   ///   ChimeraMatchResult::Continue
   /// }, e)?;
   /// assert_eq!(&matches, &["he"]);

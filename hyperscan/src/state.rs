@@ -30,10 +30,10 @@
 //! all possible performance scenarios. One alternative which avoids the need to
 //! implement these complex heuristics is to instead just expose the mutable
 //! state to the user, since the end user is often the most
-//! knowledgeable about their code's performance characteristics anyway.
-//! Indeed, the `regex` crate exposes precisely this functionality via the
-//! separate lower-level `regex-automata` crate through methods such as
-//! [`meta::Regex::search_with()`](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#method.search_with).
+//! knowledgeable about their code's performance characteristics anyway.`[no
+//! citation needed]` Indeed, the `regex` crate exposes precisely this
+//! functionality via the separate lower-level `regex-automata` crate through
+//! methods such as [`meta::Regex::search_with()`](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#method.search_with).
 //! **The hyperscan library takes this (re-)inversion of control to the extreme
 //! in requiring the user to provide exclusive mutable access to a previously
 //! initialized scratch space for every search (see [Setup
@@ -57,16 +57,24 @@
 //! [`HyperscanRuntimeError::ScratchInUse`], a user of this crate should never
 //! see that error from safe Rust code.
 //!
-//! Unfortunately, the way safe Rust avoids scratch space contention is by
-//! simply refusing to compile code with multiple mutable references to the same
-//! value. This library provides the [`Database::allocate_scratch()`]
-//! convenience method to encourage the allocation of 1 scratch space per
-//! database, so that searching against separate databases doesn't introduce
-//! contention. However, there remain several use cases that require multiple
-//! separate mutable scratch spaces to be available at the same time. **In
-//! particular, invoking hyperscan recursively (inside a match callback) always
-//! requires exclusive mutable access to multiple distinct scratch
-//! allocations at once.**
+//! ### Minimizing Scratch Contention
+//! Unfortunately (or perhaps fortunately), the way safe Rust avoids scratch
+//! space contention is by simply refusing to compile code with multiple mutable
+//! references to the same value. This library provides the
+//! [`Database::allocate_scratch()`] convenience method to encourage the
+//! allocation of 1 scratch space per database, so that searching against
+//! separate databases doesn't introduce contention.
+//!
+//! However, there remain several use cases that require multiple separate
+//! mutable scratch spaces to be available at the same time. **In particular,
+//! invoking hyperscan recursively (inside a match callback) always requires
+//! exclusive mutable access to multiple distinct scratch allocations at once.**
+//! While recursive searches are supported by the hyperscan library, the
+//! creative use of [`ExpressionSet`](crate::expression::ExpressionSet) with
+//! [`Flags::COMBINATION`](crate::flags::Flags::COMBINATION) and/or
+//! [`ExprExt`](crate::expression::ExprExt) configuration may be able to express
+//! some types of search logic without requiring a recursive search or other
+//! extensive logic in the match callback.
 //!
 //! ### Copy-on-Write
 //! [`Scratch`] implements [`Clone`] via [`Scratch::try_clone()`] so that its
@@ -88,7 +96,7 @@
 //!   that we can lazily invoke later, to set up any state but only if we
 //!   actually receive input.
 //! - **centralized registries:** in order to provide an API like `re2` or
-//!   `regex` which hides mutable state management from the end user, and/or to
+//!   `regex` which hides mutable state management from the end user, or to
 //!   implement something like regex compile caching for a high-level dynamic
 //!   language, we may want to reuse allocations from a shared memory pool.
 //!
@@ -210,9 +218,7 @@
 //! invoked from within a match callback, because Rust exclusive ownership rules
 //! can *only* be broken by unsafe code, never by the use of `async` or
 //! threading. As a result, the concerns about contention are very similar to
-//! the [synchronous](#synchronous) use case, and using
-//! [`Database::allocate_scratch()`] to allocate one scratch space per db is
-//! often enough to avoid the need to explicitly manage any mutable state.
+//! the [synchronous](#synchronous) use case.
 //!
 //! ##### Parallelism Makes Copy-on-Write More Useful
 //! However, async code often finds more reasons to make use of copy-on-write.
@@ -226,10 +232,7 @@
 //! search on the results of a match in async code, especially if the matches
 //! are being processed in parallel with the search.**
 //!
-//! As a result, while the concerns about contention are very similar to the
-//! [synchronous](#synchronous) use case, asynchronous or multi-threaded code is
-//! more likely to find use cases for lazy cloning in order to take advantage of
-//! parallelism. Where a [`Send`] reference is necessary,
+//! Where a [`Send`] reference is necessary,
 //! [`Arc::make_mut()`](std::sync::Arc) can be used over `Rc` as it uses atomic
 //! operations to correctly track ownership of objects shared across threads:
 //!
@@ -1202,7 +1205,212 @@ mod test {
   }
 }
 
-/// Allocate and initialize mutable scratch space for the chimera library.
+/// Allocate and initialize mutable [scratch space] for the chimera library.
+///
+/// [scratch space]: https://intel.github.io/hyperscan/dev-reference/chimera.html#scratch-space
+///
+/// The chimera library also hews to the [Atypical Search
+/// Interface](crate::state#atypical-search-interface) from the base
+/// hyperscan library to manage mutable state (as described in [Mutable State
+/// and String Searching](crate::state#mutable-state-and-string-searching)), so
+/// the discussions and solutions from [Manual Cache
+/// Management](crate::state#manual-cache-management) should equally apply to
+/// uses of the chimera library. As with the base hyperscan library, chimera
+/// provides the
+/// [`ChimeraDb::allocate_scratch()`](crate::database::chimera::ChimeraDb::allocate_scratch)
+/// method to encourage allocating one scratch per db, which avoids scratch
+/// space contention across databases.
+///
+/// The most significant difference to note in how state is managed across these
+/// libraries is a result of chimera's support for capture groups (see
+/// [`crate::expression::chimera`]), which would otherwise typically require a
+/// recursive search invocation to implement in the base hyperscan library. As
+/// detailed in [Handling Cache Contention in
+/// Rust](crate::state#handling-cache-contention-in-rust), recursive hyperscan
+/// invocations require a separately allocated scratch space, so using chimera
+/// for its capture group support can be one way to avoid that additional
+/// mutable state, if PCRE groups are sufficiently expressive to avoid a
+/// recursive search invocation.
+///
+/// # Copy-on-Write
+/// If needed, similar [CoW approaches](crate::state#copy-on-write) as in the
+/// base hyperscan library are available for chimera scratch allocations.
+/// Examples are provided here using CoW techniques to perform a recursive
+/// search for the sake of completeness.
+///
+/// ## Synchronous
+/// Similarly to the [Synchronous CoW approach from
+/// hyperscan](crate::state#synchronous), we can use
+/// [`Rc::make_mut()`](std::rc::Rc::make_mut):
+///
+///```
+/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, error::chimera::*, sources::*};
+/// use std::rc::Rc;
+///
+/// let ab_expr: ChimeraExpression = "a.*b".parse()?;
+/// let ab_db = ab_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+/// let cd_expr: ChimeraExpression = "cd".parse()?;
+/// let cd_db = cd_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+///
+/// let mut scratch = ChimeraScratch::blank();
+/// scratch.setup_for_db(&ab_db)?;
+/// scratch.setup_for_db(&cd_db)?;
+///
+/// // Compose the "a.*b" and "cd" searches to form an "a(cd)b" matcher.
+/// let msg = "acdb";
+/// // Record the whole match and the (cd) group.
+/// let mut matches: Vec<(&str, &str)> = Vec::new();
+///
+/// let e = |_| ChimeraMatchResult::Continue;
+///
+/// // Broken example to trigger ScratchInUse.
+/// let s: *mut ChimeraScratch = &mut scratch;
+/// // Use unsafe code to get multiple mutable references to the same allocation:
+/// unsafe { &mut *s }
+///   .scan_sync(&ab_db, msg.into(), |m| {
+///     // Chimera was able to detect this contention!
+///     // But this is described as an unreliable best-effort runtime check.
+///     assert_eq!(
+///       unsafe { &mut *s }.scan_sync(&cd_db, m.source, |_| ChimeraMatchResult::Continue, e),
+///       Err(ChimeraRuntimeError::ScratchInUse),
+///     );
+///     ChimeraMatchResult::Continue
+///   }, e)?;
+///
+/// // Try again using Rc::make_mut() to avoid contention:
+/// let mut scratch = Rc::new(scratch);
+/// // This is a shallow copy pointing to the same memory:
+/// let mut scratch2 = scratch.clone();
+/// // Currently, these point to the same allocation:
+/// assert_eq!(
+///   scratch.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///   scratch2.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+/// );
+/// // When Rc::make_mut() is first called within the match callback,
+/// // `scratch2` will call Scratch::try_clone() to generate
+/// // a new heap allocation, which `scratch2` then becomes the exclusive owner of.
+///
+/// Rc::make_mut(&mut scratch)
+///   // First search for "a.*b":
+///   .scan_sync(&ab_db, msg.into(), |outer_match| {
+///     // Strip the "^a" and "b$" in order to perform a search of the ".*":
+///     let inner_group: ByteSlice = unsafe { outer_match.source.as_str() }
+///       .strip_prefix('a').unwrap()
+///       .strip_suffix('b').unwrap()
+///       .into();
+///     // Use a mutable flag to signal a match of the inner pattern.
+///     let mut inner_matched: bool = false;
+///     // Match callbacks are FnMut, so we can allocate our inner match here:
+///     let mut captured_text: &str = "";
+///     // Perform the inner search, cloning the scratch space upon first use:
+///     let ret = Rc::make_mut(&mut scratch2)
+///       // Now search for "cd" within the text matching ".*" from the original pattern:
+///       .scan_sync(&cd_db, inner_group, |captured_match| {
+///         inner_matched = true;
+///         captured_text = unsafe { captured_match.source.as_str() };
+///         // For this example, we can exit after the first match is found:
+///         ChimeraMatchResult::Terminate
+///       }, e);
+///     // We avoid immediately flattening with ? in order to handle early exit:
+///     if inner_matched {
+///       // We exited early:
+///       assert_eq!(ret, Err(ChimeraRuntimeError::ScanTerminated));
+///       // Record the outer and inner match text:
+///       matches.push((unsafe { outer_match.source.as_str() }, captured_text));
+///     } else {
+///       assert_eq!(ret, Ok(()));
+///     }
+///     ChimeraMatchResult::Continue
+///   }, e)?;
+///
+/// // At least one match was found, so we know the inner matcher was invoked,
+/// // and that the lazy clone has occurred.
+/// assert!(!matches.is_empty());
+/// // After the CoW process, `scratch` and `scratch2` have diverged.
+/// assert_ne!(
+///   scratch.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///   scratch2.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+/// );
+/// assert_eq!(&matches, &[("acdb", "cd")]);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "compiler"))]
+/// # fn main() {}
+/// ```
+///
+/// ## Asynchronous
+/// For asynchronous or multi-threaded use cases, we can adopt the [Asynchronous
+/// CoW approach from hyperscan](crate::state#asynchronous) and use
+/// [`Arc::make_mut()`](std::sync::Arc::make_mut):
+///
+///```
+/// #[cfg(feature = "async")]
+/// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+///   use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
+///   use futures_util::TryStreamExt;
+///   use std::sync::Arc;
+///
+///   let ab_expr: ChimeraExpression = "a.*b".parse()?;
+///   let ab_db = ab_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+///   let cd_expr: ChimeraExpression = "cd".parse()?;
+///   let cd_db = cd_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+///
+///   let mut scratch = ChimeraScratch::blank();
+///   scratch.setup_for_db(&ab_db)?;
+///   scratch.setup_for_db(&cd_db)?;
+///
+///   let msg = "acdb";
+///   let e = |_: &_| ChimeraMatchResult::Continue;
+///
+///   // Use Arc::make_mut() to lazily clone.
+///   let mut scratch = Arc::new(scratch);
+///   // This will only call the underlying Scratch::try_clone()
+///   // if the outer scan matches and Arc::make_mut() is called:
+///   let mut scratch2 = scratch.clone();
+///   // Currently, these point to the same allocation:
+///   assert_eq!(
+///     scratch.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///     scratch2.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///   );
+///
+///   let matches: Vec<(&str, &str)> = Arc::make_mut(&mut scratch)
+///     // Match "a.*b":
+///     .scan_channel(&ab_db, msg.into(), |_| ChimeraMatchResult::Continue, e)
+///     .map_ok(|outer_match| {
+///       // Strip the "^a" and "b$" in order to perform a search of the ".*":
+///       let inner_group: ByteSlice = unsafe { outer_match.source.as_str() }
+///         .strip_prefix('a').unwrap()
+///         .strip_suffix('b').unwrap()
+///         .into();
+///       // This callback runs in parallel with the .scan_channel() task,
+///       // so it needs its own exclusive mutable access:
+///       Arc::make_mut(&mut scratch2)
+///         // Perform another scan on the contents of the match:
+///         .scan_channel(&cd_db, inner_group, |_| ChimeraMatchResult::Continue, e)
+///         // Return both inner and outer match objects:
+///         .map_ok(move |captured_match| (outer_match.clone(), captured_match))
+///     })
+///     // Our .map_ok() method itself returned a stream, so flatten them out:
+///     .try_flatten()
+///     // Extract match text from match objects:
+///     .map_ok(|(outer_match, captured_match)| unsafe { (
+///       outer_match.source.as_str(),
+///       captured_match.source.as_str(),
+///      ) })
+///     .try_collect()
+///     .await?;
+///   // After the CoW process, `scratch` and `scratch2` have diverged.
+///   assert_ne!(
+///     scratch.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///     scratch2.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
+///   );
+///   assert_eq!(&matches, &[("acdb", "cd")]);
+///   Ok(())
+/// })}
+/// # #[cfg(not(feature = "async"))]
+/// # fn main() {}
+/// ```
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
@@ -1308,7 +1516,7 @@ pub mod chimera {
     ///   &db,
     ///   "aardvark".into(),
     ///   |ChimeraMatch { source, captures, .. }| {
-    ///     matches.push(unsafe { (source.as_str(), captures[1].unwrap().as_str()) });
+    ///     matches.push(unsafe { (source.as_str(), captures.unwrap()[1].unwrap().as_str()) });
     ///     ChimeraMatchResult::Continue
     ///   },
     ///   |_| ChimeraMatchResult::Continue,
@@ -1382,7 +1590,7 @@ pub mod chimera {
     /// let e = |_: &ChimeraMatchError| ChimeraMatchResult::Continue;
     /// let matches: Vec<(&str, &str)> = scratch.scan_channel(&db, "aardvark".into(), m, e)
     ///  .and_then(|ChimeraMatch { source, captures, .. }| async move {
-    ///    Ok(unsafe { (source.as_str(), captures[1].unwrap().as_str()) })
+    ///    Ok(unsafe { (source.as_str(), captures.unwrap()[1].unwrap().as_str()) })
     ///  })
     ///  .try_collect()
     ///  .await?;

@@ -718,8 +718,16 @@ pub mod chimera {
 
   impl ChimeraMode {
     /// Enable capturing groups.
+    ///
+    /// If this is selected,
+    /// [`ChimeraMatch::captures`](crate::matchers::chimera::ChimeraMatch::captures) will always be
+    /// [`Some`], with index 0 corresponding to the entire match.
     pub const GROUPS: Self = Self(hs::CH_MODE_GROUPS);
     /// Disable capturing groups.
+    ///
+    /// If this is selected,
+    /// [`ChimeraMatch::captures`](crate::matchers::chimera::ChimeraMatch::captures) will
+    /// always be [`None`].
     pub const NOGROUPS: Self = Self(hs::CH_MODE_NOGROUPS as u32);
 
     pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }

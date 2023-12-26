@@ -1569,7 +1569,7 @@ pub mod chimera {
     /// // The first db doesn't stop the matching engine:
     /// let mut matches1: Vec<&str> = Vec::new();
     /// scratch.scan_sync(&set1, msg, |m| {
-    ///   matches1.push(unsafe { m.captures[1].unwrap().as_str() });
+    ///   matches1.push(unsafe { m.captures.unwrap()[1].unwrap().as_str() });
     ///   ChimeraMatchResult::Continue
     /// }, |_| ChimeraMatchResult::Terminate)?;
     /// assert_eq!(&matches1, &["asdf"]);
