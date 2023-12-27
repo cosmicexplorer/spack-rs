@@ -2,6 +2,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Wrapper for the hyperscan C++ regex library.
+//!
+//! *TODO: describe feature flags!*
+//!
+//! **FIXME: describe any outstanding forks, but also make PRs to include
+//! those!**
 
 /* Warn for missing docs in general, and hard require crate-level docs. */
 // #![warn(missing_docs)]

@@ -22,8 +22,10 @@
 //! stateful lazy DFA from multiple threads.`[FIXME: citation needed]` This is
 //! impressive partially because it is considered so complex that `hyperscan`
 //! and `regex` don't plan to implement this approach at all.`[FIXME: citation
-//! needed]` **A performant implementation of a lock-free lazy DFA might
-//! therefore be useful to multiple regex engines.`[FIXME: citation needed]`**
+//! needed]` **A performant implementation of a lock-free lazy DFA (or a data
+//! structure to help in implementing such a DFA) might
+//! therefore be a useful contribution to the field of regex engines.`[FIXME:
+//! citation needed]`**
 //!
 //! However, mechanisms like this to hide mutable state from the user often end
 //! up resorting to complex heuristics and multi-layer caches in order to cover
@@ -282,7 +284,7 @@
 //!         // Return both inner and outer match objects:
 //!         .map_ok(move |captured_match| (outer_match, captured_match))
 //!     })
-//!     // Our .map_ok() method itself returned a stream, so flatten them out:
+//!     // Our .map_ok() method itself returns a stream, so flatten them out:
 //!     .try_flatten()
 //!     // Extract match text from match objects:
 //!     .map_ok(|(outer_match, captured_match)| unsafe { (
@@ -1221,6 +1223,7 @@ mod test {
 /// method to encourage allocating one scratch per db, which avoids scratch
 /// space contention across databases.
 ///
+/// # Capture Groups and State Management
 /// The most significant difference to note in how state is managed across these
 /// libraries is a result of chimera's support for capture groups (see
 /// [`crate::expression::chimera`]), which would otherwise typically require a
@@ -1234,7 +1237,7 @@ mod test {
 ///
 /// # Copy-on-Write
 /// If needed, similar [CoW approaches](crate::state#copy-on-write) as in the
-/// base hyperscan library are available for chimera scratch allocations.
+/// base hyperscan library are available to chimera scratch allocations.
 /// Examples are provided here using CoW techniques to perform a recursive
 /// search for the sake of completeness.
 ///
@@ -1288,7 +1291,7 @@ mod test {
 ///   scratch2.as_ref().as_ref_native().unwrap() as *const NativeChimeraScratch,
 /// );
 /// // When Rc::make_mut() is first called within the match callback,
-/// // `scratch2` will call Scratch::try_clone() to generate
+/// // `scratch2` will call ChimeraScratch::try_clone() to generate
 /// // a new heap allocation, which `scratch2` then becomes the exclusive owner of.
 ///
 /// Rc::make_mut(&mut scratch)
@@ -1365,7 +1368,7 @@ mod test {
 ///
 ///   // Use Arc::make_mut() to lazily clone.
 ///   let mut scratch = Arc::new(scratch);
-///   // This will only call the underlying Scratch::try_clone()
+///   // This will only call the underlying ChimeraScratch::try_clone()
 ///   // if the outer scan matches and Arc::make_mut() is called:
 ///   let mut scratch2 = scratch.clone();
 ///   // Currently, these point to the same allocation:
@@ -1391,7 +1394,7 @@ mod test {
 ///         // Return both inner and outer match objects:
 ///         .map_ok(move |captured_match| (outer_match.clone(), captured_match))
 ///     })
-///     // Our .map_ok() method itself returned a stream, so flatten them out:
+///     // Our .map_ok() method itself returns a stream, so flatten them out:
 ///     .try_flatten()
 ///     // Extract match text from match objects:
 ///     .map_ok(|(outer_match, captured_match)| unsafe { (
