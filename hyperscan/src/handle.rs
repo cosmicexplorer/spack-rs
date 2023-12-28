@@ -1,9 +1,9 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-use std::{mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
+use std::{any::Any, mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
 
-pub trait Resource {
+pub trait Resource: Any+'static {
   type Error;
 
   fn deep_clone(&self) -> Result<Self, Self::Error>
@@ -42,8 +42,9 @@ impl<R: Resource> Handle for R {
   }
 
   fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
-    todo!()
-    /* self.deep_boxed_clone() */
+    let r: Box<dyn Any+'static> = self.deep_boxed_clone()?;
+    let h: Box<Self> = r.downcast().unwrap();
+    Ok(h)
   }
 
   fn handle_ref(&self) -> &Self::R { self }
