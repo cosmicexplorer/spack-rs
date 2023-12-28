@@ -116,8 +116,8 @@ impl StreamSink {
 
   pub fn scan<'data>(
     &mut self,
-    data: ByteSlice<'data>,
     scratch: &mut Scratch,
+    data: ByteSlice<'data>,
   ) -> Result<(), HyperscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.scan_sync_stream(live, matcher, data)
@@ -162,7 +162,7 @@ pub struct ScratchStreamSink {
 impl ScratchStreamSink {
   pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), HyperscanRuntimeError> {
     let Self { sink, scratch } = self;
-    sink.scan(data, scratch)
+    sink.scan(scratch, data)
   }
 
   pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
@@ -228,8 +228,8 @@ pub mod channel {
 
     pub async fn scan<'data>(
       &mut self,
-      data: ByteSlice<'data>,
       scratch: &mut Scratch,
+      data: ByteSlice<'data>,
     ) -> Result<(), ScanError> {
       let Self { live, matcher, .. } = self;
       scratch.scan_stream(live, matcher, data).await
@@ -307,7 +307,7 @@ pub mod channel {
 
     pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
       let Self { sink, scratch, .. } = self;
-      sink.scan(data, scratch).await
+      sink.scan(scratch, data).await
     }
 
     pub async fn flush_eod(&mut self) -> Result<(), ScanError> {

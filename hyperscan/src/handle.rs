@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-use std::{mem, ptr, rc::Rc, sync::Arc};
+use std::{mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
 
 pub trait Resource {
   type Error;
@@ -15,20 +15,33 @@ pub trait Resource {
 pub trait Handle {
   type R: Resource;
 
-  fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
-  where Self: Sized;
+  unsafe fn clone_handle_into(&self, out: *mut Self) -> Result<(), <Self::R as Resource>::Error>;
 
   fn handle_ref(&self) -> &Self::R;
 
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error>;
 }
 
+pub fn equal_refs<H: Handle>(h1: &H, h2: &H) -> bool {
+  let p1: *const H::R = h1.handle_ref();
+  let p2: *const H::R = h2.handle_ref();
+  p1 == p2
+}
+
+pub fn clone_handle<H: Handle>(h: &H) -> Result<H, <<H as Handle>::R as Resource>::Error> {
+  let mut out = MaybeUninit::<H>::uninit();
+  Ok(unsafe {
+    h.clone_handle_into(out.as_mut_ptr())?;
+    out.assume_init()
+  })
+}
+
 impl<R: Resource+Sized> Handle for R {
   type R = Self;
 
-  fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
-  where Self: Sized {
-    self.deep_clone()
+  unsafe fn clone_handle_into(&self, out: *mut Self) -> Result<(), <Self::R as Resource>::Error> {
+    out.write(self.deep_clone()?);
+    Ok(())
   }
 
   fn handle_ref(&self) -> &Self::R { self }
@@ -39,9 +52,9 @@ impl<R: Resource+Sized> Handle for R {
 impl<R: Resource> Handle for Rc<R> {
   type R = R;
 
-  fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
-  where Self: Sized {
-    Ok(Rc::clone(self))
+  unsafe fn clone_handle_into(&self, out: *mut Self) -> Result<(), <Self::R as Resource>::Error> {
+    out.write(Rc::clone(self));
+    Ok(())
   }
 
   fn handle_ref(&self) -> &Self::R { self.as_ref() }
@@ -52,7 +65,7 @@ impl<R: Resource> Handle for Rc<R> {
       *self = Rc::new(new);
     } else if Rc::weak_count(self) > 0 {
       unsafe {
-        let mut tmp: mem::MaybeUninit<Rc<R>> = mem::MaybeUninit::uninit();
+        let mut tmp: MaybeUninit<Rc<R>> = MaybeUninit::uninit();
         let s: *mut Self = self;
         ptr::swap(s, tmp.as_mut_ptr());
         /* `self`/`s` is now invalid, and `tmp` is now valid! */
@@ -72,9 +85,9 @@ impl<R: Resource> Handle for Rc<R> {
 impl<R: Resource> Handle for Arc<R> {
   type R = R;
 
-  fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
-  where Self: Sized {
-    Ok(Arc::clone(self))
+  unsafe fn clone_handle_into(&self, out: *mut Self) -> Result<(), <Self::R as Resource>::Error> {
+    out.write(Arc::clone(self));
+    Ok(())
   }
 
   fn handle_ref(&self) -> &Self::R { self.as_ref() }
@@ -85,7 +98,7 @@ impl<R: Resource> Handle for Arc<R> {
       *self = Arc::new(new);
     } else if Arc::weak_count(self) > 0 {
       unsafe {
-        let mut tmp: mem::MaybeUninit<Arc<R>> = mem::MaybeUninit::uninit();
+        let mut tmp: MaybeUninit<Arc<R>> = MaybeUninit::uninit();
         let s: *mut Self = self;
         ptr::swap(s, tmp.as_mut_ptr());
         /* `self`/`s` is now invalid, and `tmp` is now valid! */
@@ -120,16 +133,10 @@ mod test {
     unsafe fn sync_drop(&mut self) -> Result<(), ()> { Ok(()) }
   }
 
-  fn equal_refs<H: Handle>(h1: &H, h2: &H) -> bool {
-    let p1: *const H::R = h1.handle_ref();
-    let p2: *const H::R = h2.handle_ref();
-    p1 == p2
-  }
-
   #[test]
   fn test_bare() {
     let r = R { state: 0 };
-    let mut r1 = r.clone_handle().unwrap();
+    let mut r1 = clone_handle(&r).unwrap();
 
     /* Because we do not use any wrapper or smart pointer, cloning a "bare
      * handle" immediately invokes a new allocation. */
@@ -148,7 +155,7 @@ mod test {
   #[test]
   fn test_rc() {
     let r = Rc::new(R { state: 0 });
-    let mut r1 = r.clone_handle().unwrap();
+    let mut r1 = clone_handle(&r).unwrap();
 
     /* Copy-on-write semantics with lazy cloning. */
     assert_eq!(r, r1);
@@ -166,7 +173,7 @@ mod test {
   #[test]
   fn test_arc() {
     let r = Arc::new(R { state: 0 });
-    let mut r1 = r.clone_handle().unwrap();
+    let mut r1 = clone_handle(&r).unwrap();
 
     /* Copy-on-write semantics with lazy cloning. */
     assert_eq!(r, r1);
