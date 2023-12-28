@@ -561,9 +561,6 @@ impl Scratch {
     matcher: &mut StreamMatcher,
     data: ByteSlice<'data>,
   ) -> Result<(), HyperscanRuntimeError> {
-    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
-    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
-
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
         live.as_mut_native(),
@@ -588,9 +585,6 @@ impl Scratch {
     live: &mut LiveStream,
     matcher: &mut StreamMatcher,
   ) -> Result<(), HyperscanRuntimeError> {
-    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
-    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
-
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),

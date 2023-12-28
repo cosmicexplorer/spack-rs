@@ -69,15 +69,8 @@ pub(crate) struct MatchEvent {
 }
 
 impl MatchEvent {
-  pub fn coerce_args(
-    id: c_uint,
-    from: c_ulonglong,
-    to: c_ulonglong,
-    flags: c_uint,
-    context: *mut c_void,
-  ) -> Self {
+  pub fn coerce_args(id: c_uint, from: c_ulonglong, to: c_ulonglong, context: *mut c_void) -> Self {
     static_assertions::assert_eq_size!(c_uint, ExpressionIndex);
-    debug_assert_eq!(flags, 0, "flags are currently unused");
     static_assertions::const_assert!(mem::size_of::<usize>() >= mem::size_of::<c_ulonglong>());
     static_assertions::assert_eq_size!(ops::Range<usize>, (c_ulonglong, c_ulonglong));
     debug_assert!(from <= to);
@@ -91,10 +84,10 @@ impl MatchEvent {
     }
   }
 
-  pub unsafe fn extract_context<'a, T>(
-    context: Option<ptr::NonNull<c_void>>,
-  ) -> Option<Pin<&'a mut T>> {
-    context.map(|c| Pin::new_unchecked(&mut *mem::transmute::<*mut c_void, *mut T>(c.as_ptr())))
+  pub unsafe fn extract_context<'a, T>(context: ptr::NonNull<c_void>) -> Pin<&'a mut T> {
+    Pin::new_unchecked(&mut *mem::transmute::<*mut c_void, *mut T>(
+      context.as_ptr(),
+    ))
   }
 }
 
@@ -146,9 +139,10 @@ pub(crate) mod contiguous_slice {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
+    debug_assert_eq!(flags, 0, "flags are currently unused");
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut sync_slice_matcher: Pin<&mut SliceMatcher> =
-      MatchEvent::extract_context(context).unwrap();
+      MatchEvent::extract_context(context.unwrap());
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = Match {
       id,
@@ -213,9 +207,10 @@ pub(crate) mod vectored_slice {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
+    debug_assert_eq!(flags, 0, "flags are currently unused");
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut sync_slice_matcher: Pin<&mut VectoredMatcher> =
-      MatchEvent::extract_context(context).unwrap();
+      MatchEvent::extract_context(context.unwrap());
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
@@ -340,8 +335,9 @@ pub mod stream {
     flags: c_uint,
     context: *mut c_void,
   ) -> c_int {
-    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-    let mut matcher: Pin<&mut StreamMatcher> = MatchEvent::extract_context(context).unwrap();
+    debug_assert_eq!(flags, 0, "flags are currently unused");
+    let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
+    let mut matcher: Pin<&mut StreamMatcher> = MatchEvent::extract_context(context.unwrap());
 
     let m = StreamMatch { id, range };
 
@@ -422,8 +418,9 @@ pub mod stream {
       flags: c_uint,
       context: *mut c_void,
     ) -> c_int {
-      let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, flags, context);
-      let mut matcher: Pin<&mut StreamScanMatcher> = MatchEvent::extract_context(context).unwrap();
+      debug_assert_eq!(flags, 0, "flags are currently unused");
+      let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
+      let mut matcher: Pin<&mut StreamScanMatcher> = MatchEvent::extract_context(context.unwrap());
 
       let m = StreamMatch { id, range };
 
@@ -485,12 +482,10 @@ pub mod chimera {
       id: c_uint,
       from: c_ulonglong,
       to: c_ulonglong,
-      flags: c_uint,
       size: c_uint,
       captured: *const hs::ch_capture,
       context: *mut c_void,
     ) -> Self {
-      debug_assert_eq!(flags, 0, "flags are currently unused");
       debug_assert!(from <= to);
       Self {
         id: ExpressionIndex(id),
@@ -507,9 +502,7 @@ pub mod chimera {
       }
     }
 
-    pub unsafe fn extract_context<'c, T>(
-      context: Option<ptr::NonNull<c_void>>,
-    ) -> Option<Pin<&'c mut T>> {
+    pub unsafe fn extract_context<'c, T>(context: ptr::NonNull<c_void>) -> Pin<&'c mut T> {
       MatchEvent::extract_context(context)
     }
   }
@@ -598,14 +591,15 @@ pub mod chimera {
     captured: *const hs::ch_capture,
     context: *mut c_void,
   ) -> hs::ch_callback_t {
+    debug_assert_eq!(flags, 0, "flags are currently unused");
     let ChimeraMatchEvent {
       id,
       range,
       captures,
       context,
-    } = ChimeraMatchEvent::coerce_args(id, from, to, flags, size, captured, context);
+    } = ChimeraMatchEvent::coerce_args(id, from, to, size, captured, context);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
-      ChimeraMatchEvent::extract_context(context).unwrap();
+      ChimeraMatchEvent::extract_context(context.unwrap());
     let matched_substring = matcher.index_range(range);
     let m = ChimeraMatch {
       id,
@@ -644,7 +638,7 @@ pub mod chimera {
     debug_assert!(info.is_null(), "info pointer is currently unused");
     let ctx = ptr::NonNull::new(ctx);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
-      ChimeraMatchEvent::extract_context(ctx).unwrap();
+      ChimeraMatchEvent::extract_context(ctx.unwrap());
     let e = ChimeraMatchError { error_type, id };
 
     let result = matcher.handle_error(e);
