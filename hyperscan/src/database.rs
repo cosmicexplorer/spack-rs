@@ -25,6 +25,8 @@
 //! The chimera library does not support database serialization, so databases
 //! must be created by compilation.
 
+#[cfg(feature = "stream")]
+use crate::stream::LiveStream;
 #[cfg(feature = "compiler")]
 use crate::{
   error::HyperscanCompileError,
@@ -103,6 +105,12 @@ impl Database {
     let mut scratch = Scratch::blank();
     scratch.setup_for_db(self)?;
     Ok(scratch)
+  }
+
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+  pub fn allocate_stream(&self) -> Result<LiveStream, HyperscanRuntimeError> {
+    LiveStream::try_open(self)
   }
 
   /// Allocate a new memory region and serialize this in-memory state machine

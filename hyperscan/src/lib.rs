@@ -33,6 +33,8 @@ pub mod handle;
 pub mod matchers;
 pub mod sources;
 pub mod state;
+#[cfg(feature = "stream")]
+#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream;
 
 unsafe fn free_misc(p: *mut u8) {

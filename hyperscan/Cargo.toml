@@ -15,6 +15,7 @@ dynamic                 = ["hyperscan-async-sys/dynamic"]
 chimera                 = ["compiler", "static", "hyperscan-async-sys/chimera", "dep:smallvec"]
 async                   = ["dep:futures-core", "dep:futures-util", "dep:tokio"]
 alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
+stream                  = ["dep:eyre"]
 
 [lib]
 name                    = "hyperscan"
@@ -24,7 +25,7 @@ hyperscan-async-sys.workspace = true
 
 cfg-if                  = "1"
 displaydoc.workspace    = true
-eyre.workspace          = true
+eyre                    = { workspace = true, optional = true }
 futures-core            = { workspace = true, optional = true }
 futures-util            = { workspace = true, optional = true }
 indexmap                = { workspace = true, optional = true }

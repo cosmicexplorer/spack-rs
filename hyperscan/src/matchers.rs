@@ -30,6 +30,10 @@ impl fmt::Display for ExpressionIndex {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "<{}>", self.0) }
 }
 
+impl From<c_uint> for ExpressionIndex {
+  fn from(x: c_uint) -> Self { Self(x) }
+}
+
 /// Return value for all match callbacks.
 #[derive(
   Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
@@ -227,12 +231,19 @@ pub(crate) mod vectored_slice {
 }
 pub use vectored_slice::VectoredMatch;
 
+#[cfg(feature = "stream")]
+#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream {
   use super::*;
   use crate::handle::{Handle, Resource};
 
   #[cfg(feature = "async")]
   use tokio::sync::mpsc;
+
+  use std::{
+    any::Any,
+    ops::{Deref, DerefMut},
+  };
 
   // ///```
   // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -281,78 +292,69 @@ pub mod stream {
   // /// # Ok(())
   // /// # })}
   // /// ```
-  #[derive(Debug)]
+  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct StreamMatch {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
   }
 
-  /* pub trait StreamHandler: Resource { */
-  /* fn handle_match(&mut self, m: StreamMatch) -> MatchResult; */
-  /* fn new() -> Result<Self, <Self as Resource>::Error> */
-  /* where Self: Sized; */
-  /* fn reset(&mut self) -> Result<(), <Self as Resource>::Error>; */
-  /* } */
-
-
-  /* pub trait StreamHandler: Resource<Error=eyre::Report> { */
-  /* fn handle_match(&mut self, m: StreamMatch) -> MatchResult; */
-
-  /* fn new() -> Result<Self, eyre::Report> */
-  /* where Self: Sized; */
-
-  /* fn reset(&mut self) -> Result<(), eyre::Report>; */
-  /* } */
-
-  /* pub struct StreamMatcher { */
-  /* handler: Box<dyn StreamHandler>, */
-  /* } */
-
-  /* impl StreamMatcher { */
-  /* pub fn new<S: StreamHandler>() -> Result<Self, eyre::Report> { */
-  /* Ok(Self { */
-  /* handler: Box::new(S::new()?), */
-  /* }) */
-  /* } */
-
-  /* pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
-   * self.handler.handle_match(m) } */
-
-  /* pub fn reset(&mut self) -> Result<(), eyre::Report> { self.handler.reset()
-   * } */
-  /* } */
-
-  pub trait StreamHandler {
+  pub trait StreamHandler: Resource<Error=eyre::Report> {
     fn handle_match(&mut self, m: StreamMatch) -> MatchResult;
 
-    fn new() -> Self
+    fn new() -> Result<Self, eyre::Report>
     where Self: Sized;
 
-    fn reset(&mut self);
-    fn boxed_clone(&self) -> Box<dyn StreamHandler>;
+    fn reset(&mut self) -> Result<(), eyre::Report>;
+
+    fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report>;
+  }
+
+  impl Resource for Box<dyn StreamHandler> {
+    type Error = eyre::Report;
+
+    fn deep_clone(&self) -> Result<Self, Self::Error>
+    where Self: Sized {
+      let r: Box<dyn Any+'static> = self.deep_boxed_clone()?;
+      let h: Box<Box<dyn StreamHandler>> = r.downcast().unwrap();
+      let h: Box<dyn StreamHandler> = *h;
+      Ok(h)
+    }
+
+    fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
+      self.deref().deep_boxed_clone()
+    }
+
+    unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.deref_mut().sync_drop() }
   }
 
   pub struct StreamMatcher {
-    handler: Box<dyn StreamHandler>,
+    handler: Box<dyn Handle<R=Box<dyn StreamHandler>>>,
   }
 
   impl StreamMatcher {
-    pub fn new<S: StreamHandler+'static>() -> Self {
-      Self {
-        handler: Box::new(S::new()),
-      }
+    pub fn new<S: StreamHandler, H: Handle<R=Box<dyn StreamHandler>>+'static>(
+    ) -> Result<Self, eyre::Report> {
+      /* Allocate a box to type-erase the parameter `S`. */
+      let r: Box<dyn StreamHandler> = Box::new(S::new()?);
+      /* Allocate another box to type-erase the handle to the first box. */
+      let h: Box<dyn Handle<R=Box<dyn StreamHandler>>> = Box::new(H::wrap(r));
+      Ok(Self { handler: h })
     }
 
-    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult { self.handler.handle_match(m) }
+    pub(crate) fn ensure_exclusive(&mut self) -> Result<&mut Box<dyn StreamHandler>, eyre::Report> {
+      let h: &mut Box<dyn StreamHandler> = self.handler.make_mut()?;
+      Ok(h)
+    }
 
-    pub fn reset(&mut self) { self.handler.reset(); }
-  }
+    pub fn reset(&mut self) -> Result<(), eyre::Report> { Ok(self.handler.make_mut()?.reset()?) }
 
-  impl Clone for StreamMatcher {
-    fn clone(&self) -> Self {
-      Self {
-        handler: self.handler.boxed_clone(),
-      }
+    pub fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report> {
+      self.handler.make_mut()?.extract_state()
+    }
+
+    pub fn try_clone(&self) -> Result<Self, eyre::Report> {
+      let h = self.handler.boxed_clone_handle()?;
+      Ok(Self { handler: h })
     }
   }
 
@@ -365,7 +367,8 @@ pub mod stream {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut matcher: Pin<&mut StreamMatcher> = MatchEvent::extract_context(context.unwrap());
+    let mut matcher: Pin<&mut Box<dyn StreamHandler>> =
+      MatchEvent::extract_context(context.unwrap());
 
     let m = StreamMatch { id, range };
 

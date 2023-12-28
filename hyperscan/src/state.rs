@@ -297,7 +297,7 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::{match_slice_stream, StreamMatcher},
+    stream::{match_slice_stream, StreamHandler, StreamMatcher},
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
@@ -560,7 +560,8 @@ impl Scratch {
     live: &mut LiveStream,
     matcher: &mut StreamMatcher,
     data: ByteSlice<'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), eyre::Report> {
+    let matcher: *mut Box<dyn StreamHandler> = matcher.ensure_exclusive()?;
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
         live.as_mut_native(),
@@ -570,9 +571,10 @@ impl Scratch {
         0,
         self.as_mut_native().unwrap(),
         Some(match_slice_stream),
-        mem::transmute(&matcher),
+        mem::transmute(matcher),
       )
-    })
+    })?;
+    Ok(())
   }
 
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
@@ -584,7 +586,8 @@ impl Scratch {
     &mut self,
     live: &mut LiveStream,
     matcher: &mut StreamMatcher,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), eyre::Report> {
+    let matcher: *mut Box<dyn StreamHandler> = matcher.ensure_exclusive()?;
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),
@@ -592,7 +595,8 @@ impl Scratch {
         Some(match_slice_stream),
         mem::transmute(matcher),
       )
-    })
+    })?;
+    Ok(())
   }
 }
 

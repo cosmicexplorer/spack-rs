@@ -17,6 +17,9 @@ pub trait Resource: Any+'static {
 pub trait Handle {
   type R: Resource;
 
+  fn wrap(r: Self::R) -> Self
+  where Self: Sized;
+
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized;
 
@@ -36,6 +39,11 @@ pub fn equal_refs<H: Handle+?Sized>(h1: &H, h2: &H) -> bool {
 impl<R: Resource> Handle for R {
   type R = Self;
 
+  fn wrap(r: Self::R) -> Self
+  where Self: Sized {
+    r
+  }
+
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized {
     self.deep_clone()
@@ -52,27 +60,13 @@ impl<R: Resource> Handle for R {
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> { Ok(self) }
 }
 
-/* impl<E> Handle for Box<dyn Resource<Error=E>> { */
-/* type R = Box<dyn Resource<Error=E>>; */
-
-/* fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error> */
-/* where Self: Sized { */
-/* self.deep_clone() */
-/* } */
-
-/* fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>,
- * <Self::R as Resource>::Error> { */
-/* self.deep_boxed_clone() */
-/* } */
-
-/* fn handle_ref(&self) -> &Self::R { self } */
-
-/* fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as
- * Resource>::Error> { Ok(self) } */
-/* } */
-
 impl<R: Resource+'static> Handle for Rc<R> {
   type R = R;
+
+  fn wrap(r: Self::R) -> Self
+  where Self: Sized {
+    Rc::new(r)
+  }
 
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized {
@@ -110,6 +104,11 @@ impl<R: Resource+'static> Handle for Rc<R> {
 
 impl<R: Resource+'static> Handle for Arc<R> {
   type R = R;
+
+  fn wrap(r: Self::R) -> Self
+  where Self: Sized {
+    Arc::new(r)
+  }
 
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized {
