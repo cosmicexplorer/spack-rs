@@ -6,10 +6,17 @@ use std::{mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
 pub trait Resource {
   type Error;
 
-  fn deep_clone(&self) -> Result<Self, Self::Error>
-  where Self: Sized;
+  unsafe fn deep_clone_into(&self, out: *mut Self) -> Result<(), Self::Error>;
 
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error>;
+}
+
+pub fn clone_resource<R: Resource>(r: &R) -> Result<R, <R as Resource>::Error> {
+  let mut out = MaybeUninit::<R>::uninit();
+  Ok(unsafe {
+    r.deep_clone_into(out.as_mut_ptr())?;
+    out.assume_init()
+  })
 }
 
 pub trait Handle {
@@ -40,7 +47,7 @@ impl<R: Resource+Sized> Handle for R {
   type R = Self;
 
   unsafe fn clone_handle_into(&self, out: *mut Self) -> Result<(), <Self::R as Resource>::Error> {
-    out.write(self.deep_clone()?);
+    self.deep_clone_into(out)?;
     Ok(())
   }
 
@@ -61,7 +68,7 @@ impl<R: Resource> Handle for Rc<R> {
 
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
     if Rc::strong_count(self) != 1 {
-      let new: R = self.as_ref().deep_clone()?;
+      let new: R = clone_resource(self.as_ref())?;
       *self = Rc::new(new);
     } else if Rc::weak_count(self) > 0 {
       unsafe {
@@ -94,7 +101,7 @@ impl<R: Resource> Handle for Arc<R> {
 
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
     if Arc::strong_count(self) != 1 {
-      let new: R = self.as_ref().deep_clone()?;
+      let new: R = clone_resource(self.as_ref())?;
       *self = Arc::new(new);
     } else if Arc::weak_count(self) > 0 {
       unsafe {
@@ -126,9 +133,9 @@ mod test {
 
   impl Resource for R {
     type Error = ();
-    fn deep_clone(&self) -> Result<Self, ()>
-    where Self: Sized {
-      Ok(Self { state: self.state })
+    unsafe fn deep_clone_into(&self, out: *mut Self) -> Result<(), ()> {
+      out.write(Self { state: self.state });
+      Ok(())
     }
     unsafe fn sync_drop(&mut self) -> Result<(), ()> { Ok(()) }
   }

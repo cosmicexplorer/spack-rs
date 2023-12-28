@@ -234,6 +234,7 @@ pub use vectored_slice::VectoredMatch;
 
 pub mod stream {
   use super::*;
+  use crate::handle::{Handle, Resource};
 
   #[cfg(feature = "async")]
   use tokio::sync::mpsc;
@@ -290,6 +291,13 @@ pub mod stream {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
   }
+
+  /* pub trait StreamHandler: Resource { */
+  /* fn handle_match(&mut self, m: StreamMatch) -> MatchResult; */
+  /* fn new() -> Result<Self, <Self as Resource>::Error> */
+  /* where Self: Sized; */
+  /* fn reset(&mut self) -> Result<(), <Self as Resource>::Error>; */
+  /* } */
 
   pub trait StreamHandler {
     fn handle_match(&mut self, m: StreamMatch) -> MatchResult;
