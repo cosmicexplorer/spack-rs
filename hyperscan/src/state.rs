@@ -174,27 +174,12 @@
 //!         .strip_prefix('a').unwrap()
 //!         .strip_suffix('b').unwrap()
 //!         .into();
-//!       // Use a mutable flag to signal a match of the inner pattern.
-//!       let mut inner_matched: bool = false;
-//!       // Match callbacks are FnMut, so we can allocate our inner match here:
-//!       let mut captured_text: &str = "";
 //!       // Perform the inner search, cloning the scratch space upon first use:
-//!       let ret = Rc::make_mut(&mut scratch2)
+//!       if let Some(m) = Rc::make_mut(&mut scratch2)
 //!         // Now search for "cd" within the text matching ".*" from the original pattern:
-//!         .scan_sync(&cd_db, inner_group, |captured_match| {
-//!           inner_matched = true;
-//!           captured_text = unsafe { captured_match.source.as_str() };
-//!           // For this example, we can exit after the first match is found:
-//!           MatchResult::CeaseMatching
-//!         });
-//!       // We avoid immediately flattening with ? in order to handle early exit:
-//!       if inner_matched {
-//!         // We exited early:
-//!         assert_eq!(ret, Err(HyperscanRuntimeError::ScanTerminated));
+//!         .full_match(&cd_db, inner_group).unwrap() {
 //!         // Record the outer and inner match text:
-//!         matches.push((unsafe { outer_match.source.as_str() }, captured_text));
-//!       } else {
-//!         assert_eq!(ret, Ok(()));
+//!         matches.push(unsafe { (outer_match.source.as_str(), m.source.as_str()) });
 //!       }
 //!       MatchResult::Continue
 //!     })?;
@@ -308,19 +293,21 @@
 use crate::{
   database::Database,
   error::HyperscanRuntimeError,
+  handle::Resource,
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::match_slice_stream,
+    stream::{match_slice_stream, StreamMatcher},
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
   sources::{ByteSlice, VectoredByteSlices},
-  stream::StreamSink,
+  stream::LiveStream,
 };
 #[cfg(feature = "async")]
 use crate::{
-  error::ScanError, matchers::stream::scan::scan_slice_stream, stream::channel::StreamSinkChannel,
+  error::ScanError,
+  matchers::stream::scan::{scan_slice_stream, StreamScanMatcher},
 };
 
 #[cfg(feature = "async")]
@@ -570,19 +557,23 @@ impl Scratch {
   /// [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan).
   pub fn scan_sync_stream<'data>(
     &mut self,
+    live: &mut LiveStream,
+    matcher: &mut StreamMatcher,
     data: ByteSlice<'data>,
-    sink: &mut StreamSink,
   ) -> Result<(), HyperscanRuntimeError> {
+    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
+    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
+
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
-        sink.live.as_mut_native(),
+        live.as_mut_native(),
         data.as_ptr(),
         data.native_len(),
         /* NB: ignore flags for now! */
         0,
         self.as_mut_native().unwrap(),
         Some(match_slice_stream),
-        mem::transmute(&mut sink.matcher),
+        mem::transmute(&matcher),
       )
     })
   }
@@ -592,15 +583,110 @@ impl Scratch {
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
   /// [`ScratchStreamSink::flush_eod()`](crate::stream::ScratchStreamSink::flush_eod).
-  pub fn flush_eod_sync(&mut self, sink: &mut StreamSink) -> Result<(), HyperscanRuntimeError> {
+  pub fn flush_eod_sync(
+    &mut self,
+    live: &mut LiveStream,
+    matcher: &mut StreamMatcher,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
+    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
+
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
-        sink.live.as_mut_native(),
+        live.as_mut_native(),
         self.as_mut_native().unwrap(),
         Some(match_slice_stream),
-        mem::transmute(&mut sink.matcher),
+        mem::transmute(matcher),
       )
     })
+  }
+}
+
+impl Scratch {
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   let msg = "aardvark";
+  ///   let first_a = scratch.first_match(&db, msg.into())?.unwrap().source.as_slice();
+  ///   assert_eq!(first_a, b"a");
+  ///   assert_eq!(first_a.as_ptr(), msg.as_bytes().as_ptr());
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub fn first_match<'data>(
+    &mut self,
+    db: &Database,
+    data: ByteSlice<'data>,
+  ) -> Result<Option<Match<'data>>, HyperscanRuntimeError> {
+    let mut capture_text: Option<Match<'data>> = None;
+    match self.scan_sync(db, data, |m| {
+      debug_assert!(capture_text.is_none());
+      capture_text = Some(m);
+      MatchResult::CeaseMatching
+    }) {
+      Ok(()) => {
+        assert!(capture_text.is_none());
+        Ok(None)
+      },
+      Err(HyperscanRuntimeError::ScanTerminated) => {
+        debug_assert!(capture_text.is_some());
+        Ok(capture_text)
+      },
+      Err(e) => Err(e),
+    }
+  }
+
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
+  ///
+  ///   let expr: Expression = "a+sdf".parse()?;
+  ///   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///
+  ///   let msg = "asdf";
+  ///   let m = scratch.full_match(&db, msg.into())?.unwrap().source.as_slice();
+  ///   assert_eq!(m, msg.as_bytes());
+  ///   assert_eq!(m.as_ptr(), msg.as_bytes().as_ptr());
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub fn full_match<'data>(
+    &mut self,
+    db: &Database,
+    data: ByteSlice<'data>,
+  ) -> Result<Option<Match<'data>>, HyperscanRuntimeError> {
+    let mut fully_matched_expr: Option<Match<'data>> = None;
+    match self.scan_sync(db, data, |m| {
+      debug_assert!(fully_matched_expr.is_none());
+      if m.source.as_slice().len() == data.as_slice().len() {
+        fully_matched_expr = Some(m);
+        MatchResult::CeaseMatching
+      } else {
+        MatchResult::Continue
+      }
+    }) {
+      Ok(()) => {
+        assert!(fully_matched_expr.is_none());
+        Ok(None)
+      },
+      Err(HyperscanRuntimeError::ScanTerminated) => {
+        debug_assert!(fully_matched_expr.is_some());
+        Ok(fully_matched_expr)
+      },
+      Err(e) => Err(e),
+    }
   }
 }
 
@@ -616,7 +702,7 @@ impl Scratch {
 /// also stops the regex engine from making any further progress while it
 /// executes. If the match callback does too much work before returning control
 /// to the hyperscan library, this may harm search performance by thrashing the
-/// processor caches or other state.
+/// processor caches or other state.`[FIXME: citation needed/benchmark this]`
 ///
 /// ### Producer-Consumer Pattern
 /// Therefore, one useful pattern is to write the match object to a queue and
@@ -863,25 +949,27 @@ impl Scratch {
   /// [`ScratchStreamSinkChannel::scan()`](crate::stream::channel::ScratchStreamSinkChannel::scan).
   pub async fn scan_stream<'data>(
     &mut self,
+    live: &mut LiveStream,
+    matcher: &mut StreamScanMatcher,
     data: ByteSlice<'data>,
-    sink: &mut StreamSinkChannel,
   ) -> Result<(), ScanError> {
     let s: &'static mut Self = unsafe { mem::transmute(self) };
     let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
-    let sink: &'static mut StreamSinkChannel = unsafe { mem::transmute(sink) };
+    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
+    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
 
     Ok(
       task::spawn_blocking(move || {
         HyperscanRuntimeError::from_native(unsafe {
           hs::hs_scan_stream(
-            sink.live.as_mut_native(),
+            live.as_mut_native(),
             data.as_ptr(),
             data.native_len(),
             /* NB: ignore flags for now! */
             0,
             s.as_mut_native().unwrap(),
             Some(scan_slice_stream),
-            mem::transmute(&mut sink.matcher),
+            mem::transmute(matcher),
           )
         })
       })
@@ -895,18 +983,23 @@ impl Scratch {
   /// prefer to call
   /// [`ScratchStreamSinkChannel::flush_eod()`](crate::stream::channel::ScratchStreamSinkChannel::flush_eod).
   /// .
-  pub async fn flush_eod(&mut self, sink: &mut StreamSinkChannel) -> Result<(), ScanError> {
+  pub async fn flush_eod(
+    &mut self,
+    live: &mut LiveStream,
+    matcher: &mut StreamScanMatcher,
+  ) -> Result<(), ScanError> {
     let s: &'static mut Self = unsafe { mem::transmute(self) };
-    let sink: &'static mut StreamSinkChannel = unsafe { mem::transmute(sink) };
+    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
+    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
 
     Ok(
       task::spawn_blocking(move || {
         HyperscanRuntimeError::from_native(unsafe {
           hs::hs_direct_flush_stream(
-            sink.live.as_mut_native(),
+            live.as_mut_native(),
             s.as_mut_native().unwrap(),
             Some(scan_slice_stream),
-            mem::transmute(&mut sink.matcher),
+            mem::transmute(matcher),
           )
         })
       })
@@ -1135,6 +1228,17 @@ impl Clone for Scratch {
   fn clone(&self) -> Self { self.try_clone().unwrap() }
 }
 
+impl Resource for Scratch {
+  type Error = HyperscanRuntimeError;
+
+  fn deep_clone(&self) -> Result<Self, Self::Error>
+  where Self: Sized {
+    self.try_clone()
+  }
+
+  unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.try_drop() }
+}
+
 impl ops::Drop for Scratch {
   fn drop(&mut self) {
     unsafe {
@@ -1302,27 +1406,11 @@ mod test {
 ///       .strip_prefix('a').unwrap()
 ///       .strip_suffix('b').unwrap()
 ///       .into();
-///     // Use a mutable flag to signal a match of the inner pattern.
-///     let mut inner_matched: bool = false;
-///     // Match callbacks are FnMut, so we can allocate our inner match here:
-///     let mut captured_text: &str = "";
 ///     // Perform the inner search, cloning the scratch space upon first use:
-///     let ret = Rc::make_mut(&mut scratch2)
+///     if let Some(m) = Rc::make_mut(&mut scratch2)
 ///       // Now search for "cd" within the text matching ".*" from the original pattern:
-///       .scan_sync(&cd_db, inner_group, |captured_match| {
-///         inner_matched = true;
-///         captured_text = unsafe { captured_match.source.as_str() };
-///         // For this example, we can exit after the first match is found:
-///         ChimeraMatchResult::Terminate
-///       }, e);
-///     // We avoid immediately flattening with ? in order to handle early exit:
-///     if inner_matched {
-///       // We exited early:
-///       assert_eq!(ret, Err(ChimeraRuntimeError::ScanTerminated));
-///       // Record the outer and inner match text:
-///       matches.push((unsafe { outer_match.source.as_str() }, captured_text));
-///     } else {
-///       assert_eq!(ret, Ok(()));
+///       .full_match(&cd_db, inner_group).unwrap() {
+///       matches.push(unsafe { (outer_match.source.as_str(), m.source.as_str()) });
 ///     }
 ///     ChimeraMatchResult::Continue
 ///   }, e)?;
@@ -1549,6 +1637,68 @@ pub mod chimera {
           mem::transmute(&mut matcher),
         )
       })
+    }
+  }
+
+  impl ChimeraScratch {
+    pub fn first_match<'data>(
+      &mut self,
+      db: &ChimeraDb,
+      data: ByteSlice<'data>,
+    ) -> Result<Option<ChimeraMatch<'data>>, ChimeraRuntimeError> {
+      let mut capture: Option<ChimeraMatch<'data>> = None;
+      match self.scan_sync(
+        db,
+        data,
+        |m| {
+          debug_assert!(capture.is_none());
+          capture = Some(m);
+          ChimeraMatchResult::Terminate
+        },
+        |_| ChimeraMatchResult::Continue,
+      ) {
+        Ok(()) => {
+          assert!(capture.is_none());
+          Ok(None)
+        },
+        Err(ChimeraRuntimeError::ScanTerminated) => {
+          debug_assert!(capture.is_some());
+          Ok(capture)
+        },
+        Err(e) => Err(e),
+      }
+    }
+
+    pub fn full_match<'data>(
+      &mut self,
+      db: &ChimeraDb,
+      data: ByteSlice<'data>,
+    ) -> Result<Option<ChimeraMatch<'data>>, ChimeraRuntimeError> {
+      let mut fully_matched_expr: Option<ChimeraMatch<'data>> = None;
+      match self.scan_sync(
+        db,
+        data,
+        |m| {
+          debug_assert!(fully_matched_expr.is_none());
+          if m.source.as_slice().len() == data.as_slice().len() {
+            fully_matched_expr = Some(m);
+            ChimeraMatchResult::Terminate
+          } else {
+            ChimeraMatchResult::Continue
+          }
+        },
+        |_| ChimeraMatchResult::Continue,
+      ) {
+        Ok(()) => {
+          assert!(fully_matched_expr.is_none());
+          Ok(None)
+        },
+        Err(ChimeraRuntimeError::ScanTerminated) => {
+          debug_assert!(fully_matched_expr.is_some());
+          Ok(fully_matched_expr)
+        },
+        Err(e) => Err(e),
+      }
     }
   }
 
@@ -1890,6 +2040,17 @@ pub mod chimera {
 
   impl Clone for ChimeraScratch {
     fn clone(&self) -> Self { self.try_clone().unwrap() }
+  }
+
+  impl Resource for ChimeraScratch {
+    type Error = ChimeraRuntimeError;
+
+    fn deep_clone(&self) -> Result<Self, Self::Error>
+    where Self: Sized {
+      self.try_clone()
+    }
+
+    unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.try_drop() }
   }
 
   impl ops::Drop for ChimeraScratch {

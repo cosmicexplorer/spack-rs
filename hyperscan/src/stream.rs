@@ -4,6 +4,7 @@
 use crate::{
   database::Database,
   error::{CompressionError, HyperscanRuntimeError},
+  handle::{Handle, Resource},
   hs,
   matchers::stream::{StreamHandler, StreamMatcher},
   sources::ByteSlice,
@@ -79,6 +80,17 @@ impl Clone for LiveStream {
   fn clone_from(&mut self, source: &Self) { self.try_clone_from(source).unwrap(); }
 }
 
+impl Resource for LiveStream {
+  type Error = HyperscanRuntimeError;
+
+  fn deep_clone(&self) -> Result<Self, Self::Error>
+  where Self: Sized {
+    self.try_clone()
+  }
+
+  unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.try_drop() }
+}
+
 impl ops::Drop for LiveStream {
   fn drop(&mut self) {
     unsafe {
@@ -87,6 +99,8 @@ impl ops::Drop for LiveStream {
   }
 }
 
+/* FIXME: use Arc for lazy cloning! */
+/* TODO: update ScratchInUse flag docs to point to state module docs! */
 pub struct StreamSink {
   pub live: LiveStream,
   pub matcher: StreamMatcher,
@@ -105,11 +119,13 @@ impl StreamSink {
     data: ByteSlice<'data>,
     scratch: &mut Scratch,
   ) -> Result<(), HyperscanRuntimeError> {
-    scratch.scan_sync_stream(data, self)
+    let Self { live, matcher } = self;
+    scratch.scan_sync_stream(live, matcher, data)
   }
 
   pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
-    scratch.flush_eod_sync(self)
+    let Self { live, matcher } = self;
+    scratch.flush_eod_sync(live, matcher)
   }
 
   pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
@@ -215,11 +231,13 @@ pub mod channel {
       data: ByteSlice<'data>,
       scratch: &mut Scratch,
     ) -> Result<(), ScanError> {
-      scratch.scan_stream(data, self).await
+      let Self { live, matcher, .. } = self;
+      scratch.scan_stream(live, matcher, data).await
     }
 
     pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), ScanError> {
-      scratch.flush_eod(self).await
+      let Self { live, matcher, .. } = self;
+      scratch.flush_eod(live, matcher).await
     }
 
     pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {

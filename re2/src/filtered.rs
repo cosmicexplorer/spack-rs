@@ -509,6 +509,8 @@ impl Filter {
     })
   }
 
+  /* TODO: benchmark comparison with memchr to match atom strings vs RegexSet
+   * of literals! */
   pub(crate) fn all_matches_view(
     &self,
     text: StringView,
