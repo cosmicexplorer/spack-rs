@@ -27,7 +27,7 @@ pub trait Handle {
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error>;
 }
 
-pub fn equal_refs<H: Handle>(h1: &H, h2: &H) -> bool {
+pub fn equal_refs<H: Handle+?Sized>(h1: &H, h2: &H) -> bool {
   let p1: *const H::R = h1.handle_ref();
   let p2: *const H::R = h2.handle_ref();
   p1 == p2
@@ -148,6 +148,7 @@ impl<R: Resource+'static> Handle for Arc<R> {
 #[cfg(test)]
 mod test {
   use super::*;
+  use std::ops::Deref;
 
   #[derive(Debug, PartialEq, Eq)]
   struct R {
@@ -216,5 +217,43 @@ mod test {
     r1.make_mut().unwrap().state = 1;
     assert_ne!(r, r1);
     assert!(!equal_refs(&r, &r1));
+  }
+
+  #[test]
+  fn test_interchange() {
+    let mut r = R { state: 0 };
+    let r1: &mut dyn Handle<R=R> = &mut r;
+    let r2 = r1.boxed_clone_handle().unwrap();
+
+    assert_eq!(r1.handle_ref(), r2.handle_ref());
+    assert!(!equal_refs(r1.deref(), r2.deref()));
+
+    let mut r3 = Rc::new(R { state: 0 });
+    let r3: &mut dyn Handle<R=R> = &mut r3;
+    let r4 = r3.boxed_clone_handle().unwrap();
+
+    assert_eq!(r3.handle_ref(), r4.handle_ref());
+    assert_eq!(r3.handle_ref(), r1.handle_ref());
+    assert!(equal_refs(r3.deref(), r4.deref()));
+
+    let _ = r3.make_mut().unwrap();
+    assert_eq!(r3.handle_ref(), r4.handle_ref());
+    assert!(!equal_refs(r3.deref(), r4.deref()));
+    r3.make_mut().unwrap().state = 1;
+    assert_ne!(r3.handle_ref(), r4.handle_ref());
+
+    let mut r5 = Arc::new(R { state: 0 });
+    let r5: &mut dyn Handle<R=R> = &mut r5;
+    let r6 = r5.boxed_clone_handle().unwrap();
+
+    assert_eq!(r5.handle_ref(), r6.handle_ref());
+    assert_eq!(r5.handle_ref(), r1.handle_ref());
+    assert!(equal_refs(r5.deref(), r6.deref()));
+
+    let _ = r5.make_mut().unwrap();
+    assert_eq!(r5.handle_ref(), r6.handle_ref());
+    assert!(!equal_refs(r5.deref(), r6.deref()));
+    r5.make_mut().unwrap().state = 1;
+    assert_ne!(r5.handle_ref(), r6.handle_ref());
   }
 }

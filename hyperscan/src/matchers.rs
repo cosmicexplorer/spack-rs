@@ -294,6 +294,34 @@ pub mod stream {
   /* fn reset(&mut self) -> Result<(), <Self as Resource>::Error>; */
   /* } */
 
+
+  /* pub trait StreamHandler: Resource<Error=eyre::Report> { */
+  /* fn handle_match(&mut self, m: StreamMatch) -> MatchResult; */
+
+  /* fn new() -> Result<Self, eyre::Report> */
+  /* where Self: Sized; */
+
+  /* fn reset(&mut self) -> Result<(), eyre::Report>; */
+  /* } */
+
+  /* pub struct StreamMatcher { */
+  /* handler: Box<dyn StreamHandler>, */
+  /* } */
+
+  /* impl StreamMatcher { */
+  /* pub fn new<S: StreamHandler>() -> Result<Self, eyre::Report> { */
+  /* Ok(Self { */
+  /* handler: Box::new(S::new()?), */
+  /* }) */
+  /* } */
+
+  /* pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
+   * self.handler.handle_match(m) } */
+
+  /* pub fn reset(&mut self) -> Result<(), eyre::Report> { self.handler.reset()
+   * } */
+  /* } */
+
   pub trait StreamHandler {
     fn handle_match(&mut self, m: StreamMatch) -> MatchResult;
 
