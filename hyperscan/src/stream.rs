@@ -83,9 +83,10 @@ impl Clone for LiveStream {
 impl Resource for LiveStream {
   type Error = HyperscanRuntimeError;
 
-  unsafe fn deep_clone_into(&self, out: *mut Self) -> Result<(), Self::Error> {
-    out.write(self.try_clone()?);
-    Ok(())
+  fn deep_clone(&self) -> Result<Self, Self::Error> { self.try_clone() }
+
+  fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
+    Ok(Box::new(self.try_clone()?))
   }
 
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.try_drop() }
