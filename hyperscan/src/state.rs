@@ -297,7 +297,7 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::{match_slice_stream, StreamHandler, StreamMatcher},
+    stream::{match_sync_slice_stream, SyncStreamMatcher},
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
@@ -307,7 +307,7 @@ use crate::{
 #[cfg(feature = "async")]
 use crate::{
   error::ScanError,
-  matchers::stream::scan::{scan_slice_stream, StreamScanMatcher},
+  /* matchers::stream::scan::{scan_slice_stream, StreamScanMatcher}, */
 };
 
 #[cfg(feature = "async")]
@@ -555,13 +555,12 @@ impl Scratch {
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
   /// [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan).
-  pub fn scan_sync_stream<'data>(
+  pub fn scan_sync_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut StreamMatcher,
+    matcher: &mut SyncStreamMatcher<'code>,
     data: ByteSlice<'data>,
-  ) -> Result<(), eyre::Report> {
-    let matcher: *mut Box<dyn StreamHandler> = matcher.ensure_exclusive()?;
+  ) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
         live.as_mut_native(),
@@ -570,11 +569,10 @@ impl Scratch {
         /* NB: ignore flags for now! */
         0,
         self.as_mut_native().unwrap(),
-        Some(match_slice_stream),
+        Some(match_sync_slice_stream),
         mem::transmute(matcher),
       )
-    })?;
-    Ok(())
+    })
   }
 
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
@@ -582,21 +580,19 @@ impl Scratch {
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
   /// [`ScratchStreamSink::flush_eod()`](crate::stream::ScratchStreamSink::flush_eod).
-  pub fn flush_eod_sync(
+  pub fn flush_eod_sync<'code>(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut StreamMatcher,
-  ) -> Result<(), eyre::Report> {
-    let matcher: *mut Box<dyn StreamHandler> = matcher.ensure_exclusive()?;
+    matcher: &mut SyncStreamMatcher<'code>,
+  ) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),
         self.as_mut_native().unwrap(),
-        Some(match_slice_stream),
+        Some(match_sync_slice_stream),
         mem::transmute(matcher),
       )
-    })?;
-    Ok(())
+    })
   }
 }
 
@@ -948,31 +944,33 @@ impl Scratch {
   pub async fn scan_stream<'data>(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut StreamScanMatcher,
+    /* matcher: &mut SyncStreamMatcher, */
     data: ByteSlice<'data>,
   ) -> Result<(), ScanError> {
-    let s: &'static mut Self = unsafe { mem::transmute(self) };
-    let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
-    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
-    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
+    todo!()
+    /* let s: &'static mut Self = unsafe { mem::transmute(self) }; */
+    /* let data: ByteSlice<'static> = unsafe { mem::transmute(data) }; */
+    /* let live: &'static mut LiveStream = unsafe { mem::transmute(live) }; */
+    /* let matcher: &'static mut StreamScanMatcher = unsafe {
+     * mem::transmute(matcher) }; */
 
-    Ok(
-      task::spawn_blocking(move || {
-        HyperscanRuntimeError::from_native(unsafe {
-          hs::hs_scan_stream(
-            live.as_mut_native(),
-            data.as_ptr(),
-            data.native_len(),
-            /* NB: ignore flags for now! */
-            0,
-            s.as_mut_native().unwrap(),
-            Some(scan_slice_stream),
-            mem::transmute(matcher),
-          )
-        })
-      })
-      .await??,
-    )
+    /* Ok( */
+    /* task::spawn_blocking(move || { */
+    /* HyperscanRuntimeError::from_native(unsafe { */
+    /* hs::hs_scan_stream( */
+    /* live.as_mut_native(), */
+    /* data.as_ptr(), */
+    /* data.native_len(), */
+    /* /\* NB: ignore flags for now! *\/ */
+    /* 0, */
+    /* s.as_mut_native().unwrap(), */
+    /* Some(scan_slice_stream), */
+    /* mem::transmute(matcher), */
+    /* ) */
+    /* }) */
+    /* }) */
+    /* .await??, */
+    /* ) */
   }
 
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
@@ -984,25 +982,27 @@ impl Scratch {
   pub async fn flush_eod(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut StreamScanMatcher,
+    /* matcher: &mut SyncStreamMatcher, */
   ) -> Result<(), ScanError> {
     let s: &'static mut Self = unsafe { mem::transmute(self) };
-    let live: &'static mut LiveStream = unsafe { mem::transmute(live) };
-    let matcher: &'static mut StreamScanMatcher = unsafe { mem::transmute(matcher) };
+    todo!()
+    /* let live: &'static mut LiveStream = unsafe { mem::transmute(live) }; */
+    /* let matcher: &'static mut StreamScanMatcher = unsafe {
+     * mem::transmute(matcher) }; */
 
-    Ok(
-      task::spawn_blocking(move || {
-        HyperscanRuntimeError::from_native(unsafe {
-          hs::hs_direct_flush_stream(
-            live.as_mut_native(),
-            s.as_mut_native().unwrap(),
-            Some(scan_slice_stream),
-            mem::transmute(matcher),
-          )
-        })
-      })
-      .await??,
-    )
+    /* Ok( */
+    /* task::spawn_blocking(move || { */
+    /* HyperscanRuntimeError::from_native(unsafe { */
+    /* hs::hs_direct_flush_stream( */
+    /* live.as_mut_native(), */
+    /* s.as_mut_native().unwrap(), */
+    /* Some(scan_slice_stream), */
+    /* mem::transmute(matcher), */
+    /* ) */
+    /* }) */
+    /* }) */
+    /* .await??, */
+    /* ) */
   }
 }
 

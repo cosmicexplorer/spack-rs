@@ -6,7 +6,7 @@ use crate::{
   error::{CompressionError, HyperscanRuntimeError},
   handle::{Handle, Resource},
   hs,
-  matchers::stream::{StreamHandler, StreamMatcher},
+  matchers::stream::SyncStreamMatcher,
   sources::ByteSlice,
   state::Scratch,
 };
@@ -102,166 +102,95 @@ impl ops::Drop for LiveStream {
 
 /* FIXME: use Arc for lazy cloning! */
 /* TODO: update ScratchInUse flag docs to point to state module docs! */
-pub struct StreamSink {
+pub struct StreamSink<'code> {
   pub live: Box<dyn Handle<R=LiveStream>>,
-  pub matcher: StreamMatcher,
+  pub matcher: SyncStreamMatcher<'code>,
 }
 
-impl StreamSink {
-  pub fn new<
-    S: StreamHandler,
-    SH: Handle<R=Box<dyn StreamHandler>>+'static,
-    LH: Handle<R=LiveStream>+'static,
-  >(
-    live: LiveStream,
-  ) -> Result<Self, eyre::Report> {
-    Ok(Self {
-      live: Box::new(LH::wrap(live)),
-      matcher: StreamMatcher::new::<S, SH>()?,
-    })
+impl<'code> StreamSink<'code> {
+  pub fn new(live: impl Handle<R=LiveStream>+'static, matcher: SyncStreamMatcher<'code>) -> Self {
+    Self {
+      live: Box::new(live),
+      matcher,
+    }
   }
 
   pub fn scan<'data>(
     &mut self,
     scratch: &mut Scratch,
     data: ByteSlice<'data>,
-  ) -> Result<(), eyre::Report> {
+  ) -> Result<(), HyperscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
-  pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), eyre::Report> {
+  pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.flush_eod_sync(live.make_mut()?, matcher)
   }
-
-  pub fn reset(&mut self) -> Result<(), eyre::Report> {
-    self.live.make_mut()?.try_reset()?;
-    self.matcher.reset()?;
-    Ok(())
-  }
-
-  pub fn try_clone(&self) -> Result<Self, eyre::Report> {
-    Ok(Self {
-      live: self.live.boxed_clone_handle()?,
-      matcher: self.matcher.try_clone()?,
-    })
-  }
-
-  /* FIXME: support clone_from() for stream matchers! */
-  /* pub fn try_clone_from(&mut self, other: &Self) -> Result<(), eyre::Report>
-   * { */
-  /* self */
-  /* .live */
-  /* .make_mut()? */
-  /* .try_clone_from(other.live.handle_ref())?; */
-  /* self.matcher = other.matcher.try_clone()?; */
-  /* Ok(()) */
-  /* } */
-}
-
-impl Clone for StreamSink {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-
-  /* fn clone_from(&mut self, other: &Self) {
-   * self.try_clone_from(other).unwrap(); } */
 }
 
 ///```
 /// #[cfg(feature = "compiler")]
-/// fn main() -> Result<(), eyre::Report> {
-///   use hyperscan::{expression::*, flags::*, stream::*, handle::*, matchers::{*, stream::*}};
-///   use std::{any::Any, mem, rc::Rc, ops::Range};
-///
-///   #[derive(Clone)]
-///   struct S(pub Vec<Range<usize>>);
-///   impl Resource for S {
-///     type Error = eyre::Report;
-///     fn deep_clone(&self) -> Result<Self, Self::Error> where Self: Sized { Ok(self.clone()) }
-///     fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
-///       Ok(Box::new(self.clone()))
-///     }
-///     unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { Ok(()) }
-///   }
-///   impl StreamHandler for S {
-///     fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
-///       self.0.push(m.range);
-///       MatchResult::Continue
-///     }
-///     fn new() -> Result<Self, eyre::Report> where Self: Sized { Ok(S(Vec::new())) }
-///     fn reset(&mut self) -> Result<(), eyre::Report> {
-///       self.0.clear();
-///       Ok(())
-///     }
-///     fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report> {
-///       Ok(Box::new(mem::take(&mut self.0)))
-///     }
-///   }
+/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+///   use hyperscan::{expression::*, flags::*, stream::*, matchers::{*, stream::*}};
+///   use std::{ops::Range, mem};
 ///
 ///   let expr: Expression = "a+".parse()?;
 ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
 ///   let scratch = db.allocate_scratch()?;
 ///   let live = db.allocate_stream()?;
-///   let mut sss = ScratchStreamSink::new::<S, Rc<_>, Rc<_>, Rc<_>>(live, scratch)?;
+///   let mut matches: Vec<StreamMatch> = Vec::new();
+///   let mut match_fn = |m| {
+///     matches.push(m);
+///     MatchResult::Continue
+///   };
+///   let matcher = SyncStreamMatcher::new(&mut match_fn);
+///   let sink = StreamSink::new(live, matcher);
+///   let mut sink = ScratchStreamSink::new(sink, scratch);
 ///
-///   sss.scan("aardvark".into())?;
-///   sss.flush_eod()?;
+///   sink.scan("aardvark".into())?;
+///   sink.flush_eod()?;
 ///
-///   let matches = *sss.extract_state()?.downcast::<Vec<Range<usize>>>().unwrap();
+///   mem::drop(sink);
+///
+///   let matches: Vec<Range<usize>> = matches.into_iter().map(|m| m.range).collect();
 ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
 ///   Ok(())
 /// }
 /// # #[cfg(not(feature = "compiler"))]
 /// # fn main() {}
 /// ```
-pub struct ScratchStreamSink {
-  pub sink: StreamSink,
+pub struct ScratchStreamSink<'code> {
+  pub sink: StreamSink<'code>,
   pub scratch: Box<dyn Handle<R=Scratch>>,
 }
 
-impl ScratchStreamSink {
-  pub fn new<
-    S: StreamHandler,
-    SH: Handle<R=Box<dyn StreamHandler>>+'static,
-    LH: Handle<R=LiveStream>+'static,
-    ScH: Handle<R=Scratch>+'static,
-  >(
-    live: LiveStream,
-    scratch: Scratch,
-  ) -> Result<Self, eyre::Report> {
-    Ok(Self {
-      sink: StreamSink::new::<S, SH, LH>(live)?,
-      scratch: Box::new(ScH::wrap(scratch)),
-    })
+impl<'code> ScratchStreamSink<'code> {
+  pub fn new(sink: StreamSink<'code>, scratch: impl Handle<R=Scratch>+'static) -> Self {
+    Self {
+      sink,
+      scratch: Box::new(scratch),
+    }
   }
 
-  pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), eyre::Report> {
+  pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), HyperscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.scan(scratch.make_mut()?, data)
   }
 
-  pub fn flush_eod(&mut self) -> Result<(), eyre::Report> {
+  pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.flush_eod(scratch.make_mut()?)
   }
 
-  pub fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report> {
-    self.sink.matcher.extract_state()
-  }
-
-  pub fn try_clone(&self) -> Result<Self, eyre::Report> {
-    Ok(Self {
-      sink: self.sink.try_clone()?,
-      scratch: self.scratch.boxed_clone_handle()?,
-    })
+  pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> {
+    self.sink.live.make_mut()?.try_reset()?;
+    Ok(())
   }
 }
 
-impl Clone for ScratchStreamSink {
-  fn clone(&self) -> Self { self.try_clone().unwrap() }
-}
-
-impl std::io::Write for ScratchStreamSink {
+impl<'code> std::io::Write for ScratchStreamSink<'code> {
   fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
     self
       .scan(ByteSlice::from_slice(buf))
@@ -272,219 +201,225 @@ impl std::io::Write for ScratchStreamSink {
   fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
 }
 
-#[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-pub mod channel {
-  use super::*;
-  use crate::matchers::stream::scan::{StreamScanMatcher, StreamScanner};
+/* #[cfg(feature = "async")] */
+/* #[cfg_attr(docsrs, doc(cfg(feature = "async")))] */
+/* pub mod channel { */
+/* use super::*; */
+/* use crate::matchers::stream::scan::{StreamScanMatcher, StreamScanner}; */
 
-  use futures_util::TryFutureExt;
-  use tokio::{io, sync::mpsc};
+/* use futures_util::TryFutureExt; */
+/* use tokio::{io, sync::mpsc}; */
 
-  use std::{
-    future::Future,
-    mem,
-    pin::Pin,
-    slice,
-    task::{ready, Context, Poll},
-  };
+/* use std::{ */
+/* future::Future, */
+/* mem, */
+/* pin::Pin, */
+/* slice, */
+/* task::{ready, Context, Poll}, */
+/* }; */
 
-  pub struct StreamSinkChannel {
-    pub live: LiveStream,
-    pub matcher: StreamScanMatcher,
-    pub rx: mpsc::UnboundedReceiver<StreamMatch>,
-  }
+/* pub struct StreamSinkChannel { */
+/* pub live: LiveStream, */
+/* pub matcher: StreamScanMatcher, */
+/* pub rx: mpsc::UnboundedReceiver<StreamMatch>, */
+/* } */
 
-  impl StreamSinkChannel {
-    pub fn new<S: StreamScanner+'static>(live: LiveStream) -> Self {
-      let (tx, rx) = mpsc::unbounded_channel();
-      Self {
-        live,
-        matcher: StreamScanMatcher::new::<S>(tx),
-        rx,
-      }
-    }
+/* impl StreamSinkChannel { */
+/* pub fn new<S: StreamScanner+'static>(live: LiveStream) -> Self { */
+/* let (tx, rx) = mpsc::unbounded_channel(); */
+/* Self { */
+/* live, */
+/* matcher: StreamScanMatcher::new::<S>(tx), */
+/* rx, */
+/* } */
+/* } */
 
-    pub async fn scan<'data>(
-      &mut self,
-      scratch: &mut Scratch,
-      data: ByteSlice<'data>,
-    ) -> Result<(), ScanError> {
-      let Self { live, matcher, .. } = self;
-      scratch.scan_stream(live, matcher, data).await
-    }
+/* pub async fn scan<'data>( */
+/* &mut self, */
+/* scratch: &mut Scratch, */
+/* data: ByteSlice<'data>, */
+/* ) -> Result<(), ScanError> { */
+/* let Self { live, matcher, .. } = self; */
+/* scratch.scan_stream(live, matcher, data).await */
+/* } */
 
-    pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), ScanError> {
-      let Self { live, matcher, .. } = self;
-      scratch.flush_eod(live, matcher).await
-    }
+/* pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(),
+ * ScanError> { */
+/* let Self { live, matcher, .. } = self; */
+/* scratch.flush_eod(live, matcher).await */
+/* } */
 
-    pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
-      self.live.try_reset()?;
-      self.matcher.reset();
-      Ok(())
-    }
+/* pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> { */
+/* self.live.try_reset()?; */
+/* self.matcher.reset(); */
+/* Ok(()) */
+/* } */
 
-    pub fn reset_channel(
-      &mut self,
-    ) -> (
-      mpsc::UnboundedSender<StreamMatch>,
-      mpsc::UnboundedReceiver<StreamMatch>,
-    ) {
-      let (tx, rx) = mpsc::unbounded_channel();
-      let old_tx = self.matcher.replace_sender(tx);
-      let old_rx = mem::replace(&mut self.rx, rx);
-      (old_tx, old_rx)
-    }
+/* pub fn reset_channel( */
+/* &mut self, */
+/* ) -> ( */
+/* mpsc::UnboundedSender<StreamMatch>, */
+/* mpsc::UnboundedReceiver<StreamMatch>, */
+/* ) { */
+/* let (tx, rx) = mpsc::unbounded_channel(); */
+/* let old_tx = self.matcher.replace_sender(tx); */
+/* let old_rx = mem::replace(&mut self.rx, rx); */
+/* (old_tx, old_rx) */
+/* } */
 
-    pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
-      let (tx, rx) = mpsc::unbounded_channel();
-      Ok(Self {
-        live: self.live.try_clone()?,
-        matcher: self.matcher.clone_with_sender(tx),
-        rx,
-      })
-    }
+/* pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> { */
+/* let (tx, rx) = mpsc::unbounded_channel(); */
+/* Ok(Self { */
+/* live: self.live.try_clone()?, */
+/* matcher: self.matcher.clone_with_sender(tx), */
+/* rx, */
+/* }) */
+/* } */
 
-    pub fn try_clone_from(
-      &mut self,
-      other: &Self,
-    ) -> Result<mpsc::UnboundedReceiver<StreamMatch>, HyperscanRuntimeError> {
-      let (tx, rx) = mpsc::unbounded_channel();
-      self.live.try_clone_from(&other.live)?;
-      self.matcher = other.matcher.clone_with_sender(tx);
-      Ok(mem::replace(&mut self.rx, rx))
-    }
-  }
+/* pub fn try_clone_from( */
+/* &mut self, */
+/* other: &Self, */
+/* ) -> Result<mpsc::UnboundedReceiver<StreamMatch>, HyperscanRuntimeError> { */
+/* let (tx, rx) = mpsc::unbounded_channel(); */
+/* self.live.try_clone_from(&other.live)?; */
+/* self.matcher = other.matcher.clone_with_sender(tx); */
+/* Ok(mem::replace(&mut self.rx, rx)) */
+/* } */
+/* } */
 
-  impl Clone for StreamSinkChannel {
-    fn clone(&self) -> Self { self.try_clone().unwrap() }
+/* impl Clone for StreamSinkChannel { */
+/* fn clone(&self) -> Self { self.try_clone().unwrap() } */
 
-    fn clone_from(&mut self, other: &Self) { self.try_clone_from(other).unwrap(); }
-  }
+/* fn clone_from(&mut self, other: &Self) {
+ * self.try_clone_from(other).unwrap(); } */
+/* } */
 
-  pub struct ScratchStreamSinkChannel {
-    pub sink: StreamSinkChannel,
-    pub scratch: Scratch,
-    #[allow(clippy::type_complexity)]
-    write_future: Option<(*const u8, Pin<Box<dyn Future<Output=io::Result<usize>>>>)>,
-    shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>,
-  }
+/* pub struct ScratchStreamSinkChannel { */
+/* pub sink: StreamSinkChannel, */
+/* pub scratch: Scratch, */
+/* #[allow(clippy::type_complexity)] */
+/* write_future: Option<(*const u8, Pin<Box<dyn
+ * Future<Output=io::Result<usize>>>>)>, */
+/* shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>>>>, */
+/* } */
 
-  unsafe impl Send for ScratchStreamSinkChannel {}
-  unsafe impl Sync for ScratchStreamSinkChannel {}
+/* unsafe impl Send for ScratchStreamSinkChannel {} */
+/* unsafe impl Sync for ScratchStreamSinkChannel {} */
 
-  impl ScratchStreamSinkChannel {
-    pub fn new(sink: StreamSinkChannel, scratch: Scratch) -> Self {
-      Self {
-        sink,
-        scratch,
-        write_future: None,
-        shutdown_future: None,
-      }
-    }
+/* impl ScratchStreamSinkChannel { */
+/* pub fn new(sink: StreamSinkChannel, scratch: Scratch) -> Self { */
+/* Self { */
+/* sink, */
+/* scratch, */
+/* write_future: None, */
+/* shutdown_future: None, */
+/* } */
+/* } */
 
-    pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
-      let Self { sink, scratch, .. } = self;
-      sink.scan(scratch, data).await
-    }
+/* pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(),
+ * ScanError> { */
+/* let Self { sink, scratch, .. } = self; */
+/* sink.scan(scratch, data).await */
+/* } */
 
-    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
-      let Self { sink, scratch, .. } = self;
-      sink.flush_eod(scratch).await
-    }
+/* pub async fn flush_eod(&mut self) -> Result<(), ScanError> { */
+/* let Self { sink, scratch, .. } = self; */
+/* sink.flush_eod(scratch).await */
+/* } */
 
-    pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
-      Ok(Self {
-        sink: self.sink.try_clone()?,
-        scratch: self.scratch.try_clone()?,
-        write_future: None,
-        shutdown_future: None,
-      })
-    }
-  }
+/* pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> { */
+/* Ok(Self { */
+/* sink: self.sink.try_clone()?, */
+/* scratch: self.scratch.try_clone()?, */
+/* write_future: None, */
+/* shutdown_future: None, */
+/* }) */
+/* } */
+/* } */
 
-  impl Clone for ScratchStreamSinkChannel {
-    fn clone(&self) -> Self { self.try_clone().unwrap() }
-  }
+/* impl Clone for ScratchStreamSinkChannel { */
+/* fn clone(&self) -> Self { self.try_clone().unwrap() } */
+/* } */
 
-  impl io::AsyncWrite for ScratchStreamSinkChannel {
-    fn poll_write(
-      mut self: Pin<&mut Self>,
-      cx: &mut Context<'_>,
-      buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-      if self.write_future.is_some() {
-        let mut s = self.as_mut();
+/* impl io::AsyncWrite for ScratchStreamSinkChannel { */
+/* fn poll_write( */
+/* mut self: Pin<&mut Self>, */
+/* cx: &mut Context<'_>, */
+/* buf: &[u8], */
+/* ) -> Poll<io::Result<usize>> { */
+/* if self.write_future.is_some() { */
+/* let mut s = self.as_mut(); */
 
-        let (p, fut) = s.write_future.as_mut().unwrap();
-        /* Sequential .poll_write() calls MUST be for the same buffer! */
-        assert_eq!(*p, buf.as_ptr());
+/* let (p, fut) = s.write_future.as_mut().unwrap(); */
+/* /\* Sequential .poll_write() calls MUST be for the same buffer! *\/ */
+/* assert_eq!(*p, buf.as_ptr()); */
 
-        let ret = ready!(fut.as_mut().poll(cx));
+/* let ret = ready!(fut.as_mut().poll(cx)); */
 
-        s.write_future = None;
+/* s.write_future = None; */
 
-        Poll::Ready(ret)
-      } else {
-        let s: *mut Self = self.as_mut().get_mut();
-        let buf_ptr = buf.as_ptr();
-        let buf_len = buf.len();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
-          unsafe { &mut *s }
-            .scan(ByteSlice::from_slice(unsafe {
-              slice::from_raw_parts(buf_ptr, buf_len)
-            }))
-            .and_then(move |()| async move { Ok(buf_len) })
-            .map_err(io::Error::other),
-        );
+/* Poll::Ready(ret) */
+/* } else { */
+/* let s: *mut Self = self.as_mut().get_mut(); */
+/* let buf_ptr = buf.as_ptr(); */
+/* let buf_len = buf.len(); */
+/* let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin( */
+/* unsafe { &mut *s } */
+/* .scan(ByteSlice::from_slice(unsafe { */
+/* slice::from_raw_parts(buf_ptr, buf_len) */
+/* })) */
+/* .and_then(move |()| async move { Ok(buf_len) }) */
+/* .map_err(io::Error::other), */
+/* ); */
 
-        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
-          return Poll::Ready(ret);
-        }
+/* if let Poll::Ready(ret) = fut.as_mut().poll(cx) { */
+/* return Poll::Ready(ret); */
+/* } */
 
-        self.write_future = Some((buf_ptr, fut));
+/* self.write_future = Some((buf_ptr, fut)); */
 
-        Poll::Pending
-      }
-    }
+/* Poll::Pending */
+/* } */
+/* } */
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      Poll::Ready(Ok(()))
-    }
+/* fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) ->
+ * Poll<io::Result<()>> { */
+/* Poll::Ready(Ok(())) */
+/* } */
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      if self.shutdown_future.is_some() {
-        let ret = ready!(self
-          .as_mut()
-          .shutdown_future
-          .as_mut()
-          .unwrap()
-          .as_mut()
-          .poll(cx));
+/* fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) ->
+ * Poll<io::Result<()>> { */
+/* if self.shutdown_future.is_some() { */
+/* let ret = ready!(self */
+/* .as_mut() */
+/* .shutdown_future */
+/* .as_mut() */
+/* .unwrap() */
+/* .as_mut() */
+/* .poll(cx)); */
 
-        self.shutdown_future = None;
+/* self.shutdown_future = None; */
 
-        Poll::Ready(ret)
-      } else {
-        let s: *mut Self = self.as_mut().get_mut();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> =
-          Box::pin(unsafe { &mut *s }.flush_eod().map_err(io::Error::other));
+/* Poll::Ready(ret) */
+/* } else { */
+/* let s: *mut Self = self.as_mut().get_mut(); */
+/* let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = */
+/* Box::pin(unsafe { &mut *s }.flush_eod().map_err(io::Error::other)); */
 
-        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
-          return Poll::Ready(ret);
-        }
+/* if let Poll::Ready(ret) = fut.as_mut().poll(cx) { */
+/* return Poll::Ready(ret); */
+/* } */
 
-        self.shutdown_future = Some(fut);
+/* self.shutdown_future = Some(fut); */
 
-        Poll::Pending
-      }
-    }
+/* Poll::Pending */
+/* } */
+/* } */
 
-    /* TODO: add vectored write support if vectored streaming databases ever
-     * exist! */
-  }
-}
+/* /\* TODO: add vectored write support if vectored streaming databases ever */
+/* * exist! *\/ */
+/* } */
+/* } */
 
 pub mod compress {
   use super::*;

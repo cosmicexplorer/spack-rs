@@ -136,7 +136,7 @@ pub(crate) mod contiguous_slice {
     pub fn handle_match(&mut self, m: Match<'data>) -> MatchResult { (self.handler)(m) }
   }
 
-  pub(crate) unsafe extern "C" fn match_slice(
+  pub(crate) extern "C" fn match_slice(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -146,7 +146,7 @@ pub(crate) mod contiguous_slice {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut sync_slice_matcher: Pin<&mut SliceMatcher> =
-      MatchEvent::extract_context(context.unwrap());
+      unsafe { MatchEvent::extract_context(context.unwrap()) };
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = Match {
       id,
@@ -204,7 +204,7 @@ pub(crate) mod vectored_slice {
     pub fn handle_match(&mut self, m: VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
   }
 
-  pub(crate) unsafe extern "C" fn match_slice_vectored(
+  pub(crate) extern "C" fn match_slice_vectored(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -214,7 +214,7 @@ pub(crate) mod vectored_slice {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut sync_slice_matcher: Pin<&mut VectoredMatcher> =
-      MatchEvent::extract_context(context.unwrap());
+      unsafe { MatchEvent::extract_context(context.unwrap()) };
     let matched_substring = sync_slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
@@ -292,73 +292,27 @@ pub mod stream {
   // /// # Ok(())
   // /// # })}
   // /// ```
+  /* FIXME: Copy! */
   #[derive(Debug, Clone, PartialEq, Eq, Hash)]
   pub struct StreamMatch {
     pub id: ExpressionIndex,
     pub range: ops::Range<usize>,
   }
 
-  pub trait StreamHandler: Resource<Error=eyre::Report> {
-    fn handle_match(&mut self, m: StreamMatch) -> MatchResult;
-
-    fn new() -> Result<Self, eyre::Report>
-    where Self: Sized;
-
-    fn reset(&mut self) -> Result<(), eyre::Report>;
-
-    fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report>;
+  #[repr(transparent)]
+  pub struct SyncStreamMatcher<'code> {
+    handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult),
   }
 
-  impl Resource for Box<dyn StreamHandler> {
-    type Error = eyre::Report;
-
-    fn deep_clone(&self) -> Result<Self, Self::Error>
-    where Self: Sized {
-      let r: Box<dyn Any+'static> = self.deep_boxed_clone()?;
-      let h: Box<Box<dyn StreamHandler>> = r.downcast().unwrap();
-      let h: Box<dyn StreamHandler> = *h;
-      Ok(h)
+  impl<'code> SyncStreamMatcher<'code> {
+    pub fn new<HF: FnMut(StreamMatch) -> MatchResult>(handler: &'code mut HF) -> Self {
+      Self { handler }
     }
 
-    fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
-      self.deref().deep_boxed_clone()
-    }
-
-    unsafe fn sync_drop(&mut self) -> Result<(), Self::Error> { self.deref_mut().sync_drop() }
+    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult { (self.handler)(m) }
   }
 
-  pub struct StreamMatcher {
-    handler: Box<dyn Handle<R=Box<dyn StreamHandler>>>,
-  }
-
-  impl StreamMatcher {
-    pub fn new<S: StreamHandler, H: Handle<R=Box<dyn StreamHandler>>+'static>(
-    ) -> Result<Self, eyre::Report> {
-      /* Allocate a box to type-erase the parameter `S`. */
-      let r: Box<dyn StreamHandler> = Box::new(S::new()?);
-      /* Allocate another box to type-erase the handle to the first box. */
-      let h: Box<dyn Handle<R=Box<dyn StreamHandler>>> = Box::new(H::wrap(r));
-      Ok(Self { handler: h })
-    }
-
-    pub(crate) fn ensure_exclusive(&mut self) -> Result<&mut Box<dyn StreamHandler>, eyre::Report> {
-      let h: &mut Box<dyn StreamHandler> = self.handler.make_mut()?;
-      Ok(h)
-    }
-
-    pub fn reset(&mut self) -> Result<(), eyre::Report> { Ok(self.handler.make_mut()?.reset()?) }
-
-    pub fn extract_state(&mut self) -> Result<Box<dyn Any>, eyre::Report> {
-      self.handler.make_mut()?.extract_state()
-    }
-
-    pub fn try_clone(&self) -> Result<Self, eyre::Report> {
-      let h = self.handler.boxed_clone_handle()?;
-      Ok(Self { handler: h })
-    }
-  }
-
-  pub(crate) unsafe extern "C" fn match_slice_stream(
+  pub(crate) extern "C" fn match_sync_slice_stream(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -367,98 +321,13 @@ pub mod stream {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut matcher: Pin<&mut Box<dyn StreamHandler>> =
-      MatchEvent::extract_context(context.unwrap());
+    let mut matcher: Pin<&mut SyncStreamMatcher<'_>> =
+      unsafe { MatchEvent::extract_context(context.unwrap()) };
 
     let m = StreamMatch { id, range };
 
     let result = matcher.handle_match(m);
     result.into_native()
-  }
-
-  #[cfg(feature = "async")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
-  pub mod scan {
-    use super::*;
-
-    pub trait StreamScanner: Send+Sync {
-      fn scan_match(&mut self, m: &StreamMatch) -> MatchResult;
-
-      fn new() -> Self
-      where Self: Sized;
-
-      fn reset(&mut self);
-      fn boxed_clone(&self) -> Box<dyn StreamScanner>;
-    }
-
-    pub struct TrivialScanner;
-    impl StreamScanner for TrivialScanner {
-      fn scan_match(&mut self, _m: &StreamMatch) -> MatchResult { MatchResult::Continue }
-
-      fn new() -> Self
-      where Self: Sized {
-        Self
-      }
-
-      fn reset(&mut self) {}
-      fn boxed_clone(&self) -> Box<dyn StreamScanner> { Box::new(Self) }
-    }
-
-    pub struct StreamScanMatcher {
-      sender: mpsc::UnboundedSender<StreamMatch>,
-      scanner: Box<dyn StreamScanner>,
-    }
-
-    impl StreamScanMatcher {
-      pub fn new<S: StreamScanner+'static>(sender: mpsc::UnboundedSender<StreamMatch>) -> Self {
-        Self {
-          sender,
-          scanner: Box::new(S::new()),
-        }
-      }
-
-      pub fn scan_match(&mut self, m: &StreamMatch) -> MatchResult { self.scanner.scan_match(m) }
-
-      pub fn push_match(&mut self, m: StreamMatch) { self.sender.send(m).unwrap(); }
-
-      pub fn reset(&mut self) { self.scanner.reset(); }
-
-      pub fn replace_sender(
-        &mut self,
-        sender: mpsc::UnboundedSender<StreamMatch>,
-      ) -> mpsc::UnboundedSender<StreamMatch> {
-        mem::replace(&mut self.sender, sender)
-      }
-
-      pub fn clone_with_sender(&self, sender: mpsc::UnboundedSender<StreamMatch>) -> Self {
-        Self {
-          sender,
-          scanner: self.scanner.boxed_clone(),
-        }
-      }
-    }
-
-    impl Clone for StreamScanMatcher {
-      fn clone(&self) -> Self { self.clone_with_sender(self.sender.clone()) }
-    }
-
-    pub(crate) unsafe extern "C" fn scan_slice_stream(
-      id: c_uint,
-      from: c_ulonglong,
-      to: c_ulonglong,
-      flags: c_uint,
-      context: *mut c_void,
-    ) -> c_int {
-      debug_assert_eq!(flags, 0, "flags are currently unused");
-      let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-      let mut matcher: Pin<&mut StreamScanMatcher> = MatchEvent::extract_context(context.unwrap());
-
-      let m = StreamMatch { id, range };
-
-      let result = matcher.scan_match(&m);
-      matcher.push_match(m);
-      result.into_native()
-    }
   }
 }
 
@@ -613,7 +482,7 @@ pub mod chimera {
     }
   }
 
-  pub(crate) unsafe extern "C" fn match_chimera_slice(
+  pub(crate) extern "C" fn match_chimera_slice(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -630,7 +499,7 @@ pub mod chimera {
       context,
     } = ChimeraMatchEvent::coerce_args(id, from, to, size, captured, context);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
-      ChimeraMatchEvent::extract_context(context.unwrap());
+      unsafe { ChimeraMatchEvent::extract_context(context.unwrap()) };
     let matched_substring = matcher.index_range(range);
     let m = ChimeraMatch {
       id,
@@ -658,7 +527,7 @@ pub mod chimera {
     result.into_native()
   }
 
-  pub(crate) unsafe extern "C" fn error_callback_chimera(
+  pub(crate) extern "C" fn error_callback_chimera(
     error_type: hs::ch_error_event_t,
     id: c_uint,
     info: *mut c_void,
@@ -669,7 +538,7 @@ pub mod chimera {
     debug_assert!(info.is_null(), "info pointer is currently unused");
     let ctx = ptr::NonNull::new(ctx);
     let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
-      ChimeraMatchEvent::extract_context(ctx.unwrap());
+      unsafe { ChimeraMatchEvent::extract_context(ctx.unwrap()) };
     let e = ChimeraMatchError { error_type, id };
 
     let result = matcher.handle_error(e);
