@@ -634,6 +634,14 @@ pub mod chimera {
   pub enum ChimeraError {
     /// error from chimera runtime: {0}
     Runtime(#[from] ChimeraRuntimeError),
+    /// error from hyperscan runtime: {0}
+    ///
+    /// This case in particular is helpful to convert the result of
+    /// [`Platform::local()`](crate::flags::platform::Platform::local) into a
+    /// chimera error.
+    #[cfg(feature = "compiler")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
+    HyperscanRuntime(#[from] HyperscanRuntimeError),
     /// compile error: {0}
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]

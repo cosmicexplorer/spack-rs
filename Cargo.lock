@@ -927,7 +927,6 @@ dependencies = [
  "jemallocator",
  "libc",
  "num_enum",
- "once_cell",
  "parking_lot",
  "smallvec 2.0.0-alpha.1",
  "static_assertions",

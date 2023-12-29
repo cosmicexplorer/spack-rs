@@ -118,3 +118,27 @@ pub fn hyperscan_version() -> &'static std::ffi::CStr {
 pub fn chimera_version() -> &'static std::ffi::CStr {
   unsafe { std::ffi::CStr::from_ptr(hs::ch_version()) }
 }
+
+#[cfg(feature = "async")]
+mod async_utils {
+  use futures_core::stream::Stream;
+  use tokio::sync::mpsc;
+
+  use std::{
+    pin::Pin,
+    task::{Context, Poll},
+  };
+
+  /* Reimplementation of tokio_stream::wrappers::UnboundedReceiverStream. */
+  #[derive(Debug)]
+  #[repr(transparent)]
+  pub struct UnboundedReceiverStream<T>(pub mpsc::UnboundedReceiver<T>);
+
+  impl<T> Stream for UnboundedReceiverStream<T> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+      self.0.poll_recv(cx)
+    }
+  }
+}

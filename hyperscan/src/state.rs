@@ -290,6 +290,8 @@
 //! # fn main() {}
 //! ```
 
+#[cfg(feature = "async")]
+use crate::error::ScanError;
 use crate::{
   database::Database,
   error::HyperscanRuntimeError,
@@ -297,17 +299,15 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::{match_slice_stream, StreamMatcher},
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
   sources::{ByteSlice, VectoredByteSlices},
-  stream::LiveStream,
 };
-#[cfg(feature = "async")]
+#[cfg(feature = "stream")]
 use crate::{
-  error::ScanError,
-  /* matchers::stream::scan::{scan_slice_stream, StreamScanMatcher}, */
+  matchers::stream::{match_slice_stream, StreamMatcher},
+  stream::LiveStream,
 };
 
 #[cfg(feature = "async")]
@@ -555,6 +555,8 @@ impl Scratch {
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
   /// [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan).
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub fn scan_sync_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
@@ -580,6 +582,8 @@ impl Scratch {
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
   /// [`ScratchStreamSink::flush_eod()`](crate::stream::ScratchStreamSink::flush_eod).
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub fn flush_eod_sync<'code>(
     &mut self,
     live: &mut LiveStream,
@@ -790,13 +794,13 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-    mut f: impl FnMut(&Match<'data>) -> MatchResult+Send+Sync,
+    mut f: impl FnMut(&Match<'data>) -> MatchResult+Send,
   ) -> impl Stream<Item=Result<Match<'data>, ScanError>> {
     /* Convert all references into pointers cast to usize to strip lifetime
      * information so it can be moved into spawn_blocking(): */
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
-    let f: &mut (dyn FnMut(&Match<'data>) -> MatchResult+Send+Sync) = &mut f;
+    let f: &mut (dyn FnMut(&Match<'data>) -> MatchResult+Send) = &mut f;
 
     /* Create a channel for both success and error results. */
     let (matches_tx, matches_rx) = mpsc::unbounded_channel();
@@ -804,7 +808,7 @@ impl Scratch {
     /* Convert parameterized lifetimes to 'static so they can be moved into
      * spawn_blocking(): */
     let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
-    let f: &'static mut (dyn FnMut(&Match<'static>) -> MatchResult+Send+Sync) =
+    let f: &'static mut (dyn FnMut(&Match<'static>) -> MatchResult+Send) =
       unsafe { mem::transmute(f) };
     let matches_tx: mpsc::UnboundedSender<Result<Match<'static>, ScanError>> =
       unsafe { mem::transmute(matches_tx) };
@@ -828,7 +832,7 @@ impl Scratch {
         Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
     });
-    async_utils::UnboundedReceiverStream(matches_rx)
+    crate::async_utils::UnboundedReceiverStream(matches_rx)
   }
 
   /// Asynchronously scan a slice of vectored string data.
@@ -886,7 +890,7 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: VectoredByteSlices<'data, 'data>,
-    mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync,
+    mut f: impl FnMut(&VectoredMatch<'data>) -> MatchResult+Send,
   ) -> impl Stream<Item=Result<VectoredMatch<'data>, ScanError>> {
     /* NB: while static arrays take up no extra runtime space, a ref to a
     slice
@@ -901,7 +905,7 @@ impl Scratch {
      * information so it can be moved into spawn_blocking(): */
     let scratch = Self::into_scratch(self);
     let db = Self::into_db(db);
-    let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send+Sync) = &mut f;
+    let f: &mut (dyn FnMut(&VectoredMatch<'data>) -> MatchResult+Send) = &mut f;
 
     /* Create a channel for both success and error results. */
     let (matches_tx, matches_rx) = mpsc::unbounded_channel();
@@ -909,7 +913,7 @@ impl Scratch {
     /* Convert parameterized lifetimes to 'static so they can be moved into
      * spawn_blocking(): */
     let data: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(data) };
-    let f: &'static mut (dyn FnMut(&VectoredMatch<'static>) -> MatchResult+Send+Sync) =
+    let f: &'static mut (dyn FnMut(&VectoredMatch<'static>) -> MatchResult+Send) =
       unsafe { mem::transmute(f) };
     let matches_tx: mpsc::UnboundedSender<Result<VectoredMatch<'static>, ScanError>> =
       unsafe { mem::transmute(matches_tx) };
@@ -933,7 +937,7 @@ impl Scratch {
         Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
       }
     });
-    async_utils::UnboundedReceiverStream(matches_rx)
+    crate::async_utils::UnboundedReceiverStream(matches_rx)
   }
 }
 
@@ -1690,15 +1694,15 @@ pub mod chimera {
       &mut self,
       db: &ChimeraDb,
       data: ByteSlice<'data>,
-      mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync,
-      mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync,
+      mut m: impl FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send,
+      mut e: impl FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send,
     ) -> impl Stream<Item=Result<ChimeraMatch<'data>, ChimeraScanError>> {
       /* Convert all references into pointers cast to usize to strip lifetime
        * information so it can be moved into spawn_blocking(): */
       let scratch = Self::into_scratch(self);
       let db = Self::into_db(db);
-      let m: &mut (dyn FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send+Sync) = &mut m;
-      let e: &mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) = &mut e;
+      let m: &mut (dyn FnMut(&ChimeraMatch<'data>) -> ChimeraMatchResult+Send) = &mut m;
+      let e: &mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send) = &mut e;
 
       /* Create a channel for all success and error results. */
       let (matches_tx, matches_rx) = mpsc::unbounded_channel();
@@ -1706,9 +1710,9 @@ pub mod chimera {
       /* Convert parameterized lifetimes to 'static so they can be moved into
        * spawn_blocking(): */
       let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
-      let m: &'static mut (dyn FnMut(&ChimeraMatch<'static>) -> ChimeraMatchResult+Send+Sync) =
+      let m: &'static mut (dyn FnMut(&ChimeraMatch<'static>) -> ChimeraMatchResult+Send) =
         unsafe { mem::transmute(m) };
-      let e: &'static mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send+Sync) =
+      let e: &'static mut (dyn FnMut(&ChimeraMatchError) -> ChimeraMatchResult+Send) =
         unsafe { mem::transmute(e) };
       let matches_tx: mpsc::UnboundedSender<Result<ChimeraMatch<'static>, ChimeraScanError>> =
         unsafe { mem::transmute(matches_tx) };
@@ -1741,7 +1745,7 @@ pub mod chimera {
           Ok(Err(e)) => matches_tx.send(Err(e.into())).unwrap(),
         }
       });
-      async_utils::UnboundedReceiverStream(matches_rx)
+      crate::async_utils::UnboundedReceiverStream(matches_rx)
     }
   }
 
@@ -1992,30 +1996,6 @@ pub mod chimera {
       unsafe {
         self.try_drop().unwrap();
       }
-    }
-  }
-}
-
-#[cfg(feature = "async")]
-pub(crate) mod async_utils {
-  use futures_core::stream::Stream;
-  use tokio::sync::mpsc;
-
-  use std::{
-    pin::Pin,
-    task::{Context, Poll},
-  };
-
-  /* Reimplementation of tokio_stream::wrappers::UnboundedReceiverStream. */
-  #[derive(Debug)]
-  #[repr(transparent)]
-  pub struct UnboundedReceiverStream<T>(pub mpsc::UnboundedReceiver<T>);
-
-  impl<T> Stream for UnboundedReceiverStream<T> {
-    type Item = T;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-      self.0.poll_recv(cx)
     }
   }
 }

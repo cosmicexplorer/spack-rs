@@ -162,7 +162,7 @@ impl Database {
 /// after being deserialized from a remote source.
 ///
 ///```
-/// #[cfg(feature = "compiler")]
+/// #[cfg(all(feature = "compiler", feature = "stream"))]
 /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
 ///   use hyperscan::{expression::*, flags::{*, platform::*}, database::*};
 ///   use std::slice;
@@ -170,18 +170,18 @@ impl Database {
 ///   let expr: Expression = "a+".parse()?;
 ///
 ///   // Verify that the current platform has AVX2 instructions, and make a db:
-///   let plat = Platform::local();
+///   let plat = Platform::local()?;
 ///   assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
-///   assert!(plat != &Platform::GENERIC);
+///   assert!(plat != Platform::GENERIC);
 ///   let db_with_avx2 = Database::compile(
 ///     &expr,
 ///     Flags::default(),
 ///     Mode::STREAM,
-///     Some(plat),
+///     Some(&plat),
 ///   )?;
 ///
 ///   // The only specialized instructions we have available are AVX2:
-///   assert!(CpuFeatures::NONE == plat.cpu_features & !CpuFeatures::AVX2);
+///   assert_eq!(CpuFeatures::NONE, plat.cpu_features & !CpuFeatures::AVX2);
 ///   // Avoid using AVX2 instructions:
 ///   let db_no_avx2 = Database::compile(
 ///     &expr,
@@ -220,7 +220,7 @@ impl Database {
 ///   assert!(db_data_1 != db_data_2);
 ///   Ok(())
 /// }
-/// # #[cfg(not(feature = "compiler"))]
+/// # #[cfg(not(all(feature = "compiler", feature = "stream")))]
 /// # fn main() {}
 /// ```
 ///
@@ -636,6 +636,8 @@ impl Database {
   /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
     HyperscanRuntimeError::from_native(unsafe {
@@ -1250,18 +1252,18 @@ pub mod chimera {
   /// let expr: ChimeraExpression = "a+".parse()?;
   ///
   /// // Verify that the current platform has AVX2 instructions, and make a db:
-  /// let plat = Platform::local();
+  /// let plat = Platform::local()?;
   /// assert!(plat.cpu_features.contains(&CpuFeatures::AVX2));
-  /// assert!(plat != &Platform::GENERIC);
+  /// assert!(plat != Platform::GENERIC);
   /// let db_with_avx2 = ChimeraDb::compile(
   ///   &expr,
   ///   ChimeraFlags::default(),
   ///   ChimeraMode::NOGROUPS,
-  ///   Some(plat),
+  ///   Some(&plat),
   /// )?;
   ///
   /// // The only specialized instructions we have available are AVX2:
-  /// assert!(CpuFeatures::NONE == plat.cpu_features & !CpuFeatures::AVX2);
+  /// assert_eq!(CpuFeatures::NONE, plat.cpu_features & !CpuFeatures::AVX2);
   /// // Avoid using AVX2 instructions:
   /// let db_no_avx2 = ChimeraDb::compile(
   ///   &expr,

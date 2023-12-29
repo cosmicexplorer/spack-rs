@@ -10,8 +10,6 @@ use crate::{
   sources::ByteSlice,
   state::Scratch,
 };
-#[cfg(feature = "async")]
-use crate::{error::ScanError, matchers::stream::StreamMatch};
 
 use std::{mem, ops, ptr};
 
@@ -141,11 +139,17 @@ impl<'code> StreamSink<'code> {
 ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
 ///   let scratch = db.allocate_scratch()?;
 ///   let live = db.allocate_stream()?;
+///
+///   // Create the `matches` vector which is mutably captured in the dyn closure.
 ///   let mut matches: Vec<StreamMatch> = Vec::new();
+///   // Capture `matches` into `match_fn`;
+///   // in this case, `match_fn` is an unboxed stack-allocated closure.
 ///   let mut match_fn = |m| {
 ///     matches.push(m);
 ///     MatchResult::Continue
 ///   };
+///   // `matcher` now keeps the reference to `matches` alive
+///   // in rustc's local lifetime tracking.
 ///   let matcher = StreamMatcher::new(&mut match_fn);
 ///   let sink = StreamSink::new(live, matcher);
 ///   let mut sink = ScratchStreamSink::new(sink, scratch);
@@ -153,8 +157,16 @@ impl<'code> StreamSink<'code> {
 ///   sink.scan("aardvark".into())?;
 ///   sink.flush_eod()?;
 ///
+///   // This will also drop `matcher`, which means `match_fn`
+///   // holds the only reference to `matches`.
 ///   mem::drop(sink);
+///   // This could also be performed by explicitly
+///   // introducing a scope with `{}`.
 ///
+///   // Since `match_fn` is otherwise unused outside of `matcher`,
+///   // rustc can statically determine that no other mutable reference
+///   // to `matches` exists, so it "unlocks" the value
+///   // and lets us consume it with `.into_iter()`.
 ///   let matches: Vec<Range<usize>> = matches
 ///     .into_iter()
 ///     .map(|m| m.range.into())
@@ -203,23 +215,22 @@ impl<'code> std::io::Write for ScratchStreamSink<'code> {
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub mod channel {
-  use super::*;
+  use super::LiveStream;
   use crate::{
-    matchers::{stream::SendStreamMatcher, MatchResult},
-    state::async_utils::UnboundedReceiverStream,
+    error::{HyperscanRuntimeError, ScanError},
+    handle::Handle,
+    matchers::{
+      stream::{SendStreamMatcher, StreamMatch},
+      MatchResult,
+    },
+    sources::ByteSlice,
+    state::Scratch,
   };
 
   use futures_core::stream::Stream;
-  use futures_util::TryFutureExt;
-  use tokio::{io, sync::mpsc, task};
+  use tokio::{sync::mpsc, task};
 
-  use std::{
-    future::Future,
-    mem,
-    pin::Pin,
-    slice,
-    task::{ready, Context, Poll},
-  };
+  use std::mem;
 
   pub struct StreamSinkChannel<'code> {
     pub live: Box<dyn Handle<R=LiveStream>+Send+'code>,
@@ -293,7 +304,7 @@ pub mod channel {
 
     pub fn collect_matches(mut self) -> impl Stream<Item=StreamMatch> {
       self.rx.close();
-      UnboundedReceiverStream(self.rx)
+      crate::async_utils::UnboundedReceiverStream(self.rx)
     }
 
     pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> {
@@ -354,140 +365,157 @@ pub mod channel {
     }
   }
 
-  ///```
-  /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, stream::channel::*, matchers::*};
-  ///   use futures_util::StreamExt;
-  ///   use tokio::io::AsyncWriteExt;
-  ///   use std::ops::Range;
-  ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
-  ///   let scratch = db.allocate_scratch()?;
-  ///   let live = db.allocate_stream()?;
-  ///
-  ///   let mut match_fn = |_: &_| MatchResult::Continue;
-  ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
-  ///   let sink = ScratchStreamSinkChannel::new(sink, scratch);
-  ///   let mut sink = StreamWriter::new(sink);
-  ///
-  ///   sink.write_all(b"aardvark").await.unwrap();
-  ///   sink.shutdown().await.unwrap();
-  ///
-  ///   let matches: Vec<Range<usize>> = sink.inner.sink.collect_matches()
-  ///     .map(|m| m.range.into())
-  ///     .collect()
-  ///     .await;
-  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
-  ///   Ok(())
-  /// })}
-  /// # #[cfg(not(feature = "compiler"))]
-  /// # fn main() {}
-  /// ```
-  pub struct StreamWriter<'code> {
-    pub inner: ScratchStreamSinkChannel<'code>,
-    #[allow(clippy::type_complexity)]
-    write_future: Option<(
-      *const u8,
-      Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
-    )>,
-    shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
-  }
+  #[cfg(feature = "tokio-impls")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
+  pub mod tokio_impls {
+    use super::ScratchStreamSinkChannel;
+    use crate::sources::ByteSlice;
 
-  impl<'code> StreamWriter<'code> {
-    pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
-      Self {
-        inner,
-        write_future: None,
-        shutdown_future: None,
-      }
+    use futures_util::TryFutureExt;
+    use tokio::io;
+
+    use std::{
+      future::Future,
+      pin::Pin,
+      slice,
+      task::{ready, Context, Poll},
+    };
+
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+    ///   use hyperscan::{expression::*, flags::*, stream::channel::{*, tokio_impls::*}, matchers::*};
+    ///   use futures_util::StreamExt;
+    ///   use tokio::io::AsyncWriteExt;
+    ///   use std::ops::Range;
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let live = db.allocate_stream()?;
+    ///
+    ///   let mut match_fn = |_: &_| MatchResult::Continue;
+    ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
+    ///   let sink = ScratchStreamSinkChannel::new(sink, scratch);
+    ///   let mut sink = StreamWriter::new(sink);
+    ///
+    ///   sink.write_all(b"aardvark").await.unwrap();
+    ///   sink.shutdown().await.unwrap();
+    ///
+    ///   let matches: Vec<Range<usize>> = sink.inner.sink.collect_matches()
+    ///     .map(|m| m.range.into())
+    ///     .collect()
+    ///     .await;
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
+    ///   Ok(())
+    /// })}
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
+    pub struct StreamWriter<'code> {
+      pub inner: ScratchStreamSinkChannel<'code>,
+      #[allow(clippy::type_complexity)]
+      write_future: Option<(
+        *const u8,
+        Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
+      )>,
+      shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
     }
-  }
 
-  unsafe impl<'code> Send for StreamWriter<'code> {}
-
-  impl<'code> io::AsyncWrite for StreamWriter<'code> {
-    fn poll_write(
-      mut self: Pin<&mut Self>,
-      cx: &mut Context<'_>,
-      buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-      if self.write_future.is_some() {
-        let mut s = self.as_mut();
-
-        let (p, fut) = s.write_future.as_mut().unwrap();
-        /* Sequential .poll_write() calls MUST be for the same buffer! */
-        assert_eq!(*p, buf.as_ptr());
-
-        let ret = ready!(fut.as_mut().poll(cx));
-
-        s.write_future = None;
-
-        Poll::Ready(ret)
-      } else {
-        let s: *mut Self = self.as_mut().get_mut();
-        let buf_ptr = buf.as_ptr();
-        let buf_len = buf.len();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
-          unsafe { &mut *s }
-            .inner
-            .scan(ByteSlice::from_slice(unsafe {
-              slice::from_raw_parts(buf_ptr, buf_len)
-            }))
-            .and_then(move |()| async move { Ok(buf_len) })
-            .map_err(io::Error::other),
-        );
-
-        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
-          return Poll::Ready(ret);
+    impl<'code> StreamWriter<'code> {
+      pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
+        Self {
+          inner,
+          write_future: None,
+          shutdown_future: None,
         }
-
-        self.write_future = Some((buf_ptr, fut));
-
-        Poll::Pending
       }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      Poll::Ready(Ok(()))
-    }
+    unsafe impl<'code> Send for StreamWriter<'code> {}
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      if self.shutdown_future.is_some() {
-        let ret = ready!(self
-          .as_mut()
-          .shutdown_future
-          .as_mut()
-          .unwrap()
-          .as_mut()
-          .poll(cx));
+    impl<'code> io::AsyncWrite for StreamWriter<'code> {
+      fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+      ) -> Poll<io::Result<usize>> {
+        if self.write_future.is_some() {
+          let mut s = self.as_mut();
 
-        self.shutdown_future = None;
+          let (p, fut) = s.write_future.as_mut().unwrap();
+          /* Sequential .poll_write() calls MUST be for the same buffer! */
+          assert_eq!(*p, buf.as_ptr());
 
-        Poll::Ready(ret)
-      } else {
-        let s: *mut Self = self.as_mut().get_mut();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
-          unsafe { &mut *s }
-            .inner
-            .flush_eod()
-            .map_err(io::Error::other),
-        );
+          let ret = ready!(fut.as_mut().poll(cx));
 
-        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
-          return Poll::Ready(ret);
+          s.write_future = None;
+
+          Poll::Ready(ret)
+        } else {
+          let s: *mut Self = self.as_mut().get_mut();
+          let buf_ptr = buf.as_ptr();
+          let buf_len = buf.len();
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
+            unsafe { &mut *s }
+              .inner
+              .scan(ByteSlice::from_slice(unsafe {
+                slice::from_raw_parts(buf_ptr, buf_len)
+              }))
+              .and_then(move |()| async move { Ok(buf_len) })
+              .map_err(io::Error::other),
+          );
+
+          if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+            return Poll::Ready(ret);
+          }
+
+          self.write_future = Some((buf_ptr, fut));
+
+          Poll::Pending
         }
-
-        self.shutdown_future = Some(fut);
-
-        Poll::Pending
       }
-    }
 
-    /* TODO: add vectored write support if vectored streaming databases
-    ever
-    * exist! */
+      fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+      }
+
+      fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if self.shutdown_future.is_some() {
+          let ret = ready!(self
+            .as_mut()
+            .shutdown_future
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .poll(cx));
+
+          self.shutdown_future = None;
+
+          Poll::Ready(ret)
+        } else {
+          let s: *mut Self = self.as_mut().get_mut();
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
+            unsafe { &mut *s }
+              .inner
+              .flush_eod()
+              .map_err(io::Error::other),
+          );
+
+          if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+            return Poll::Ready(ret);
+          }
+
+          self.shutdown_future = Some(fut);
+
+          Poll::Pending
+        }
+      }
+
+      /* TODO: add vectored write support if vectored streaming databases
+      ever
+      * exist! */
+    }
   }
 }
 
@@ -510,13 +538,13 @@ pub mod compress {
     }
   }
 
-  pub(crate) enum ReserveResponse {
+  enum ReserveResponse {
     MadeSpace(Vec<u8>),
     NoSpace(Vec<u8>),
   }
 
   impl CompressReserveBehavior {
-    pub(crate) fn reserve(self, n: usize) -> ReserveResponse {
+    fn reserve(self, n: usize) -> ReserveResponse {
       match self {
         Self::NewBuf => ReserveResponse::MadeSpace(Vec::with_capacity(n)),
         Self::ExpandBuf(mut buf) => {

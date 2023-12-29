@@ -50,7 +50,7 @@ pub enum MatchResult {
   /// performed in streaming mode and this value is returned, any subsequent
   /// calls to
   /// [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
-  /// or [`Scratch::scan_stream()`](crate::state::Scratch::scan_stream)
+  /// or [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan)
   /// for the same stream will also immediately return with
   /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
   /* This is documented to be just any non-zero value at the moment. */

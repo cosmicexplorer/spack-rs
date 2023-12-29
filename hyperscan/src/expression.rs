@@ -675,7 +675,7 @@ pub mod info {
   ///
   /// In streaming mode, EOD matches are raised during
   /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync) or
-  /// [`Scratch::flush_eod()`](crate::state::Scratch::flush_eod), since it is
+  /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync), since it is
   /// only when `flush_eod()` is called that the EOD location is
   /// known.
   ///
@@ -766,7 +766,7 @@ pub mod info {
     ///
     /// In streaming mode, EOD matches are raised during
     /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync) or
-    /// [`Scratch::flush_eod()`](crate::state::Scratch::flush_eod), since it
+    /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync), since it
     /// is only when `flush_eod()` is called that the EOD location is
     /// known.
     ///

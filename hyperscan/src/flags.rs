@@ -333,8 +333,6 @@ pub mod platform {
   use super::*;
   use crate::error::HyperscanRuntimeError;
 
-  use once_cell::sync::Lazy;
-
   use std::mem::MaybeUninit;
 
   /// CPU feature support flags
@@ -473,10 +471,13 @@ pub mod platform {
     pub cpu_features: CpuFeatures,
   }
 
-  static CACHED_PLATFORM: Lazy<Platform> = Lazy::new(|| Platform::populate().unwrap());
-
   impl Platform {
-    fn populate() -> Result<Self, HyperscanRuntimeError> {
+    /// Configuration to build for the current platform.
+    ///
+    /// This method calls into `hs_populate_platform()` to populate the returned
+    /// platform struct with all the features the currently executing processor
+    /// has access to when building a database.
+    pub fn local() -> Result<Self, HyperscanRuntimeError> {
       let mut s = MaybeUninit::<hs::hs_platform_info>::uninit();
       HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
       Ok(Self::from_native(unsafe { s.assume_init() }))
@@ -490,12 +491,6 @@ pub mod platform {
       tune: TuneFamily::Generic,
       cpu_features: CpuFeatures::NONE,
     };
-
-    /// Configuration to build for the current platform.
-    ///
-    /// This will enable all features the currently executing processor has
-    /// access to when building a database.
-    pub fn local() -> &'static Self { &CACHED_PLATFORM }
 
     pub(crate) fn from_native(x: hs::hs_platform_info) -> Self {
       /* NB: ignore reserved fields for now. */
