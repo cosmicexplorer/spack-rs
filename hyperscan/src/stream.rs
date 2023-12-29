@@ -273,14 +273,21 @@ pub mod channel {
       Ok(())
     }
 
-    pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
+    pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), ScanError> {
+      /* Make the mutable resources static. */
       let Self { live, hf, .. } = self;
+      let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
+      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
 
       /* Generate a vtable pointing to the heap-allocated handler function hf. */
       let hf: &mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code) = hf;
-      let mut matcher = SendStreamMatcher::new(hf);
+      let matcher = SendStreamMatcher::new(hf);
+      let mut matcher: SendStreamMatcher<'static> = unsafe { mem::transmute(matcher) };
 
-      scratch.flush_eod_sync(live.make_mut()?, matcher.as_mut_basic())?;
+      task::spawn_blocking(move || {
+        scratch.flush_eod_sync(live.make_mut()?, matcher.as_mut_basic())
+      })
+      .await??;
       Ok(())
     }
 
@@ -311,7 +318,7 @@ pub mod channel {
   ///   let mut sink = ScratchStreamSinkChannel::new(sink, scratch);
   ///
   ///   sink.scan("aardvark".into()).await?;
-  ///   sink.flush_eod()?;
+  ///   sink.flush_eod().await?;
   ///
   ///   let matches: Vec<Range<usize>> = sink.sink.collect_matches()
   ///     .map(|m| m.range.into())
@@ -341,9 +348,9 @@ pub mod channel {
       sink.scan(scratch.make_mut()?, data).await
     }
 
-    pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
+    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
       let Self { sink, scratch, .. } = self;
-      sink.flush_eod(scratch.make_mut()?)
+      sink.flush_eod(scratch.make_mut()?).await
     }
   }
 
@@ -385,6 +392,7 @@ pub mod channel {
       *const u8,
       Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
     )>,
+    shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
   }
 
   impl<'code> StreamWriter<'code> {
@@ -392,6 +400,7 @@ pub mod channel {
       Self {
         inner,
         write_future: None,
+        shutdown_future: None,
       }
     }
   }
@@ -444,8 +453,36 @@ pub mod channel {
       Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      Poll::Ready(self.inner.flush_eod().map_err(io::Error::other))
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+      if self.shutdown_future.is_some() {
+        let ret = ready!(self
+          .as_mut()
+          .shutdown_future
+          .as_mut()
+          .unwrap()
+          .as_mut()
+          .poll(cx));
+
+        self.shutdown_future = None;
+
+        Poll::Ready(ret)
+      } else {
+        let s: *mut Self = self.as_mut().get_mut();
+        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
+          unsafe { &mut *s }
+            .inner
+            .flush_eod()
+            .map_err(io::Error::other),
+        );
+
+        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+          return Poll::Ready(ret);
+        }
+
+        self.shutdown_future = Some(fut);
+
+        Poll::Pending
+      }
     }
 
     /* TODO: add vectored write support if vectored streaming databases
