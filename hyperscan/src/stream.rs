@@ -50,7 +50,9 @@ impl LiveStream {
     Ok(unsafe { Self::from_native(ret) })
   }
 
-  pub fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
+  /// # Safety
+  /// `self` and `source` must have been opened against the same db!
+  pub unsafe fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_reset_and_copy_stream(self.as_mut_native(), source.as_ref_native())
     })
@@ -72,10 +74,10 @@ impl LiveStream {
   }
 }
 
+/// NB: [`Clone::clone_from()`] is not implemented because
+/// [`Self::try_clone_from()`] is unsafe!
 impl Clone for LiveStream {
   fn clone(&self) -> Self { self.try_clone().unwrap() }
-
-  fn clone_from(&mut self, source: &Self) { self.try_clone_from(source).unwrap(); }
 }
 
 impl Resource for LiveStream {
@@ -650,10 +652,6 @@ pub mod compress {
       Ok(Self { buf })
     }
 
-    /* TODO: a .expand_into() method which re-uses the storage of an &mut
-     * Streamer argument (similar to .try_clone_from() elsewhere in this file).
-     * Would require patching the hyperscan API again to expose a method that
-     * separates the "reset" from the "expand into" operation. */
     pub fn expand(&self, db: &Database) -> Result<LiveStream, HyperscanRuntimeError> {
       let mut inner = ptr::null_mut();
       HyperscanRuntimeError::from_native(unsafe {
@@ -665,6 +663,17 @@ pub mod compress {
         )
       })?;
       Ok(unsafe { LiveStream::from_native(inner) })
+    }
+
+    /// # Safety
+    /// `self` and `to` must have been opened against the same db!
+    pub unsafe fn expand_into(&self, to: &mut LiveStream) -> Result<(), HyperscanRuntimeError> {
+      HyperscanRuntimeError::from_native(hs::hs_direct_expand_into(
+        to.as_mut_native(),
+        mem::transmute(self.buf.as_ptr()),
+        self.buf.len(),
+      ))?;
+      Ok(())
     }
   }
 }

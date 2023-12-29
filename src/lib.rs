@@ -48,10 +48,10 @@ pub mod versions {
     use super::hex;
 
     pub const PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/chimera.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/cargo-patches-v0.tar.gz";
     pub const PATCHES_SHA256SUM: [u8; 32] =
-      hex!("9c235e0f694d701daa5c8f05830a5321141dd45e33cbf4bee10201b98c4f5530");
-    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-chimera";
+      hex!("9388a44114bcd40f7cfbe427785b79552efaee9baa1db80a4314d752215537d1");
+    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-cargo-patches-v0";
   }
 
   /// The most recently released version of spack.
