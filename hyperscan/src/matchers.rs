@@ -291,28 +291,11 @@ pub mod stream {
   }
 
   #[repr(transparent)]
-  pub struct SyncStreamMatcher<'code> {
+  pub struct StreamMatcher<'code> {
     handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code),
   }
 
-  #[repr(transparent)]
-  pub struct SendStreamMatcher<'code>(SyncStreamMatcher<'code>);
-
-  impl<'code> SendStreamMatcher<'code> {
-    pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code)) -> Self {
-      Self(SyncStreamMatcher::new(handler))
-    }
-  }
-
-  static_assertions::assert_eq_size!(
-    &'static mut (dyn FnMut(StreamMatch) -> MatchResult+Send),
-    &'static mut (dyn FnMut(StreamMatch) -> MatchResult)
-  );
-  static_assertions::assert_eq_size!(SyncStreamMatcher<'static>, SendStreamMatcher<'static>);
-
-  unsafe impl<'code> Send for SendStreamMatcher<'code> {}
-
-  impl<'code> SyncStreamMatcher<'code> {
+  impl<'code> StreamMatcher<'code> {
     pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code)) -> Self {
       Self { handler }
     }
@@ -320,7 +303,26 @@ pub mod stream {
     pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult { (self.handler)(m) }
   }
 
-  pub(crate) extern "C" fn match_sync_slice_stream(
+  #[repr(transparent)]
+  pub(crate) struct SendStreamMatcher<'code>(StreamMatcher<'code>);
+
+  impl<'code> SendStreamMatcher<'code> {
+    pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code)) -> Self {
+      Self(StreamMatcher::new(handler))
+    }
+
+    pub fn as_mut_basic(&mut self) -> &mut StreamMatcher<'code> { unsafe { mem::transmute(self) } }
+  }
+
+  static_assertions::assert_eq_size!(
+    &'static mut (dyn FnMut(StreamMatch) -> MatchResult+Send),
+    &'static mut (dyn FnMut(StreamMatch) -> MatchResult)
+  );
+  static_assertions::assert_eq_size!(StreamMatcher<'static>, SendStreamMatcher<'static>);
+
+  unsafe impl<'code> Send for SendStreamMatcher<'code> {}
+
+  pub(crate) extern "C" fn match_slice_stream(
     id: c_uint,
     from: c_ulonglong,
     to: c_ulonglong,
@@ -329,7 +331,7 @@ pub mod stream {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut matcher: Pin<&mut SyncStreamMatcher> =
+    let mut matcher: Pin<&mut StreamMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
 
     let m = StreamMatch {

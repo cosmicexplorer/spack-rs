@@ -297,7 +297,7 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    stream::{match_sync_slice_stream, SyncStreamMatcher},
+    stream::{match_slice_stream, StreamMatcher},
     vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
@@ -558,7 +558,7 @@ impl Scratch {
   pub fn scan_sync_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut SyncStreamMatcher<'code>,
+    matcher: &mut StreamMatcher<'code>,
     data: ByteSlice<'data>,
   ) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
@@ -569,7 +569,7 @@ impl Scratch {
         /* NB: ignore flags for now! */
         0,
         self.as_mut_native().unwrap(),
-        Some(match_sync_slice_stream),
+        Some(match_slice_stream),
         mem::transmute(matcher),
       )
     })
@@ -583,13 +583,13 @@ impl Scratch {
   pub fn flush_eod_sync<'code>(
     &mut self,
     live: &mut LiveStream,
-    matcher: &mut SyncStreamMatcher<'code>,
+    matcher: &mut StreamMatcher<'code>,
   ) -> Result<(), HyperscanRuntimeError> {
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),
         self.as_mut_native().unwrap(),
-        Some(match_sync_slice_stream),
+        Some(match_slice_stream),
         mem::transmute(matcher),
       )
     })
@@ -1997,7 +1997,7 @@ pub mod chimera {
 }
 
 #[cfg(feature = "async")]
-mod async_utils {
+pub(crate) mod async_utils {
   use futures_core::stream::Stream;
   use tokio::sync::mpsc;
 
