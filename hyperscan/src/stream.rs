@@ -273,18 +273,14 @@ pub mod channel {
       Ok(())
     }
 
-    pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), ScanError> {
-      /* Make the mutable resources static. */
+    pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
       let Self { live, hf, .. } = self;
-      let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
-      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
 
       /* Generate a vtable pointing to the heap-allocated handler function hf. */
       let hf: &mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code) = hf;
-      let matcher = SendStreamMatcher::new(hf);
-      let mut matcher: SendStreamMatcher<'static> = unsafe { mem::transmute(matcher) };
+      let mut matcher = SendStreamMatcher::new(hf);
 
-      task::spawn_blocking(move || scratch.flush_eod_sync(live, matcher.as_mut_basic())).await??;
+      scratch.flush_eod_sync(live.make_mut()?, matcher.as_mut_basic())?;
       Ok(())
     }
 
@@ -303,7 +299,6 @@ pub mod channel {
   /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
   ///   use hyperscan::{expression::*, flags::*, stream::channel::*, matchers::*};
   ///   use futures_util::StreamExt;
-  ///   // use tokio::io::AsyncWriteExt;
   ///   use std::ops::Range;
   ///
   ///   let expr: Expression = "a+".parse()?;
@@ -315,10 +310,8 @@ pub mod channel {
   ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
   ///   let mut sink = ScratchStreamSinkChannel::new(sink, scratch);
   ///
-  ///   // sink.write_all(b"aardvark").await.unwrap();
-  ///   // sink.shutdown().await.unwrap();
   ///   sink.scan("aardvark".into()).await?;
-  ///   sink.flush_eod().await?;
+  ///   sink.flush_eod()?;
   ///
   ///   let matches: Vec<Range<usize>> = sink.sink.collect_matches()
   ///     .map(|m| m.range.into())
@@ -333,23 +326,13 @@ pub mod channel {
   pub struct ScratchStreamSinkChannel<'code> {
     pub sink: StreamSinkChannel<'code>,
     pub scratch: Box<dyn Handle<R=Scratch>+Send+'code>,
-    #[allow(clippy::type_complexity)]
-    write_future: Option<(
-      *const u8,
-      Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
-    )>,
-    shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
   }
-
-  unsafe impl<'code> Send for ScratchStreamSinkChannel<'code> {}
 
   impl<'code> ScratchStreamSinkChannel<'code> {
     pub fn new(sink: StreamSinkChannel<'code>, scratch: impl Handle<R=Scratch>+Send+'code) -> Self {
       Self {
         sink,
         scratch: Box::new(scratch),
-        write_future: None,
-        shutdown_future: None,
       }
     }
 
@@ -358,13 +341,64 @@ pub mod channel {
       sink.scan(scratch.make_mut()?, data).await
     }
 
-    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
+    pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
       let Self { sink, scratch, .. } = self;
-      sink.flush_eod(scratch.make_mut()?).await
+      sink.flush_eod(scratch.make_mut()?)
     }
   }
 
-  impl<'code> io::AsyncWrite for ScratchStreamSinkChannel<'code> {
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
+  ///   use hyperscan::{expression::*, flags::*, stream::channel::*, matchers::*};
+  ///   use futures_util::StreamExt;
+  ///   use tokio::io::AsyncWriteExt;
+  ///   use std::ops::Range;
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   let mut match_fn = |_: &_| MatchResult::Continue;
+  ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
+  ///   let sink = ScratchStreamSinkChannel::new(sink, scratch);
+  ///   let mut sink = StreamWriter::new(sink);
+  ///
+  ///   sink.write_all(b"aardvark").await.unwrap();
+  ///   sink.shutdown().await.unwrap();
+  ///
+  ///   let matches: Vec<Range<usize>> = sink.inner.sink.collect_matches()
+  ///     .map(|m| m.range.into())
+  ///     .collect()
+  ///     .await;
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
+  ///   Ok(())
+  /// })}
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub struct StreamWriter<'code> {
+    pub inner: ScratchStreamSinkChannel<'code>,
+    #[allow(clippy::type_complexity)]
+    write_future: Option<(
+      *const u8,
+      Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
+    )>,
+  }
+
+  impl<'code> StreamWriter<'code> {
+    pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
+      Self {
+        inner,
+        write_future: None,
+      }
+    }
+  }
+
+  unsafe impl<'code> Send for StreamWriter<'code> {}
+
+  impl<'code> io::AsyncWrite for StreamWriter<'code> {
     fn poll_write(
       mut self: Pin<&mut Self>,
       cx: &mut Context<'_>,
@@ -388,6 +422,7 @@ pub mod channel {
         let buf_len = buf.len();
         let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
           unsafe { &mut *s }
+            .inner
             .scan(ByteSlice::from_slice(unsafe {
               slice::from_raw_parts(buf_ptr, buf_len)
             }))
@@ -409,32 +444,8 @@ pub mod channel {
       Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-      if self.shutdown_future.is_some() {
-        let ret = ready!(self
-          .as_mut()
-          .shutdown_future
-          .as_mut()
-          .unwrap()
-          .as_mut()
-          .poll(cx));
-
-        self.shutdown_future = None;
-
-        Poll::Ready(ret)
-      } else {
-        let s: *mut Self = self.as_mut().get_mut();
-        let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> =
-          Box::pin(unsafe { &mut *s }.flush_eod().map_err(io::Error::other));
-
-        if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
-          return Poll::Ready(ret);
-        }
-
-        self.shutdown_future = Some(fut);
-
-        Poll::Pending
-      }
+    fn poll_shutdown(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+      Poll::Ready(self.inner.flush_eod().map_err(io::Error::other))
     }
 
     /* TODO: add vectored write support if vectored streaming databases
