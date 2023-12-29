@@ -10,7 +10,7 @@
 
 use std::{
   cmp, fmt, mem, ops,
-  os::raw::{c_char, c_uint},
+  os::raw::{c_char, c_uint, c_ulonglong},
   slice, str,
 };
 
@@ -512,4 +512,37 @@ impl<'string, 'slice> DoubleEndedIterator for VectorIter<'string, 'slice> {
 
     None
   }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Range {
+  pub from: usize,
+  pub to: usize,
+}
+
+static_assertions::assert_eq_size!(Range, ops::Range<usize>);
+static_assertions::assert_eq_size!(usize, c_ulonglong);
+static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
+
+impl Range {
+  pub const fn from_range(x: ops::Range<usize>) -> Self {
+    let ops::Range { start, end } = x;
+    Self {
+      from: start,
+      to: end,
+    }
+  }
+
+  pub const fn into_range(self) -> ops::Range<usize> {
+    let Self { from, to } = self;
+    from..to
+  }
+}
+
+impl From<ops::Range<usize>> for Range {
+  fn from(x: ops::Range<usize>) -> Self { Self::from_range(x) }
+}
+
+impl From<Range> for ops::Range<usize> {
+  fn from(x: Range) -> Self { x.into_range() }
 }

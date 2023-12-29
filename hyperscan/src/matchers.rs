@@ -235,15 +235,7 @@ pub use vectored_slice::VectoredMatch;
 #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream {
   use super::*;
-  use crate::handle::{Handle, Resource};
-
-  #[cfg(feature = "async")]
-  use tokio::sync::mpsc;
-
-  use std::{
-    any::Any,
-    ops::{Deref, DerefMut},
-  };
+  use crate::sources::Range;
 
   // ///```
   // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -292,20 +284,36 @@ pub mod stream {
   // /// # Ok(())
   // /// # })}
   // /// ```
-  /* FIXME: Copy! */
-  #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct StreamMatch {
     pub id: ExpressionIndex,
-    pub range: ops::Range<usize>,
+    pub range: Range,
   }
 
   #[repr(transparent)]
   pub struct SyncStreamMatcher<'code> {
-    handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult),
+    handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code),
   }
 
+  #[repr(transparent)]
+  pub struct SendStreamMatcher<'code>(SyncStreamMatcher<'code>);
+
+  impl<'code> SendStreamMatcher<'code> {
+    pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code)) -> Self {
+      Self(SyncStreamMatcher::new(handler))
+    }
+  }
+
+  static_assertions::assert_eq_size!(
+    &'static mut (dyn FnMut(StreamMatch) -> MatchResult+Send),
+    &'static mut (dyn FnMut(StreamMatch) -> MatchResult)
+  );
+  static_assertions::assert_eq_size!(SyncStreamMatcher<'static>, SendStreamMatcher<'static>);
+
+  unsafe impl<'code> Send for SendStreamMatcher<'code> {}
+
   impl<'code> SyncStreamMatcher<'code> {
-    pub fn new<HF: FnMut(StreamMatch) -> MatchResult>(handler: &'code mut HF) -> Self {
+    pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code)) -> Self {
       Self { handler }
     }
 
@@ -321,10 +329,13 @@ pub mod stream {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut matcher: Pin<&mut SyncStreamMatcher<'_>> =
+    let mut matcher: Pin<&mut SyncStreamMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
 
-    let m = StreamMatch { id, range };
+    let m = StreamMatch {
+      id,
+      range: range.into(),
+    };
 
     let result = matcher.handle_match(m);
     result.into_native()
