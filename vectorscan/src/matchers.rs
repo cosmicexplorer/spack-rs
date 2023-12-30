@@ -58,7 +58,7 @@ pub enum MatchResult {
   /// [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
   /// or [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan)
   /// for the same stream will also immediately return with
-  /// [`ScanTerminated`](crate::error::HyperscanRuntimeError::ScanTerminated).
+  /// [`ScanTerminated`](crate::error::VectorscanRuntimeError::ScanTerminated).
   /* This is documented to be just any non-zero value at the moment. */
   CeaseMatching = 1,
 }
@@ -378,8 +378,8 @@ pub mod stream {
   use crate::sources::stream::Range;
 
   // ///```
-  // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  // tokio_test::block_on(async { /// use hyperscan::{expression::*,
+  // /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  // tokio_test::block_on(async { /// use vectorscan::{expression::*,
   // matchers::*, flags::*, stream::*}; /// use futures_util::StreamExt;
   // ///
   // /// let expr: Expression = r"\b\w+\b".parse()?;

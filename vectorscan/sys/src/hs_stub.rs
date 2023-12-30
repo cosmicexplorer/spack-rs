@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 /// This module stubs out the values from the native bindings that are exposed
-/// to the `hyperscan-async` crate's public API (which are needed to generate
+/// to the `vectorscan` crate's public API (which are needed to generate
 /// docs). They are never used at runtime.
 #[allow(warnings)]
 pub mod root {

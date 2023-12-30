@@ -18,12 +18,12 @@
 //!
 //!```
 //! #[cfg(feature = "compiler")]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//!   use hyperscan::{expression::*, flags::*, matchers::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, matchers::*};
 //!   use jemallocator::Jemalloc;
 //!
 //!   // Use jemalloc for all hyperscan allocations.
-//!   hyperscan::alloc::set_allocator(Jemalloc.into())?;
+//!   vectorscan::alloc::set_allocator(Jemalloc.into())?;
 //!
 //!   // Everything works as normal.
 //!   let expr: Expression = "(he)ll".parse()?;
@@ -51,8 +51,8 @@
 //!
 //!```
 //! #[cfg(feature = "compiler")]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//!   use hyperscan::{expression::*, flags::*, database::*, alloc::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, database::*, alloc::*};
 //!   use std::{alloc::System, mem::ManuallyDrop};
 //!
 //!   // Wrap the standard Rust System allocator.
@@ -101,8 +101,8 @@
 //!
 //!```
 //! #[cfg(feature = "compiler")]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//!   use hyperscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, database::*, matchers::*, alloc::*};
 //!   use std::{alloc::System, mem::ManuallyDrop};
 //!
 //!   // Set the process-global allocator to use for Database instances:
@@ -165,12 +165,12 @@
 //!
 //! # Allocation Failures
 //! Allocation failure should cause hyperscan methods to fail with
-//! [`HyperscanRuntimeError::NoMem`]:
+//! [`VectorscanRuntimeError::NoMem`]:
 //!
 //!```
 //! #[cfg(feature = "compiler")]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//!   use hyperscan::{expression::*, flags::*, matchers::*, alloc::*, error::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, matchers::*, alloc::*, error::*};
 //!   use std::{alloc::{GlobalAlloc, Layout}, mem::ManuallyDrop, ptr};
 //!
 //!   let expr: Expression = "asdf".parse()?;
@@ -191,12 +191,12 @@
 //!   // Most allocation methods fail with NoMem:
 //!   assert!(matches!(
 //!     db.allocate_scratch(),
-//!     Err(HyperscanRuntimeError::NoMem),
+//!     Err(VectorscanRuntimeError::NoMem),
 //!   ));
 //!
 //!   // Compile allocation errors fail slightly differently:
 //!   match expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK) {
-//!     Err(HyperscanCompileError::Compile(CompileError { message, expression })) => {
+//!     Err(VectorscanCompileError::Compile(CompileError { message, expression })) => {
 //!       assert!(message == "Unable to allocate memory.");
 //!       assert!(expression == Some(ExpressionIndex(0)));
 //!     },
@@ -208,7 +208,7 @@
 //! # fn main() {}
 //! ```
 
-use crate::{error::HyperscanRuntimeError, hs};
+use crate::{error::VectorscanRuntimeError, hs};
 
 use indexmap::IndexMap;
 use libc;
@@ -252,7 +252,7 @@ pub trait MallocLikeAllocator {
 /// This struct also supports introspecting the current allocation table with
 /// [`Self::current_allocations()`]:
 ///```
-/// use hyperscan::alloc::{LayoutTracker, MallocLikeAllocator};
+/// use vectorscan::alloc::{LayoutTracker, MallocLikeAllocator};
 /// use std::{slice, alloc::System};
 ///
 /// let tracker = LayoutTracker::new(System.into());
@@ -388,9 +388,9 @@ allocator![DB_ALLOCATOR, db_alloc_func, db_free_func];
 /// instances.
 pub fn set_db_allocator(
   tracker: LayoutTracker,
-) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
+) -> Result<Option<LayoutTracker>, VectorscanRuntimeError> {
   let ret = DB_ALLOCATOR.write().replace(tracker);
-  HyperscanRuntimeError::from_native(unsafe {
+  VectorscanRuntimeError::from_native(unsafe {
     hs::hs_set_database_allocator(Some(db_alloc_func), Some(db_free_func))
   })?;
   Ok(ret)
@@ -406,9 +406,9 @@ allocator![MISC_ALLOCATOR, misc_alloc_func, misc_free_func];
 /// [`MiscAllocation`](crate::database::alloc::MiscAllocation) instances.
 pub fn set_misc_allocator(
   tracker: LayoutTracker,
-) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
+) -> Result<Option<LayoutTracker>, VectorscanRuntimeError> {
   let ret = MISC_ALLOCATOR.write().replace(tracker);
-  HyperscanRuntimeError::from_native(unsafe {
+  VectorscanRuntimeError::from_native(unsafe {
     hs::hs_set_misc_allocator(Some(misc_alloc_func), Some(misc_free_func))
   })?;
   Ok(ret)
@@ -425,9 +425,9 @@ allocator![SCRATCH_ALLOCATOR, scratch_alloc_func, scratch_free_func];
 /// Reset the allocator used for [`Scratch`](crate::state::Scratch) instances.
 pub fn set_scratch_allocator(
   tracker: LayoutTracker,
-) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
+) -> Result<Option<LayoutTracker>, VectorscanRuntimeError> {
   let ret = SCRATCH_ALLOCATOR.write().replace(tracker);
-  HyperscanRuntimeError::from_native(unsafe {
+  VectorscanRuntimeError::from_native(unsafe {
     hs::hs_set_scratch_allocator(Some(scratch_alloc_func), Some(scratch_free_func))
   })?;
   Ok(ret)
@@ -444,9 +444,9 @@ allocator![STREAM_ALLOCATOR, stream_alloc_func, stream_free_func];
 /// instances.
 pub fn set_stream_allocator(
   tracker: LayoutTracker,
-) -> Result<Option<LayoutTracker>, HyperscanRuntimeError> {
+) -> Result<Option<LayoutTracker>, VectorscanRuntimeError> {
   let ret = STREAM_ALLOCATOR.write().replace(tracker);
-  HyperscanRuntimeError::from_native(unsafe {
+  VectorscanRuntimeError::from_native(unsafe {
     hs::hs_set_stream_allocator(Some(stream_alloc_func), Some(stream_free_func))
   })?;
   Ok(ret)
@@ -464,12 +464,12 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
 ///
 ///```
 /// #[cfg(feature = "compiler")]
-/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-///   use hyperscan::{expression::*, flags::*, matchers::*};
+/// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+///   use vectorscan::{expression::*, flags::*, matchers::*};
 ///   use jemallocator::Jemalloc;
 ///
 ///   // Use jemalloc for all hyperscan allocations.
-///   hyperscan::alloc::set_allocator(Jemalloc.into())?;
+///   vectorscan::alloc::set_allocator(Jemalloc.into())?;
 ///
 ///   // Everything works as normal.
 ///   let expr: Expression = "(he)ll".parse()?;
@@ -491,7 +491,7 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
 /// ```
 pub fn set_allocator(
   allocator: Arc<impl GlobalAlloc+'static>,
-) -> Result<(), HyperscanRuntimeError> {
+) -> Result<(), VectorscanRuntimeError> {
   for f in [
     set_db_allocator,
     set_misc_allocator,
@@ -516,12 +516,12 @@ pub fn set_allocator(
 /// It can wrap nonstandard allocators such as [jemalloc](https://docs.rs/jemallocator):
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+/// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+/// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
 /// use jemallocator::Jemalloc;
 ///
 /// // Use jemalloc for all chimera allocations.
-/// hyperscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
+/// vectorscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
 ///
 /// // Everything works as normal.
 /// let expr: ChimeraExpression = "(he)ll".parse()?;
@@ -546,8 +546,8 @@ pub fn set_allocator(
 /// [`LayoutTracker::current_allocations()`]:
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-/// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, alloc::{*, chimera::*}};
+/// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+/// use vectorscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, alloc::{*, chimera::*}};
 /// use std::{alloc::System, mem::ManuallyDrop};
 ///
 /// // Wrap the standard Rust System allocator.
@@ -595,8 +595,8 @@ pub fn set_allocator(
 /// [`ChimeraRuntimeError::NoMem`](crate::error::chimera::ChimeraRuntimeError::NoMem):
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::*, alloc::chimera::*, error::chimera::*};
+/// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+/// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::*, alloc::chimera::*, error::chimera::*};
 /// use std::{alloc::{GlobalAlloc, Layout}, mem::ManuallyDrop, ptr};
 ///
 /// let expr: ChimeraExpression = "asdf".parse()?;
@@ -723,12 +723,12 @@ pub mod chimera {
   /// Example: use [jemalloc](https://docs.rs/jemallocator) for all chimera allocations:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-  /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+  /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+  /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
   /// use jemallocator::Jemalloc;
   ///
   /// // Use jemalloc for all chimera allocations.
-  /// hyperscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
+  /// vectorscan::alloc::chimera::set_chimera_allocator(Jemalloc.into())?;
   ///
   /// // Everything works as normal.
   /// let expr: ChimeraExpression = "(he)ll".parse()?;

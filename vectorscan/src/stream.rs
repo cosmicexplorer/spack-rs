@@ -5,7 +5,7 @@
 use crate::sources::vectored::VectoredByteSlices;
 use crate::{
   database::Database,
-  error::{CompressionError, HyperscanRuntimeError},
+  error::{CompressionError, VectorscanRuntimeError},
   hs,
   matchers::stream::StreamMatcher,
   sources::ByteSlice,
@@ -32,9 +32,9 @@ impl LiveStream {
 
   pub fn as_mut_native(&mut self) -> &mut NativeStream { unsafe { &mut *self.0 } }
 
-  pub fn try_open(db: &Database) -> Result<Self, HyperscanRuntimeError> {
+  pub fn try_open(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_open_stream(
         db.as_ref_native(),
         /* NB: ignoring flags for now! */
@@ -45,9 +45,9 @@ impl LiveStream {
     Ok(unsafe { Self::from_native(ret) })
   }
 
-  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+  pub fn try_clone(&self) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_copy_stream(&mut ret, self.as_ref_native())
     })?;
     Ok(unsafe { Self::from_native(ret) })
@@ -55,18 +55,18 @@ impl LiveStream {
 
   /// # Safety
   /// `self` and `source` must have been opened against the same db!
-  pub unsafe fn try_clone_from(&mut self, source: &Self) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe {
+  pub unsafe fn try_clone_from(&mut self, source: &Self) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_direct_reset_and_copy_stream(self.as_mut_native(), source.as_ref_native())
     })
   }
 
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
+  pub unsafe fn try_drop(&mut self) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
   }
 
-  pub fn try_reset(&mut self) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
+  pub fn try_reset(&mut self) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
   }
 
   pub fn compress(
@@ -84,7 +84,7 @@ impl Clone for LiveStream {
 }
 
 impl Resource for LiveStream {
-  type Error = HyperscanRuntimeError;
+  type Error = VectorscanRuntimeError;
 
   fn deep_clone(&self) -> Result<Self, Self::Error> { self.try_clone() }
 
@@ -121,7 +121,7 @@ impl<'code> StreamSink<'code> {
     &mut self,
     scratch: &mut Scratch,
     data: ByteSlice<'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.scan_sync_stream(live.make_mut()?, matcher, data)
   }
@@ -132,23 +132,23 @@ impl<'code> StreamSink<'code> {
     &mut self,
     scratch: &mut Scratch,
     data: VectoredByteSlices<'data, 'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.scan_sync_vectored_stream(live.make_mut()?, matcher, data)
   }
 
-  pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
+  pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), VectorscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.flush_eod_sync(live.make_mut()?, matcher)
   }
 
-  pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> { self.live.make_mut()?.try_reset() }
+  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.try_reset() }
 }
 
 ///```
 /// #[cfg(feature = "compiler")]
-/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-///   use hyperscan::{expression::*, flags::*, stream::*, matchers::{*, stream::*}};
+/// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+///   use vectorscan::{expression::*, flags::*, stream::*, matchers::{*, stream::*}};
 ///   use std::{ops::Range, mem};
 ///
 ///   let expr: Expression = "a+".parse()?;
@@ -206,7 +206,7 @@ impl<'code> ScratchStreamSink<'code> {
     }
   }
 
-  pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), HyperscanRuntimeError> {
+  pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), VectorscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.scan(scratch.make_mut()?, data)
   }
@@ -216,12 +216,12 @@ impl<'code> ScratchStreamSink<'code> {
   pub fn scan_vectored<'data>(
     &mut self,
     data: VectoredByteSlices<'data, 'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.scan_vectored(scratch.make_mut()?, data)
   }
 
-  pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
+  pub fn flush_eod(&mut self) -> Result<(), VectorscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.flush_eod(scratch.make_mut()?)
   }
@@ -304,7 +304,7 @@ pub mod channel {
   #[cfg(feature = "vectored")]
   use crate::sources::vectored::VectoredByteSlices;
   use crate::{
-    error::{HyperscanRuntimeError, ScanError},
+    error::{VectorscanRuntimeError, ScanError},
     matchers::{
       stream::{SendStreamMatcher, StreamMatch},
       MatchResult,
@@ -419,15 +419,15 @@ pub mod channel {
       crate::async_utils::UnboundedReceiverStream(self.rx)
     }
 
-    pub fn reset(&mut self) -> Result<(), HyperscanRuntimeError> {
+    pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> {
       self.live.make_mut()?.try_reset()
     }
   }
 
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, stream::channel::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+  ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*};
   ///   use futures_util::StreamExt;
   ///   use std::ops::Range;
   ///
@@ -509,8 +509,8 @@ pub mod channel {
 
     ///```
     /// #[cfg(feature = "compiler")]
-    /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-    ///   use hyperscan::{expression::*, flags::*, stream::channel::{*, tokio_impls::*}, matchers::*};
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+    ///   use vectorscan::{expression::*, flags::*, stream::channel::{*, tokio_impls::*}, matchers::*};
     ///   use futures_util::StreamExt;
     ///   use tokio::io::AsyncWriteExt;
     ///   use std::ops::Range;
@@ -689,7 +689,7 @@ pub mod compress {
   use super::{LiveStream, NativeStream};
   use crate::{
     database::Database,
-    error::{CompressionError, HyperscanRuntimeError},
+    error::{CompressionError, VectorscanRuntimeError},
     hs,
   };
 
@@ -752,7 +752,7 @@ pub mod compress {
       /* If we already have an existing buffer to play around with, try that right
        * off to see if it was enough to avoid further allocations. */
       if let Some(ref mut buf) = into.current_buf() {
-        match HyperscanRuntimeError::from_native(unsafe {
+        match VectorscanRuntimeError::from_native(unsafe {
           hs::hs_compress_stream(
             live.as_ref_native(),
             mem::transmute(buf.as_mut_ptr()),
@@ -760,7 +760,7 @@ pub mod compress {
             &mut required_space,
           )
         }) {
-          Err(HyperscanRuntimeError::InsufficientSpace) => (),
+          Err(VectorscanRuntimeError::InsufficientSpace) => (),
           Err(e) => return Err(e.into()),
           Ok(()) => {
             debug_assert!(buf.capacity() >= required_space);
@@ -777,8 +777,8 @@ pub mod compress {
          * before trying to allocate anything by providing
          * NULL for the data pointer. */
         assert_eq!(
-          Err(HyperscanRuntimeError::InsufficientSpace),
-          HyperscanRuntimeError::from_native(unsafe {
+          Err(VectorscanRuntimeError::InsufficientSpace),
+          VectorscanRuntimeError::from_native(unsafe {
             hs::hs_compress_stream(
               live.as_ref_native(),
               ptr::null_mut(),
@@ -801,7 +801,7 @@ pub mod compress {
         },
         ReserveResponse::MadeSpace(mut buf) => {
           let mut allocated_space: usize = 0;
-          HyperscanRuntimeError::from_native(unsafe {
+          VectorscanRuntimeError::from_native(unsafe {
             hs::hs_compress_stream(
               live.as_ref_native(),
               mem::transmute(buf.as_mut_ptr()),
@@ -823,9 +823,9 @@ pub mod compress {
       Ok(Self { buf })
     }
 
-    pub fn expand(&self, db: &Database) -> Result<LiveStream, HyperscanRuntimeError> {
+    pub fn expand(&self, db: &Database) -> Result<LiveStream, VectorscanRuntimeError> {
       let mut inner = ptr::null_mut();
-      HyperscanRuntimeError::from_native(unsafe {
+      VectorscanRuntimeError::from_native(unsafe {
         hs::hs_expand_stream(
           db.as_ref_native(),
           &mut inner,
@@ -838,8 +838,8 @@ pub mod compress {
 
     /// # Safety
     /// `self` and `to` must have been opened against the same db!
-    pub unsafe fn expand_into(&self, to: &mut LiveStream) -> Result<(), HyperscanRuntimeError> {
-      HyperscanRuntimeError::from_native(hs::hs_direct_expand_into(
+    pub unsafe fn expand_into(&self, to: &mut LiveStream) -> Result<(), VectorscanRuntimeError> {
+      VectorscanRuntimeError::from_native(hs::hs_direct_expand_into(
         to.as_mut_native(),
         mem::transmute(self.buf.as_ptr()),
         self.buf.len(),
@@ -853,8 +853,8 @@ pub mod compress {
       &self,
       db: &Database,
       to: *mut NativeStream,
-    ) -> Result<(), HyperscanRuntimeError> {
-      HyperscanRuntimeError::from_native(hs::hs_expand_stream_at(
+    ) -> Result<(), VectorscanRuntimeError> {
+      VectorscanRuntimeError::from_native(hs::hs_expand_stream_at(
         db.as_ref_native(),
         mem::transmute(self.buf.as_ptr()),
         self.buf.len(),
@@ -865,9 +865,9 @@ pub mod compress {
 }
 
 /* ///``` */
-/* /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
  * tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*,
+/* /// use vectorscan::{expression::*, matchers::*, flags::*, stream::*,
  * error::*}; */
 /* /// use futures_util::StreamExt; */
 /* /// use tokio::io::AsyncWriteExt; */
@@ -894,7 +894,7 @@ pub mod compress {
 /* /// if let Err(e) = s.write_all(msg.as_bytes()).await { */
 /* ///   let e = *e.into_inner().unwrap().downcast::<ScanError>().unwrap(); */
 /* ///   if let ScanError::ReturnValue(ref e) = e { */
-/* ///     assert_eq!(*e, HyperscanRuntimeError::ScanTerminated); */
+/* ///     assert_eq!(*e, VectorscanRuntimeError::ScanTerminated); */
 /* ///   } else { unreachable!(); }; */
 /* /// } else { unreachable!(); } */
 /* /// s.shutdown().await.unwrap(); */
@@ -914,9 +914,9 @@ pub mod compress {
 /* } */
 
 /* ///``` */
-/* /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
  * tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, flags::*, stream::*}; */
+/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
 /* /// use futures_util::StreamExt; */
 /* /// */
 /* /// let expr: Expression = "a+".parse()?; */
@@ -952,9 +952,9 @@ pub mod compress {
 /* } */
 
 /* ///``` */
-/* /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
  * tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, matchers::*, flags::*, stream::*,
+/* /// use vectorscan::{expression::*, matchers::*, flags::*, stream::*,
  * error::*}; */
 /* /// use futures_util::StreamExt; */
 /* /// use tokio::io::AsyncWriteExt; */
@@ -987,7 +987,7 @@ pub mod compress {
 /* /// if let Err(e) = s2.write_all(b"asdfasdfasdf").await { */
 /* ///   let e = *e.into_inner().unwrap().downcast::<ScanError>().unwrap(); */
 /* ///   if let ScanError::ReturnValue(ref e) = e { */
-/* ///     assert_eq!(*e, HyperscanRuntimeError::ScanTerminated); */
+/* ///     assert_eq!(*e, VectorscanRuntimeError::ScanTerminated); */
 /* ///   } else { unreachable!(); } */
 /* /// } else { unreachable!(); } */
 /* /// s2.shutdown().await.unwrap(); */
@@ -1006,9 +1006,9 @@ pub mod compress {
 /* /// **TODO: docs** */
 /* /// */
 /* ///``` */
-/* /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
  * tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, flags::*, stream::*}; */
+/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
 /* /// use futures_util::StreamExt; */
 /* /// use tokio::io::AsyncWriteExt; */
 /* /// */
@@ -1039,14 +1039,14 @@ pub mod compress {
 /* /// # Ok(()) */
 /* /// # })} */
 /* /// ``` */
-/* pub fn reset_no_flush(&mut self) -> Result<(), HyperscanRuntimeError> { */
+/* pub fn reset_no_flush(&mut self) -> Result<(), VectorscanRuntimeError> { */
 /* self.sink.reset_no_flush() */
 /* } */
 
 /* ///``` */
-/* /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
+/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
  * tokio_test::block_on(async { */
-/* /// use hyperscan::{expression::*, flags::*, stream::*}; */
+/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
 /* /// use futures_util::StreamExt; */
 /* /// use tokio::io::AsyncWriteExt; */
 /* /// use std::ops; */

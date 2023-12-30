@@ -1,0 +1,327 @@
+diff --git a/hs.def b/hs.def
+index 28f7877..f66d06a 100644
+--- a/hs.def
++++ b/hs.def
+@@ -15,7 +15,13 @@ EXPORTS
+    hs_database_size
+    hs_deserialize_database
+    hs_deserialize_database_at
++   hs_direct_flush_stream
++   hs_direct_free_stream
++   hs_direct_reset_and_copy_stream
++   hs_direct_reset_stream
++   hs_direct_expand_into
+    hs_expand_stream
++   hs_expand_stream_at
+    hs_expression_ext_info
+    hs_expression_info
+    hs_free_compile_error
+@@ -28,6 +34,7 @@ EXPORTS
+    hs_reset_stream
+    hs_scan
+    hs_scan_stream
++   hs_scan_vectored_stream
+    hs_scan_vector
+    hs_scratch_size
+    hs_serialize_database
+diff --git a/hs_runtime.def b/hs_runtime.def
+index 6c434be..0206577 100644
+--- a/hs_runtime.def
++++ b/hs_runtime.def
+@@ -12,7 +12,13 @@ EXPORTS
+    hs_database_size
+    hs_deserialize_database
+    hs_deserialize_database_at
++   hs_direct_flush_stream
++   hs_direct_free_stream
++   hs_direct_reset_and_copy_stream
++   hs_direct_reset_stream
++   hs_direct_expand_into
+    hs_expand_stream
++   hs_expand_stream_at
+    hs_free_database
+    hs_free_scratch
+    hs_open_stream
+@@ -21,6 +27,7 @@ EXPORTS
+    hs_reset_stream
+    hs_scan
+    hs_scan_stream
++   hs_scan_vectored_stream
+    hs_scan_vector
+    hs_scratch_size
+    hs_serialize_database
+diff --git a/src/dispatcher.c b/src/dispatcher.c
+index 9a8afa6..ad717a4 100644
+--- a/src/dispatcher.c
++++ b/src/dispatcher.c
+@@ -100,9 +100,27 @@ CREATE_DISPATCH(hs_error_t, hs_scan_stream, hs_stream_t *id, const char *data,
+                 unsigned int length, unsigned int flags, hs_scratch_t *scratch,
+                 match_event_handler onEvent, void *ctxt);
+ 
++CREATE_DISPATCH(hs_error_t, hs_scan_vectored_stream, hs_stream_t *id,
++                const char *const *data, const unsigned int *length,
++                unsigned int count, unsigned int flags, hs_scratch_t *scratch,
++                match_event_handler onEvent, void *ctxt);
++
+ CREATE_DISPATCH(hs_error_t, hs_close_stream, hs_stream_t *id,
+                 hs_scratch_t *scratch, match_event_handler onEvent, void *ctxt);
+ 
++CREATE_DISPATCH(hs_error_t, hs_direct_flush_stream, hs_stream_t *id,
++                hs_scratch_t *scratch, match_event_handler onEvent, void *ctxt);
++
++CREATE_DISPATCH(hs_error_t, hs_direct_free_stream, hs_stream_t *id);
++
++CREATE_DISPATCH(hs_error_t, hs_direct_reset_stream, hs_stream_t *id);
++
++CREATE_DISPATCH(hs_error_t, hs_direct_reset_and_copy_stream, hs_stream_t *to_id,
++                const hs_stream_t *from_id);
++
++CREATE_DISPATCH(hs_error_t, hs_direct_expand_into, hs_stream_t *to_stream,
++                const char *buf, size_t buf_size);
++
+ CREATE_DISPATCH(hs_error_t, hs_scan_vector, const hs_database_t *db,
+                 const char *const *data, const unsigned int *length,
+                 unsigned int count, unsigned int flags, hs_scratch_t *scratch,
+@@ -141,6 +159,8 @@ CREATE_DISPATCH(hs_error_t, hs_compress_stream, const hs_stream_t *stream,
+ 
+ CREATE_DISPATCH(hs_error_t, hs_expand_stream, const hs_database_t *db,
+                 hs_stream_t **stream, const char *buf,size_t buf_size);
++CREATE_DISPATCH(hs_error_t, hs_expand_stream_at, const hs_database_t *db,
++                const char *buf, size_t buf_size, hs_stream_t *to);
+ 
+ CREATE_DISPATCH(hs_error_t, hs_reset_and_expand_stream, hs_stream_t *to_stream,
+                 const char *buf, size_t buf_size, hs_scratch_t *scratch,
+diff --git a/src/hs_runtime.h b/src/hs_runtime.h
+index 6d34b6c..9ba4eff 100644
+--- a/src/hs_runtime.h
++++ b/src/hs_runtime.h
+@@ -190,6 +190,11 @@ hs_error_t HS_CDECL hs_scan_stream(hs_stream_t *id, const char *data,
+                                    hs_scratch_t *scratch,
+                                    match_event_handler onEvent, void *ctxt);
+ 
++hs_error_t HS_CDECL hs_scan_vectored_stream(
++    hs_stream_t *id, const char *const *data, const unsigned int *length,
++    unsigned int count, unsigned int flags, hs_scratch_t *scratch,
++    match_event_handler onEvent, void *ctxt);
++
+ /**
+  * Close a stream.
+  *
+@@ -232,6 +237,18 @@ hs_error_t HS_CDECL hs_scan_stream(hs_stream_t *id, const char *data,
+ hs_error_t HS_CDECL hs_close_stream(hs_stream_t *id, hs_scratch_t *scratch,
+                                     match_event_handler onEvent, void *ctxt);
+ 
++hs_error_t HS_CDECL hs_direct_flush_stream(hs_stream_t *id,
++                                           hs_scratch_t *scratch,
++                                           match_event_handler onEvent,
++                                           void *ctxt);
++
++hs_error_t HS_CDECL hs_direct_free_stream(hs_stream_t *id);
++
++hs_error_t HS_CDECL hs_direct_reset_stream(hs_stream_t *id);
++
++hs_error_t HS_CDECL hs_direct_reset_and_copy_stream(hs_stream_t *to_id,
++                                                    const hs_stream_t *from_id);
++
+ /**
+  * Reset a stream to an initial state.
+  *
+@@ -396,6 +413,10 @@ hs_error_t HS_CDECL hs_expand_stream(const hs_database_t *db,
+                                      hs_stream_t **stream, const char *buf,
+                                      size_t buf_size);
+ 
++hs_error_t HS_CDECL hs_expand_stream_at(const hs_database_t *db,
++                                        const char *buf, size_t buf_size,
++                                        hs_stream_t *to);
++
+ /**
+  * Decompresses a compressed representation created by @ref hs_compress_stream()
+  * on top of the 'to' stream. The 'to' stream will first be reset (reporting
+@@ -441,6 +462,9 @@ hs_error_t HS_CDECL hs_reset_and_expand_stream(hs_stream_t *to_stream,
+                                                match_event_handler onEvent,
+                                                void *context);
+ 
++hs_error_t HS_CDECL hs_direct_expand_into(hs_stream_t *to_stream,
++                                          const char *buf, size_t buf_size);
++
+ /**
+  * The block (non-streaming) regular expression scanner.
+  *
+diff --git a/src/runtime.c b/src/runtime.c
+index a055e5f..3356338 100644
+--- a/src/runtime.c
++++ b/src/runtime.c
+@@ -995,6 +995,117 @@ hs_error_t HS_CDECL hs_scan_stream(hs_stream_t *id, const char *data,
+     return rv;
+ }
+ 
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_scan_vectored_stream(
++    hs_stream_t *id, const char *const *data, const unsigned int *length,
++    unsigned int count, unsigned int flags, hs_scratch_t *scratch,
++    match_event_handler onEvent, void *context) {
++    if (unlikely(!id || !scratch || !data ||
++                 !validScratch(id->rose, scratch))) {
++        return HS_INVALID;
++    }
++
++    if (unlikely(markScratchInUse(scratch))) {
++        return HS_SCRATCH_IN_USE;
++    }
++
++    /* Mimicking the approach of hs_scan_vector() to scan in each line of data
++     * using hs_scan_stream_internal(). */
++    for (u32 i = 0; i < count; i++) {
++        DEBUG_PRINTF("block %u/%u offset=%llu len=%u\n", i, count, id->offset,
++                     length[i]);
++#ifdef DEBUG
++        dumpData(data[i], length[i]);
++#endif
++
++        hs_error_t ret = hs_scan_stream_internal(id, data[i], length[i], flags,
++                                                 scratch, onEvent, context);
++        if (ret != HS_SUCCESS) {
++            unmarkScratchInUse(scratch);
++            return ret;
++        }
++    }
++
++    unmarkScratchInUse(scratch);
++    return HS_SUCCESS;
++}
++
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_direct_flush_stream(hs_stream_t *id,
++                                           hs_scratch_t *scratch,
++                                           match_event_handler onEvent,
++                                           void *context) {
++    if (!id) {
++        return HS_INVALID;
++    }
++
++    if (onEvent) {
++        if (!scratch || !validScratch(id->rose, scratch)) {
++            return HS_INVALID;
++        }
++        if (unlikely(markScratchInUse(scratch))) {
++            return HS_SCRATCH_IN_USE;
++        }
++        report_eod_matches(id, scratch, onEvent, context);
++        if (unlikely(internal_matching_error(scratch))) {
++            unmarkScratchInUse(scratch);
++            /* hs_stream_free(id); */
++            return HS_UNKNOWN_ERROR;
++        }
++        unmarkScratchInUse(scratch);
++    }
++
++    /* hs_stream_free(id); */
++
++    return HS_SUCCESS;
++}
++
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_direct_free_stream(hs_stream_t *id) {
++    if (!id) {
++        return HS_INVALID;
++    }
++
++    hs_stream_free(id);
++
++    return HS_SUCCESS;
++}
++
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_direct_reset_stream(hs_stream_t *id) {
++    if (!id) {
++        return HS_INVALID;
++    }
++
++    // history already initialised
++    init_stream(id, id->rose, 0);
++
++    return HS_SUCCESS;
++}
++
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_direct_reset_and_copy_stream(
++    hs_stream_t *to_id, const hs_stream_t *from_id) {
++    if (!from_id || !from_id->rose) {
++        return HS_INVALID;
++    }
++
++    if (!to_id || to_id->rose != from_id->rose) {
++        return HS_INVALID;
++    }
++
++    if (to_id == from_id) {
++        return HS_INVALID;
++    }
++
++    size_t stateSize =
++        sizeof(struct hs_stream) + from_id->rose->stateOffsets.end;
++
++    memcpy(to_id, from_id, stateSize);
++
++    return HS_SUCCESS;
++}
++
+ HS_PUBLIC_API
+ hs_error_t HS_CDECL hs_close_stream(hs_stream_t *id, hs_scratch_t *scratch,
+                                     match_event_handler onEvent,
+@@ -1240,6 +1351,35 @@ hs_error_t HS_CDECL hs_expand_stream(const hs_database_t *db,
+     return HS_SUCCESS;
+ }
+ 
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_expand_stream_at(const hs_database_t *db,
++                                        const char *buf, size_t buf_size,
++                                        hs_stream_t *to) {
++    if (unlikely(!to || !buf)) {
++        return HS_INVALID;
++    }
++
++    hs_error_t err = validDatabase(db);
++    if (unlikely(err != HS_SUCCESS)) {
++        return err;
++    }
++
++    const struct RoseEngine *rose = hs_get_bytecode(db);
++    if (unlikely(!ISALIGNED_16(rose))) {
++        return HS_INVALID;
++    }
++
++    if (unlikely(rose->mode != HS_MODE_STREAM)) {
++        return HS_DB_MODE_ERROR;
++    }
++
++    if (!expand_stream(to, rose, buf, buf_size)) {
++        return HS_INVALID;
++    }
++
++    return HS_SUCCESS;
++}
++
+ HS_PUBLIC_API
+ hs_error_t HS_CDECL hs_reset_and_expand_stream(hs_stream_t *to_stream,
+                                                const char *buf, size_t buf_size,
+@@ -1273,3 +1413,19 @@ hs_error_t HS_CDECL hs_reset_and_expand_stream(hs_stream_t *to_stream,
+         return HS_INVALID;
+     }
+ }
++
++HS_PUBLIC_API
++hs_error_t HS_CDECL hs_direct_expand_into(hs_stream_t *to_stream,
++                                          const char *buf, size_t buf_size) {
++    if (unlikely(!to_stream || !buf)) {
++        return HS_INVALID;
++    }
++
++    const struct RoseEngine *rose = to_stream->rose;
++
++    if (expand_stream(to_stream, rose, buf, buf_size)) {
++        return HS_SUCCESS;
++    } else {
++        return HS_INVALID;
++    }
++}

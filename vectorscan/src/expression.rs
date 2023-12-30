@@ -26,8 +26,8 @@
 //!
 //!```
 //! # #[allow(unused_variables)]
-//! # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//! use hyperscan::{expression::*, flags::*};
+//! # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//! use vectorscan::{expression::*, flags::*};
 //!
 //! let a: Expression = "a+".parse()?;
 //! let b: Expression = "b+".parse()?;
@@ -42,7 +42,7 @@
 
 use crate::{
   database::Database,
-  error::{HyperscanCompileError, HyperscanRuntimeError},
+  error::{VectorscanCompileError, VectorscanRuntimeError},
   flags::{ExtFlags, Flags, Mode},
   hs,
 };
@@ -71,8 +71,8 @@ use std::{
 /// [`str::parse()`] via the [`str::FromStr`] impl:
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::expression::Expression;
+/// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+/// use vectorscan::expression::Expression;
 ///
 /// let e1: Expression = "asdf+".parse()?;
 /// let e2 = Expression::new("asdf+")?;
@@ -99,8 +99,8 @@ impl Expression {
   /// Reference the underlying bytes, *without* the trailing null terminator.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// let e = hyperscan::expression::Expression::new("asdf")?;
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// let e = vectorscan::expression::Expression::new("asdf")?;
   /// assert_eq!(e.as_bytes(), b"asdf");
   /// # Ok(())
   /// # }
@@ -114,16 +114,16 @@ impl Expression {
   /// This will fail if the string contains any internal `NULL` bytes, as those
   /// are not supported by the hyperscan regex compiler:
   ///```
-  /// use hyperscan::{expression::*, error::*};
+  /// use vectorscan::{expression::*, error::*};
   ///
   /// let pat = "as\0df";
   /// let e = match Expression::new(pat) {
-  ///    Err(HyperscanCompileError::NullByte(e)) => e,
+  ///    Err(VectorscanCompileError::NullByte(e)) => e,
   ///    _ => unreachable!(),
   /// };
   /// assert_eq!(e.nul_position(), 2);
   /// ```
-  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> {
+  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, VectorscanCompileError> {
     Ok(Self(CString::new(x)?))
   }
 
@@ -143,8 +143,8 @@ impl Expression {
   /// they will not affect the outcome of this function.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = "(he)llo".parse()?;
   ///
@@ -159,10 +159,10 @@ impl Expression {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn info(&self, flags: Flags) -> Result<info::ExprInfo, HyperscanCompileError> {
+  pub fn info(&self, flags: Flags) -> Result<info::ExprInfo, VectorscanCompileError> {
     let mut info = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_info(
           self.as_ptr(),
@@ -199,8 +199,8 @@ impl Expression {
   /// they will not affect the outcome of this function.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = ".*lo".parse()?;
   ///
@@ -221,10 +221,10 @@ impl Expression {
     &self,
     flags: Flags,
     ext_flags: &ExprExt,
-  ) -> Result<info::ExprInfo, HyperscanCompileError> {
+  ) -> Result<info::ExprInfo, VectorscanCompileError> {
     let mut info = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_expression_ext_info(
           self.as_ptr(),
@@ -247,13 +247,13 @@ impl Expression {
   }
 
   /// Call [`Database::compile()`] with [`None`] for the platform.
-  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
+  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, VectorscanCompileError> {
     Database::compile(self, flags, mode, None)
   }
 }
 
 impl str::FromStr for Expression {
-  type Err = HyperscanCompileError;
+  type Err = VectorscanCompileError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
@@ -278,8 +278,8 @@ impl str::FromStr for Expression {
 /// Instances can be created equivalently with [`Self::new()`] or
 /// [`str::parse()`] via the [`str::FromStr`] impl:
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::expression::Literal;
+/// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+/// use vectorscan::expression::Literal;
 ///
 /// let e1: Literal = "as\0df".parse()?;
 /// let e2 = Literal::new("as\0df")?;
@@ -315,8 +315,8 @@ impl Literal {
   /// terminator.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// let e = hyperscan::expression::Literal::new("as\0df")?;
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// let e = vectorscan::expression::Literal::new("as\0df")?;
   /// assert_eq!(e.as_bytes(), b"as\0df");
   /// # Ok(())
   /// # }
@@ -329,16 +329,16 @@ impl Literal {
 
   /// Wrap a byte slice to be interpreted literally. This does *not* allocate
   /// any null terminator.
-  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, HyperscanCompileError> { Ok(Self(x.into())) }
+  pub fn new(x: impl Into<Vec<u8>>) -> Result<Self, VectorscanCompileError> { Ok(Self(x.into())) }
 
   /// Call [`Database::compile_literal()`] with [`None`] for the platform.
-  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, HyperscanCompileError> {
+  pub fn compile(&self, flags: Flags, mode: Mode) -> Result<Database, VectorscanCompileError> {
     Database::compile_literal(self, flags, mode, None)
   }
 }
 
 impl str::FromStr for Literal {
-  type Err = HyperscanCompileError;
+  type Err = VectorscanCompileError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> { Self::new(s) }
 }
@@ -404,7 +404,7 @@ impl<'a> ExpressionSet<'a> {
   /// provide iterators of the same length:
   ///
   ///```should_panic
-  /// use hyperscan::expression::*;
+  /// use vectorscan::expression::*;
   ///
   /// let a: Expression = "a+".parse().unwrap();
   /// // Fails due to argument length mismatch:
@@ -429,8 +429,8 @@ impl<'a> ExpressionSet<'a> {
   /// to all patterns.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   /// // Create two expressions to demonstrate separate flags for each pattern:
   /// let a: Expression = "a+[^a]".parse()?;
@@ -469,8 +469,8 @@ impl<'a> ExpressionSet<'a> {
   /// number 0:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
   ///
   /// // Create two expressions to demonstrate multiple pattern IDs.
   /// let a: Expression = "a+[^a]".parse()?;
@@ -531,8 +531,8 @@ impl<'a> ExpressionSet<'a> {
   /// method is likely but not guaranteed to succeed.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   /// // Apply extended configuration to one version of the pattern, but not the other:
   /// let a: Expression = "a.*b".parse()?;
@@ -575,7 +575,7 @@ impl<'a> ExpressionSet<'a> {
   }
 
   /// Call [`Database::compile_multi()`] with [`None`] for the platform.
-  pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
+  pub fn compile(self, mode: Mode) -> Result<Database, VectorscanCompileError> {
     Database::compile_multi(&self, mode, None)
   }
 
@@ -710,8 +710,8 @@ pub mod info {
   /// This struct is produced by [`super::Expression::info()`]:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = "(he)llo$".parse()?;
   /// let info = expr.info(Flags::default())?;
@@ -728,8 +728,8 @@ pub mod info {
   /// as well as [`super::Expression::ext_info()`]:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::{*, info::*}, flags::Flags};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::{*, info::*}, flags::Flags};
   ///
   /// let expr: Expression = ".*lo($)?".parse()?;
   /// let ext = ExprExt::from_min_length(4);
@@ -817,8 +817,8 @@ pub mod info {
 /// and the `|` operator for composition:
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-/// use hyperscan::{expression::*, flags::*, matchers::*, sources::*};
+/// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+/// use vectorscan::{expression::*, flags::*, matchers::*, sources::*};
 ///
 /// // Apply extended configuration to one version of the pattern, but not the other:
 /// let a: Expression = "ab".parse()?;
@@ -885,8 +885,8 @@ impl ExprExt {
   /// This does not require [`Flags::SOM_LEFTMOST`]:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::*, sources::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, matchers::*, sources::*};
   ///
   /// let a: Expression = "a.*b".parse()?;
   /// let ext = ExprExt::from_min_length(4);
@@ -1072,7 +1072,7 @@ impl<'a> LiteralSet<'a> {
   /// provide iterators of the same length:
   ///
   ///```should_panic
-  /// use hyperscan::expression::*;
+  /// use vectorscan::expression::*;
   ///
   /// let a: Literal = "a\0b".parse().unwrap();
   /// // Fails due to argument length mismatch:
@@ -1105,8 +1105,8 @@ impl<'a> LiteralSet<'a> {
   /// to all patterns.
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   /// // Create two expressions to demonstrate separate flags for each pattern:
   /// let a: Literal = "a".parse()?;
@@ -1145,8 +1145,8 @@ impl<'a> LiteralSet<'a> {
   /// number 0:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, state::*, matchers::*, sources::*};
   ///
   /// // Create two expressions to demonstrate multiple pattern IDs.
   /// let a: Literal = "a".parse()?;
@@ -1202,7 +1202,7 @@ impl<'a> LiteralSet<'a> {
   }
 
   /// Call [`Database::compile_multi_literal()`] with [`None`] for the platform.
-  pub fn compile(self, mode: Mode) -> Result<Database, HyperscanCompileError> {
+  pub fn compile(self, mode: Mode) -> Result<Database, VectorscanCompileError> {
     Database::compile_multi_literal(&self, mode, None)
   }
 
@@ -1250,8 +1250,8 @@ impl<'a> LiteralSet<'a> {
 ///
 ///```
 /// # #[allow(unused_variables)]
-/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-/// use hyperscan::{expression::chimera::*, flags::chimera::*};
+/// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+/// use vectorscan::{expression::chimera::*, flags::chimera::*};
 ///
 /// let a: ChimeraExpression = "a+".parse()?;
 /// let b: ChimeraExpression = "b+".parse()?;
@@ -1298,8 +1298,8 @@ pub mod chimera {
   /// [`str::parse()`] via the [`str::FromStr`] impl:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-  /// use hyperscan::expression::chimera::ChimeraExpression;
+  /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+  /// use vectorscan::expression::chimera::ChimeraExpression;
   ///
   /// let e1: ChimeraExpression = "asd(f+)".parse()?;
   /// let e2 = ChimeraExpression::new("asd(f+)")?;
@@ -1334,8 +1334,8 @@ pub mod chimera {
     /// Reference the underlying bytes, *without* the trailing null terminator.
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// let e = hyperscan::expression::chimera::ChimeraExpression::new("asd(f+)")?;
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// let e = vectorscan::expression::chimera::ChimeraExpression::new("asd(f+)")?;
     /// assert_eq!(e.as_bytes(), b"asd(f+)");
     /// # Ok(())
     /// # }
@@ -1350,7 +1350,7 @@ pub mod chimera {
     /// This will fail if the string contains any internal `NULL` bytes, as
     /// those are not supported by the chimera library:
     ///```
-    /// use hyperscan::{expression::chimera::*, error::chimera::*};
+    /// use vectorscan::{expression::chimera::*, error::chimera::*};
     ///
     /// let pat = "as\0df";
     /// let e = match ChimeraExpression::new(pat) {
@@ -1433,7 +1433,7 @@ pub mod chimera {
     /// provide iterators of the same length:
     ///
     ///```should_panic
-    /// use hyperscan::expression::chimera::*;
+    /// use vectorscan::expression::chimera::*;
     ///
     /// let a: ChimeraExpression = "a+".parse().unwrap();
     /// // Fails due to argument length mismatch:
@@ -1458,8 +1458,8 @@ pub mod chimera {
     /// assigned to all patterns.
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     ///
     /// // Create two expressions to demonstrate separate flags for each pattern:
     /// let a: ChimeraExpression = "a+[^a]".parse()?;
@@ -1498,8 +1498,8 @@ pub mod chimera {
     /// ID number 0:
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{sources::*, expression::{*, chimera::*}, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{sources::*, expression::{*, chimera::*}, flags::chimera::*, state::chimera::*, matchers::{*, chimera::*}};
     ///
     /// // Create two expressions to demonstrate multiple pattern IDs.
     /// let a: ChimeraExpression = "a+[^a]".parse()?;
@@ -1554,8 +1554,8 @@ pub mod chimera {
     /// single-pattern compiler does not support match limits).
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{sources::*, expression::chimera::*, flags::chimera::*, state::chimera::*, matchers::chimera::*, error::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{sources::*, expression::chimera::*, flags::chimera::*, state::chimera::*, matchers::chimera::*, error::chimera::*};
     ///
     /// // Create one db with backtracking match limits, and one without.
     /// let a: ChimeraExpression = r"(asdf?)hey\1".parse()?;

@@ -29,11 +29,11 @@
 use crate::stream::LiveStream;
 #[cfg(feature = "compiler")]
 use crate::{
-  error::HyperscanCompileError,
+  error::VectorscanCompileError,
   expression::{Expression, ExpressionSet, Literal, LiteralSet},
   flags::{platform::Platform, Flags, Mode},
 };
-use crate::{error::HyperscanRuntimeError, hs, state::Scratch};
+use crate::{error::VectorscanRuntimeError, hs, state::Scratch};
 
 use std::{
   cmp,
@@ -82,8 +82,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -101,7 +101,7 @@ impl Database {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn allocate_scratch(&self) -> Result<Scratch, HyperscanRuntimeError> {
+  pub fn allocate_scratch(&self) -> Result<Scratch, VectorscanRuntimeError> {
     let mut scratch = Scratch::blank();
     scratch.setup_for_db(self)?;
     Ok(scratch)
@@ -109,7 +109,7 @@ impl Database {
 
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
-  pub fn allocate_stream(&self) -> Result<LiveStream, HyperscanRuntimeError> {
+  pub fn allocate_stream(&self) -> Result<LiveStream, VectorscanRuntimeError> {
     LiveStream::try_open(self)
   }
 
@@ -118,8 +118,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   ///   // Create a db to match against:
   ///   let expr: Expression = "a+".parse()?;
@@ -142,7 +142,7 @@ impl Database {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn serialize(&self) -> Result<SerializedDb<'static>, HyperscanRuntimeError> {
+  pub fn serialize(&self) -> Result<SerializedDb<'static>, VectorscanRuntimeError> {
     SerializedDb::serialize_db(self)
   }
 }
@@ -163,8 +163,8 @@ impl Database {
 ///
 ///```
 /// #[cfg(all(feature = "compiler", feature = "stream"))]
-/// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-///   use hyperscan::{expression::*, flags::{*, platform::*}, database::*};
+/// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+///   use vectorscan::{expression::*, flags::{*, platform::*}, database::*};
 ///   use std::slice;
 ///
 ///   let expr: Expression = "a+".parse()?;
@@ -248,8 +248,8 @@ impl Database {
   /// - [`QUIET`](Flags::QUIET)
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let expr: Expression = "hell(o)?".parse()?;
   /// let db = Database::compile(&expr, Flags::default(), Mode::BLOCK, None)?;
@@ -271,11 +271,11 @@ impl Database {
     flags: Flags,
     mode: Mode,
     platform: Option<&Platform>,
-  ) -> Result<Self, HyperscanCompileError> {
+  ) -> Result<Self, VectorscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile(
           expression.as_ptr(),
@@ -310,8 +310,8 @@ impl Database {
   /// - [`QUIET`](Flags::QUIET)
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let a_expr: Expression = "a+".parse()?;
   /// let b_expr: Expression = "b+".parse()?;
@@ -349,11 +349,11 @@ impl Database {
     expression_set: &ExpressionSet,
     mode: Mode,
     platform: Option<&Platform>,
-  ) -> Result<Self, HyperscanCompileError> {
+  ) -> Result<Self, VectorscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         if let Some(exts_ptr) = expression_set.exts_ptr() {
           hs::hs_compile_ext_multi(
@@ -399,8 +399,8 @@ impl Database {
   /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let expr: Literal = "he\0ll".parse()?;
   /// let db = Database::compile_literal(&expr, Flags::default(), Mode::BLOCK, None)?;
@@ -422,11 +422,11 @@ impl Database {
     flags: Flags,
     mode: Mode,
     platform: Option<&Platform>,
-  ) -> Result<Self, HyperscanCompileError> {
+  ) -> Result<Self, VectorscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit(
           literal.as_ptr(),
@@ -454,8 +454,8 @@ impl Database {
   /// - [`SOM_LEFTMOST`](Flags::SOM_LEFTMOST)
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, flags::*, database::*, matchers::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, flags::*, database::*, matchers::*};
   ///
   /// let hell_lit: Literal = "he\0ll".parse()?;
   /// let free_lit: Literal = "fr\0e\0e".parse()?;
@@ -495,11 +495,11 @@ impl Database {
     literal_set: &LiteralSet,
     mode: Mode,
     platform: Option<&Platform>,
-  ) -> Result<Self, HyperscanCompileError> {
+  ) -> Result<Self, VectorscanCompileError> {
     let mut db = ptr::null_mut();
     let mut compile_err = ptr::null_mut();
     let platform: Option<hs::hs_platform_info> = platform.cloned().map(Platform::into_native);
-    HyperscanRuntimeError::copy_from_native_compile_error(
+    VectorscanRuntimeError::copy_from_native_compile_error(
       unsafe {
         hs::hs_compile_lit_multi(
           literal_set.literals_ptr(),
@@ -532,8 +532,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = r"\w".parse()?;
   ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
@@ -552,8 +552,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(all(feature = "alloc", feature = "compiler"))]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, alloc::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, alloc::*};
   ///   use std::alloc::System;
   ///
   ///   // Wrap the standard Rust System allocator.
@@ -577,9 +577,9 @@ impl Database {
   /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
-  pub fn database_size(&self) -> Result<usize, HyperscanRuntimeError> {
+  pub fn database_size(&self) -> Result<usize, VectorscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_database_size(self.as_ref_native(), ret.as_mut_ptr())
     })?;
     Ok(unsafe { ret.assume_init() })
@@ -589,8 +589,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = r"\w".parse()?;
   ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::STREAM)?;
@@ -610,8 +610,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(all(feature = "alloc", feature = "compiler"))]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, alloc::*, stream::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, alloc::*, stream::*};
   ///   use std::alloc::System;
   ///
   ///   // Wrap the standard Rust System allocator.
@@ -638,9 +638,9 @@ impl Database {
   /// ```
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
-  pub fn stream_size(&self) -> Result<usize, HyperscanRuntimeError> {
+  pub fn stream_size(&self) -> Result<usize, VectorscanRuntimeError> {
     let mut ret: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_stream_size(self.as_ref_native(), ret.as_mut_ptr())
     })?;
     Ok(unsafe { ret.assume_init() })
@@ -653,19 +653,19 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
   ///   let info = db.info()?;
-  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   assert_eq!(info.as_str(), "Version: 5.4.11 Features: AVX2 Mode: BLOCK");
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn info(&self) -> Result<DbInfo, HyperscanRuntimeError> { DbInfo::extract_db_info(self) }
+  pub fn info(&self) -> Result<DbInfo, VectorscanRuntimeError> { DbInfo::extract_db_info(self) }
 }
 
 /// # Managing Allocations
@@ -692,8 +692,8 @@ impl Database {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, database::*, state::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, database::*, state::*};
   ///   use std::mem::ManuallyDrop;
   ///
   ///   // Compile a legitimate db:
@@ -755,8 +755,8 @@ impl Database {
   /// This method performs no processing other than freeing the allocated
   /// memory, so it can be skipped without leaking resources if the
   /// underlying [`NativeDb`] allocation is freed by some other means.
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
+  pub unsafe fn try_drop(&mut self) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(unsafe { hs::hs_free_database(self.as_mut_native()) })
   }
 }
 
@@ -935,9 +935,9 @@ impl DbInfo {
   }
 
   /// Write out metadata for `db` into a newly allocated region.
-  pub fn extract_db_info(db: &Database) -> Result<Self, HyperscanRuntimeError> {
+  pub fn extract_db_info(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut info = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_database_info(db.as_ref_native(), &mut info)
     })?;
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
@@ -1002,8 +1002,8 @@ impl<'a> SerializedDb<'a> {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let serialized_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?.serialize()?;
@@ -1017,9 +1017,9 @@ impl<'a> SerializedDb<'a> {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn deserialize_db(&self) -> Result<Database, HyperscanRuntimeError> {
+  pub fn deserialize_db(&self) -> Result<Database, VectorscanRuntimeError> {
     let mut deserialized: MaybeUninit<*mut hs::hs_database> = MaybeUninit::uninit();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_deserialize_database(self.as_ptr(), self.len(), deserialized.as_mut_ptr())
     })?;
     let deserialized = unsafe { deserialized.assume_init() };
@@ -1028,9 +1028,9 @@ impl<'a> SerializedDb<'a> {
 
   /// Return the size of the allocation necessary for a subsequent call to
   /// [`Self::deserialize_db_at()`].
-  pub fn deserialized_size(&self) -> Result<usize, HyperscanRuntimeError> {
+  pub fn deserialized_size(&self) -> Result<usize, VectorscanRuntimeError> {
     let mut deserialized_size: MaybeUninit<usize> = MaybeUninit::uninit();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_serialized_database_size(self.as_ptr(), self.len(), deserialized_size.as_mut_ptr())
     })?;
     let deserialized_size = unsafe { deserialized_size.assume_init() };
@@ -1046,8 +1046,8 @@ impl<'a> SerializedDb<'a> {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, database::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, database::*};
   ///   use std::mem;
   ///
   ///   let expr: Expression = "a+".parse()?;
@@ -1069,8 +1069,8 @@ impl<'a> SerializedDb<'a> {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), HyperscanRuntimeError> {
-    HyperscanRuntimeError::from_native(hs::hs_deserialize_database_at(
+  pub unsafe fn deserialize_db_at(&self, db: *mut NativeDb) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(hs::hs_deserialize_database_at(
       self.as_ptr(),
       self.len(),
       db,
@@ -1082,13 +1082,13 @@ impl<'a> SerializedDb<'a> {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let serialized_db = expr.compile(Flags::default(), Mode::BLOCK)?.serialize()?;
   ///   let info = serialized_db.extract_db_info()?;
-  ///   assert_eq!(info.as_str(), "Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+  ///   assert_eq!(info.as_str(), "Version: 5.4.11 Features: AVX2 Mode: BLOCK");
   ///   // Info is the same as would have been provided from deserializing:
   ///   assert_eq!(info, serialized_db.deserialize_db()?.info()?);
   ///   Ok(())
@@ -1096,9 +1096,9 @@ impl<'a> SerializedDb<'a> {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn extract_db_info(&self) -> Result<DbInfo, HyperscanRuntimeError> {
+  pub fn extract_db_info(&self) -> Result<DbInfo, VectorscanRuntimeError> {
     let mut info = ptr::null_mut();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_serialized_database_info(self.as_ptr(), self.len(), &mut info)
     })?;
     let len = unsafe { CStr::from_ptr(info) }.to_bytes_with_nul().len();
@@ -1120,11 +1120,11 @@ impl<'a> SerializedDb<'a> {
 impl SerializedDb<'static> {
   /// Write a serialized representation of `db` into a newly allocated region of
   /// memory.
-  pub fn serialize_db(db: &Database) -> Result<Self, HyperscanRuntimeError> {
+  pub fn serialize_db(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut data = ptr::null_mut();
     let mut len: usize = 0;
 
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_serialize_database(db.as_ref_native(), &mut data, &mut len)
     })?;
 
@@ -1204,8 +1204,8 @@ pub mod chimera {
     /// [`ChimeraScratch::blank()`].
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
     /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
@@ -1246,8 +1246,8 @@ pub mod chimera {
   /// is recommended in all cases.**
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-  /// use hyperscan::{expression::chimera::*, flags::{*, chimera::*, platform::*}, database::chimera::*};
+  /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+  /// use vectorscan::{expression::chimera::*, flags::{*, chimera::*, platform::*}, database::chimera::*};
   ///
   /// let expr: ChimeraExpression = "a+".parse()?;
   ///
@@ -1311,8 +1311,8 @@ pub mod chimera {
     /// - [`UCP`](ChimeraFlags::UCP)
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     ///
     /// let expr: ChimeraExpression = "hell(o)?".parse()?;
     /// let db = ChimeraDb::compile(&expr, ChimeraFlags::default(), ChimeraMode::GROUPS, None)?;
@@ -1372,8 +1372,8 @@ pub mod chimera {
     /// - [`UCP`](ChimeraFlags::UCP)
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::{*, chimera::*}, flags::chimera::*, database::chimera::*, matchers::chimera::*};
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
     /// let b_expr: ChimeraExpression = "b+".parse()?;
@@ -1454,8 +1454,8 @@ pub mod chimera {
     /// which increases the size of the state machine:
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*};
     ///
     /// let expr: ChimeraExpression = r"\w".parse()?;
     /// let utf8_db = expr.compile(
@@ -1475,8 +1475,8 @@ pub mod chimera {
     ///
     ///```
     /// #[cfg(feature = "alloc")]
-    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    /// fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    ///   use vectorscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
     ///   use std::alloc::System;
     ///
     ///   // Wrap the standard Rust System allocator.
@@ -1518,13 +1518,13 @@ pub mod chimera {
     /// [`ChimeraDbInfo::extract_db_info()`].
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, database::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+".parse()?;
     /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
     /// let info = ChimeraDbInfo::extract_db_info(&db)?;
-    /// assert_eq!(info.as_str(), "Chimera Version: 5.4.2 Features: AVX2 Mode: BLOCK");
+    /// assert_eq!(info.as_str(), "Chimera Version: 5.4.11 Features: AVX2 Mode: BLOCK");
     /// # Ok(())
     /// # }
     /// ```
@@ -1556,8 +1556,8 @@ pub mod chimera {
     /// [`ManuallyDrop`](mem::ManuallyDrop):
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, database::chimera::*, state::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, database::chimera::*, state::chimera::*};
     /// use std::mem::ManuallyDrop;
     ///
     /// // Compile a legitimate db:

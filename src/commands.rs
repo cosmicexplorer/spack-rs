@@ -31,13 +31,41 @@ impl CLISpec {
   pub fn new<R: AsRef<str>>(r: R) -> Self { Self(r.as_ref().to_string()) }
 }
 
+pub trait ArgvWrapper {
+  fn modify_argv(self, args: &mut Argv);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EnvName(pub String);
 
-impl EnvName {
-  pub fn unshift_env_args(self, args: &mut Argv) {
+impl ArgvWrapper for EnvName {
+  fn modify_argv(self, args: &mut Argv) {
     args.unshift(OsString::from(self.0));
     args.unshift(OsStr::new("--env").to_os_string());
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RepoDirs(pub Vec<PathBuf>);
+
+/* FIXME: figure out how to fix if ^C hit during env install! */
+impl ArgvWrapper for RepoDirs {
+  fn modify_argv(mut self, args: &mut Argv) {
+    if self.0.is_empty() {
+      return;
+    }
+    assert!(self.0.iter().all(|p| p.is_absolute()));
+    self.0.push("$spack/var/spack/repos/builtin".into());
+    let joined = self
+      .0
+      .into_iter()
+      .chain([])
+      .map(|p| format!("{}", p.display()))
+      .collect::<Vec<_>>()
+      .join(",");
+    let config_arg = format!("repos:[{}]", joined);
+    args.unshift(OsString::from(config_arg));
+    args.unshift(OsStr::new("-c").to_os_string());
   }
 }
 
@@ -438,12 +466,18 @@ pub mod find {
     pub spack: SpackInvocation,
     pub spec: CLISpec,
     pub env: Option<EnvName>,
+    pub repos: Option<RepoDirs>,
   }
 
   #[async_trait]
   impl CommandBase for FindPrefix {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
-      let Self { spack, spec, env } = self;
+      let Self {
+        spack,
+        spec,
+        env,
+        repos,
+      } = self;
       let mut args = exe::Argv(
         ["find", "--no-groups", "-p", spec.0.as_ref()]
           .map(|s| OsStr::new(s).to_os_string())
@@ -452,7 +486,10 @@ pub mod find {
       );
 
       if let Some(env) = env {
-        env.unshift_env_args(&mut args);
+        env.modify_argv(&mut args);
+      }
+      if let Some(repos) = repos {
+        repos.modify_argv(&mut args);
       }
 
       Ok(
@@ -783,6 +820,7 @@ pub mod install {
     pub spec: CLISpec,
     pub verbosity: InstallVerbosity,
     pub env: Option<EnvName>,
+    pub repos: Option<RepoDirs>,
   }
 
   #[async_trait]
@@ -793,6 +831,7 @@ pub mod install {
         spec,
         verbosity,
         env,
+        repos,
       } = self;
 
       /* Generate spack argv. */
@@ -815,7 +854,10 @@ pub mod install {
       );
 
       if let Some(env) = env {
-        env.unshift_env_args(&mut argv);
+        env.modify_argv(&mut argv);
+      }
+      if let Some(repos) = repos {
+        repos.modify_argv(&mut argv);
       }
 
       Ok(
@@ -990,6 +1032,7 @@ pub mod build_env {
     /// Optional output file for sourcing environment modifications.
     pub dump: Option<PathBuf>,
     pub env: Option<EnvName>,
+    pub repos: Option<RepoDirs>,
     /// Optional command line to evaluate within the package environment.
     ///
     /// If this argv is empty, the contents of the environment are printed to
@@ -1008,6 +1051,7 @@ pub mod build_env {
         env,
         argv,
         dump,
+        repos,
       } = self;
 
       let dump_args = if let Some(d) = dump {
@@ -1027,7 +1071,10 @@ pub mod build_env {
       );
 
       if let Some(env) = env {
-        env.unshift_env_args(&mut argv);
+        env.modify_argv(&mut argv);
+      }
+      if let Some(repos) = repos {
+        repos.modify_argv(&mut argv);
       }
 
       let command = spack
@@ -1892,13 +1939,20 @@ pub mod env {
 
       /* While holding the lock, install all the specs in the order given. */
       dbg!(&instructions);
-      for spec in instructions.into_owned().specs.into_iter() {
+      let spec::EnvInstructions { specs, repo } = instructions.into_owned();
+      let repo_dirs = match repo {
+        Some(spec::Repo { path }) => Some(RepoDirs(vec![std::env::current_dir()?.join(path)])),
+        None => None,
+      };
+
+      for spec in specs.into_iter() {
         let spec = CLISpec::new(spec.0);
         let install = install::Install {
           spack: spack.clone(),
           spec,
           verbosity: install::InstallVerbosity::Verbose,
           env: Some(env.clone()),
+          repos: repo_dirs.clone(),
         };
         install.install().await?;
       }

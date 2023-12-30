@@ -9,7 +9,7 @@ pub mod spec {
   use sha3::{Digest, Sha3_256};
   use thiserror::Error;
 
-  use std::str;
+  use std::{path::PathBuf, str};
 
   #[derive(Debug, Clone, Deserialize)]
   pub struct Dep {
@@ -30,6 +30,11 @@ pub mod spec {
     pub features: Option<FeatureLayout>,
   }
 
+  #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+  pub struct Repo {
+    pub path: PathBuf,
+  }
+
   /// This is deserialized from the output of `cargo metadata --format-version
   /// 1` with [`serde_json`].
   ///
@@ -46,6 +51,7 @@ pub mod spec {
   #[derive(Debug, Clone, Deserialize)]
   pub struct LabelledPackageMetadata {
     pub envs: IndexMap<String, Env>,
+    pub repo: Option<Repo>,
   }
 
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -106,6 +112,7 @@ pub mod spec {
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct EnvInstructions {
     pub specs: Vec<Spec>,
+    pub repo: Option<Repo>,
   }
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,6 +136,9 @@ pub mod spec {
       let mut hasher = Sha3_256::new();
       for Spec(s) in self.specs.iter() {
         hasher.update(s);
+      }
+      if let Some(ref repo) = self.repo {
+        hasher.update(repo.path.as_os_str().as_encoded_bytes());
       }
       EnvHash(hasher.finalize().into())
     }

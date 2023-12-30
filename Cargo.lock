@@ -918,39 +918,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperscan-async"
-version = "0.0.6"
-dependencies = [
- "cfg-if",
- "displaydoc",
- "eyre",
- "futures-core",
- "futures-util",
- "handles",
- "hyperscan-async-sys",
- "indexmap 1.9.3",
- "jemallocator",
- "libc",
- "num_enum",
- "parking_lot",
- "smallvec 2.0.0-alpha.1",
- "static_assertions",
- "thiserror",
- "tokio",
- "tokio-test",
-]
-
-[[package]]
-name = "hyperscan-async-sys"
-version = "0.0.5"
-dependencies = [
- "bindgen",
- "eyre",
- "spack-rs",
- "tokio",
-]
-
-[[package]]
 name = "idna"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2148,6 +2115,39 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "vectorscan"
+version = "0.0.6"
+dependencies = [
+ "cfg-if",
+ "displaydoc",
+ "eyre",
+ "futures-core",
+ "futures-util",
+ "handles",
+ "indexmap 1.9.3",
+ "jemallocator",
+ "libc",
+ "num_enum",
+ "parking_lot",
+ "smallvec 2.0.0-alpha.1",
+ "static_assertions",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "vectorscan-sys",
+]
+
+[[package]]
+name = "vectorscan-sys"
+version = "0.0.5"
+dependencies = [
+ "bindgen",
+ "eyre",
+ "spack-rs",
+ "tokio",
+]
 
 [[package]]
 name = "version_check"

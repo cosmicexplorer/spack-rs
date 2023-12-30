@@ -1,0 +1,53 @@
+[package]
+name                    = "vectorscan-sys"
+description             = "Bindings to the vectorscan library via spack."
+version                 = "0.0.5"
+edition.workspace       = true
+license                 = "BSD-3-Clause"
+repository.workspace    = true
+authors.workspace       = true
+links                   = "vectorscan"
+
+[features]
+default                 = []
+static                  = []
+compiler                = []
+dynamic                 = []
+chimera                 = []
+
+[package.metadata.spack.repo]
+path                    = "local-repo"
+
+[package.metadata.spack.envs.vectorscan-static-with-compile]
+spec                    = "vectorscan@v5.4.11+static~chimera"
+deps                    = { vectorscan = { type = "static", lib_names = ["hs"] } }
+features                = { needed = ["static", "compiler"], conflicting = ["chimera"] }
+
+[package.metadata.spack.envs.vectorscan-dynamic-with-compile]
+spec                    = "vectorscan@v5.4.11+shared~chimera"
+deps                    = { vectorscan = { type = "dynamic", lib_names = ["hs"] } }
+features                = { needed = ["dynamic", "compiler"], conflicting = ["chimera"] }
+
+[package.metadata.spack.envs.vectorscan-static-runtime-only]
+spec                    = "vectorscan@v5.4.11+static~chimera"
+deps                    = { vectorscan = { type = "static", lib_names = ["hs_runtime"] } }
+features                = { needed = ["static"], conflicting = ["compiler", "chimera"] }
+
+[package.metadata.spack.envs.vectorscan-dynamic-runtime-only]
+spec                    = "vectorscan@v5.4.11+shared~chimera"
+deps                    = { vectorscan = { type = "dynamic", lib_names = ["hs_runtime"] } }
+features                = { needed = ["dynamic"], conflicting = ["compiler", "chimera"] }
+
+[package.metadata.spack.envs.vectorscan-static-chimera]
+spec                    = "vectorscan@v5.4.11+chimera+static"
+features                = { needed = ["chimera"] }
+
+[package.metadata.spack.envs.vectorscan-static-chimera.deps]
+vectorscan              = { type = "static", lib_names = ["hs", "chimera"] }
+pcre                    = { type = "static", lib_names = ["pcre"] }
+
+[build-dependencies]
+bindgen.workspace       = true
+eyre.workspace          = true
+spack.workspace         = true
+tokio                   = { workspace = true, features = ["rt-multi-thread", "macros", "fs"] }

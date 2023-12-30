@@ -55,7 +55,7 @@ impl<'a> fmt::Display for ByteSlice<'a> {
 /// native [arrays](prim@array) and [slices](prim@slice):
 ///
 ///```
-/// use hyperscan::sources::ByteSlice;
+/// use vectorscan::sources::ByteSlice;
 ///
 /// let b1 = ByteSlice::from_slice(b"asdf");
 /// let b2: ByteSlice = b"asdf".into();
@@ -105,7 +105,7 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// [`str`](prim@str):
 ///
 ///```
-/// use hyperscan::sources::ByteSlice;
+/// use vectorscan::sources::ByteSlice;
 ///
 /// let b1 = ByteSlice::from_str("asdf");
 /// let b2: ByteSlice = "asdf".into();
@@ -140,7 +140,7 @@ impl<'a> ByteSlice<'a> {
   /// [`String::from_utf8_lossy()`] that check for UTF-8 validity:
   ///
   ///```
-  /// use hyperscan::sources::ByteSlice;
+  /// use vectorscan::sources::ByteSlice;
   /// use std::{borrow::Cow, str};
   ///
   /// // All-or-nothing UTF8 conversion with error:
@@ -169,7 +169,7 @@ impl<'a> ByteSlice<'a> {
   /// range:
   ///
   ///```
-  /// use hyperscan::sources::ByteSlice;
+  /// use vectorscan::sources::ByteSlice;
   ///
   /// let b: ByteSlice = "asdf".into();
   /// let b2 = b.index_range(0..2).unwrap();
@@ -220,7 +220,7 @@ pub mod vectored {
   /// references to [arrays](prim@array) and [slices](prim@slice):
   ///
   ///```
-  /// use hyperscan::sources::vectored::VectoredByteSlices;
+  /// use vectorscan::sources::vectored::VectoredByteSlices;
   ///
   /// let b1 = b"asdf";
   /// let b2 = b"bbbb";
@@ -353,7 +353,7 @@ pub mod vectored {
     /// range:
     ///
     ///```
-    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::vectored::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";
@@ -383,7 +383,7 @@ pub mod vectored {
     /// intended to aid in debugging.
     ///
     ///```
-    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::vectored::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";
@@ -431,7 +431,7 @@ pub mod vectored {
     /// Iterate over the referenced data.
     ///
     ///```
-    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::vectored::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";

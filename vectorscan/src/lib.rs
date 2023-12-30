@@ -20,7 +20,7 @@
 /* Generate docs.rs info for feature switches. */
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub(crate) use hyperscan_sys::hs;
+pub(crate) use vectorscan_sys::hs;
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -73,7 +73,7 @@ unsafe fn free_misc_chimera(p: *mut u8) {
 /// been built for a more specific architecture, for example the AVX2
 /// instruction set.
 ///
-/// Returns [`ArchError`](error::HyperscanRuntimeError::ArchError) if system
+/// Returns [`ArchError`](error::VectorscanRuntimeError::ArchError) if system
 /// does not support Hyperscan.
 ///
 /// # Dependency on `"compiler"` Feature
@@ -81,15 +81,15 @@ unsafe fn free_misc_chimera(p: *mut u8) {
 /// it currently cannot be provided without enabling the `"compiler"` feature.
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::HyperscanRuntimeError> {
-/// hyperscan::check_valid_platform()?;
+/// # fn main() -> Result<(), vectorscan::error::VectorscanRuntimeError> {
+/// vectorscan::check_valid_platform()?;
 /// # Ok(())
 /// # }
 /// ```
 #[cfg(feature = "compiler")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-pub fn check_valid_platform() -> Result<(), error::HyperscanRuntimeError> {
-  error::HyperscanRuntimeError::from_native(unsafe { hs::hs_valid_platform() })
+pub fn check_valid_platform() -> Result<(), error::VectorscanRuntimeError> {
+  error::VectorscanRuntimeError::from_native(unsafe { hs::hs_valid_platform() })
 }
 
 /// Utility function for identifying this release version.
@@ -99,8 +99,8 @@ pub fn check_valid_platform() -> Result<(), error::HyperscanRuntimeError> {
 /// be freed by the caller.
 ///
 ///```
-/// let v = hyperscan::hyperscan_version().to_str().unwrap();
-/// assert!(v.starts_with("5.4.2 2023"));
+/// let v = vectorscan::hyperscan_version().to_str().unwrap();
+/// assert!(v.starts_with("5.4.11 2023"));
 /// ```
 pub fn hyperscan_version() -> &'static std::ffi::CStr {
   unsafe { std::ffi::CStr::from_ptr(hs::hs_version()) }
@@ -113,8 +113,8 @@ pub fn hyperscan_version() -> &'static std::ffi::CStr {
 /// be freed by the caller.
 ///
 ///```
-/// let v = hyperscan::chimera_version().to_str().unwrap();
-/// assert!(v.starts_with("5.4.2 2023"));
+/// let v = vectorscan::chimera_version().to_str().unwrap();
+/// assert!(v.starts_with("5.4.11 2023"));
 /// ```
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]

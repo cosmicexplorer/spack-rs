@@ -32,6 +32,7 @@ pub fn safe_create_dir_all_ioerror(path: &Path) -> Result<(), io::Error> {
 ///
 /// The installation via `spack install` will be cached using spack's normal
 /// caching mechanisms.
+/* TODO: is this used outside of the LLVM bootstrap? */
 pub async fn ensure_installed(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -41,6 +42,7 @@ pub async fn ensure_installed(
     spec,
     verbosity: Default::default(),
     env: None,
+    repos: None,
   };
   let found_spec = install
     .clone()
@@ -52,6 +54,7 @@ pub async fn ensure_installed(
 
 /// Call [`ensure_installed`], then return its installation root prefix from
 /// within `opt/spack/...`.
+/* TODO: is this used outside of the LLVM bootstrap? */
 pub async fn ensure_prefix(
   spack: SpackInvocation,
   spec: commands::CLISpec,
@@ -61,6 +64,7 @@ pub async fn ensure_prefix(
     spack,
     spec: found_spec.hashed_spec(),
     env: None,
+    repos: None,
   };
   let prefix = find_prefix
     .clone()
@@ -482,7 +486,8 @@ pub mod metadata {
       })
       .collect::<Result<Vec<_>, MetadataError>>()?;
 
-    let mut resolves: IndexMap<spec::Label, Vec<spec::Spec>> = IndexMap::new();
+    let mut resolves: IndexMap<spec::Label, (Option<spec::Repo>, Vec<spec::Spec>)> =
+      IndexMap::new();
     let mut recipes: IndexMap<
       spec::CrateName,
       IndexMap<spec::Label, (spec::Recipe, spec::FeatureMap)>,
@@ -490,7 +495,7 @@ pub mod metadata {
     let mut declared_features_by_package: IndexMap<spec::CrateName, Vec<spec::CargoFeature>> =
       IndexMap::new();
 
-    for (crate_name, spec::LabelledPackageMetadata { envs }, features) in
+    for (crate_name, spec::LabelledPackageMetadata { envs, repo }, features) in
       labelled_metadata.into_iter()
     {
       dbg!(&envs);
@@ -543,7 +548,9 @@ pub mod metadata {
 
         let recipe = spec::Recipe { sub_deps };
 
-        resolves.entry(env_label.clone()).or_default().push(spec);
+        let r = resolves.entry(env_label.clone()).or_default();
+        r.0 = repo.clone();
+        r.1.push(spec);
         assert!(recipes
           .entry(crate_name.clone())
           .or_default()
@@ -555,7 +562,7 @@ pub mod metadata {
     Ok(spec::DisjointResolves {
       by_label: resolves
         .into_iter()
-        .map(|(label, specs)| (label, spec::EnvInstructions { specs }))
+        .map(|(label, (repo, specs))| (label, spec::EnvInstructions { repo, specs }))
         .collect(),
       recipes,
       declared_features_by_package,
@@ -616,6 +623,14 @@ pub mod declarative {
           spack: spack.clone(),
           spec: CLISpec::new(&sub_dep.pkg_name.0),
           env: Some(env.clone()),
+          repos: match env_instructions.repo.clone() {
+            Some(spec::Repo { path }) => {
+              let path = std::env::current_dir()?.join(path);
+              println!("cargo:rerun-if-changed={}", path.display());
+              Some(RepoDirs(vec![path]))
+            },
+            None => None,
+          },
         };
         let prefix = req.find_prefix().await?.unwrap();
 

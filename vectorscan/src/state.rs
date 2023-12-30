@@ -59,7 +59,7 @@
 //! order to mutate it. **Indeed, safe Rust code should never experience scratch
 //! space contention.** While the hyperscan library performs a best-effort
 //! attempt to identify scratch space contention and error out with
-//! [`HyperscanRuntimeError::ScratchInUse`], a user of this crate should never
+//! [`VectorscanRuntimeError::ScratchInUse`], a user of this crate should never
 //! see that error from safe Rust code.
 //!
 //! ### Minimizing Scratch Contention
@@ -124,8 +124,8 @@
 //!
 //!```
 //! #[cfg(feature = "compiler")]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> {
-//!   use hyperscan::{expression::*, flags::*, matchers::*, state::*, error::*, sources::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, matchers::*, state::*, error::*, sources::*};
 //!   use std::rc::Rc;
 //!
 //!   let ab_expr: Expression = "a.*b".parse()?;
@@ -151,7 +151,7 @@
 //!       // But this is described as an unreliable best-effort runtime check.
 //!       assert_eq!(
 //!         unsafe { &mut *s }.scan_sync(&cd_db, m.source, |_| MatchResult::Continue),
-//!         Err(HyperscanRuntimeError::ScratchInUse),
+//!         Err(VectorscanRuntimeError::ScratchInUse),
 //!       );
 //!       MatchResult::Continue
 //!     })?;
@@ -228,8 +228,8 @@
 //!
 //!```
 //! #[cfg(all(feature = "compiler", feature = "async"))]
-//! fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-//!   use hyperscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+//!   use vectorscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
 //!   use futures_util::TryStreamExt;
 //!   use std::sync::Arc;
 //!
@@ -297,7 +297,7 @@
 use crate::error::ScanError;
 use crate::{
   database::Database,
-  error::HyperscanRuntimeError,
+  error::VectorscanRuntimeError,
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
@@ -361,8 +361,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, state::*, sources::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let a_db = a_expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -396,11 +396,11 @@ impl Scratch {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn setup_for_db(&mut self, db: &Database) -> Result<(), HyperscanRuntimeError> {
+  pub fn setup_for_db(&mut self, db: &Database) -> Result<(), VectorscanRuntimeError> {
     /* NB: this method always overwrites self.0, because `hs_alloc_scratch()` may
      * modify the pointer location if the scratch space needs to be resized! */
     let mut scratch_ptr = self.0.map(|p| p.as_ptr()).unwrap_or(ptr::null_mut());
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_alloc_scratch(db.as_ref_native(), &mut scratch_ptr)
     })?;
     /* *self = unsafe { Self::from_native(scratch_ptr) }; */
@@ -431,8 +431,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, error::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, error::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let b_expr: Expression = "b+".parse()?;
@@ -455,7 +455,7 @@ impl Scratch {
   ///   assert_eq!(&matches, &["a", "aa", "a", "b", "b", "bb"]);
   ///
   ///   let ret = scratch.scan_sync(&db, "abwuebiaubeb".into(), |_| MatchResult::CeaseMatching);
-  ///   assert!(matches![ret, Err(HyperscanRuntimeError::ScanTerminated)]);
+  ///   assert!(matches![ret, Err(VectorscanRuntimeError::ScanTerminated)]);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
@@ -466,9 +466,9 @@ impl Scratch {
     db: &Database,
     data: ByteSlice<'data>,
     mut f: impl FnMut(Match<'data>) -> MatchResult,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let mut matcher = SliceMatcher::new(data, &mut f);
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_scan(
         db.as_ref_native(),
         matcher.parent_slice().as_ptr(),
@@ -488,8 +488,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, sources::*, matchers::*};
   ///
   ///   let a_plus: Expression = "a+".parse()?;
   ///   let b_plus: Expression = "b+".parse()?;
@@ -543,10 +543,10 @@ impl Scratch {
     db: &Database,
     data: VectoredByteSlices<'data, 'data>,
     mut f: impl FnMut(VectoredMatch<'data>) -> MatchResult,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let mut matcher = VectoredMatcher::new(data, &mut f);
     let (data_pointers, lengths) = matcher.parent_slices().pointers_and_lengths();
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_scan_vector(
         db.as_ref_native(),
         data_pointers.as_ptr(),
@@ -575,9 +575,9 @@ impl Scratch {
     live: &mut LiveStream,
     matcher: &mut StreamMatcher<'code>,
     data: ByteSlice<'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
         live.as_mut_native(),
         data.as_ptr(),
@@ -600,10 +600,10 @@ impl Scratch {
     live: &mut LiveStream,
     matcher: &mut StreamMatcher<'code>,
     data: VectoredByteSlices<'data, 'data>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let (data_pointers, lengths) = data.pointers_and_lengths();
     let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_scan_vectored_stream(
         live.as_mut_native(),
         data_pointers.as_ptr(),
@@ -631,9 +631,9 @@ impl Scratch {
     &mut self,
     live: &mut LiveStream,
     matcher: &mut StreamMatcher<'code>,
-  ) -> Result<(), HyperscanRuntimeError> {
+  ) -> Result<(), VectorscanRuntimeError> {
     let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
-    HyperscanRuntimeError::from_native(unsafe {
+    VectorscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),
         self.as_mut_native().unwrap(),
@@ -649,8 +649,8 @@ impl Scratch {
 impl Scratch {
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -669,7 +669,7 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-  ) -> Result<Option<Match<'data>>, HyperscanRuntimeError> {
+  ) -> Result<Option<Match<'data>>, VectorscanRuntimeError> {
     let mut capture_text: Option<Match<'data>> = None;
     match self.scan_sync(db, data, |m| {
       debug_assert!(capture_text.is_none());
@@ -680,7 +680,7 @@ impl Scratch {
         assert!(capture_text.is_none());
         Ok(None)
       },
-      Err(HyperscanRuntimeError::ScanTerminated) => {
+      Err(VectorscanRuntimeError::ScanTerminated) => {
         debug_assert!(capture_text.is_some());
         Ok(capture_text)
       },
@@ -690,8 +690,8 @@ impl Scratch {
 
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+sdf".parse()?;
   ///   let db = expr.compile(Flags::default(), Mode::BLOCK)?;
@@ -710,7 +710,7 @@ impl Scratch {
     &mut self,
     db: &Database,
     data: ByteSlice<'data>,
-  ) -> Result<Option<Match<'data>>, HyperscanRuntimeError> {
+  ) -> Result<Option<Match<'data>>, VectorscanRuntimeError> {
     let mut fully_matched_expr: Option<Match<'data>> = None;
     match self.scan_sync(db, data, |m| {
       debug_assert!(fully_matched_expr.is_none());
@@ -725,7 +725,7 @@ impl Scratch {
         assert!(fully_matched_expr.is_none());
         Ok(None)
       },
-      Err(HyperscanRuntimeError::ScanTerminated) => {
+      Err(VectorscanRuntimeError::ScanTerminated) => {
         debug_assert!(fully_matched_expr.is_some());
         Ok(fully_matched_expr)
       },
@@ -797,8 +797,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, error::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, error::*};
   ///   use futures_util::TryStreamExt;
   ///
   ///   let a_expr: Expression = "a+".parse()?;
@@ -830,7 +830,7 @@ impl Scratch {
   ///     |_| MatchResult::CeaseMatching,
   ///   ).try_for_each(|_| async { Ok(()) })
   ///    .await;
-  ///   assert!(matches![ret, Err(ScanError::ReturnValue(HyperscanRuntimeError::ScanTerminated))]);
+  ///   assert!(matches![ret, Err(ScanError::ReturnValue(VectorscanRuntimeError::ScanTerminated))]);
   ///   Ok(())
   /// })}
   /// # #[cfg(not(feature = "compiler"))]
@@ -885,8 +885,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> { tokio_test::block_on(async {
-  ///   use hyperscan::{expression::*, flags::*, sources::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+  ///   use vectorscan::{expression::*, flags::*, sources::*, matchers::*};
   ///   use futures_util::TryStreamExt;
   ///
   ///   let a_plus: Expression = "a+".parse()?;
@@ -1014,8 +1014,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*, state::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, state::*};
   ///   use std::{mem::ManuallyDrop, ptr};
   ///
   ///   // Compile a legitimate db:
@@ -1073,8 +1073,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = r"\w".parse()?;
   ///   let utf8_db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::BLOCK)?;
@@ -1096,8 +1096,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(all(feature = "alloc", feature = "compiler"))]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, state::*, alloc::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, state::*, alloc::*};
   ///   use std::alloc::System;
   ///
   ///   // Wrap the standard Rust System allocator.
@@ -1114,9 +1114,9 @@ impl Scratch {
   ///   // Verify that only the single known scratch was allocated:
   ///   assert_eq!(1, allocs.len());
   ///   let (p, layout) = allocs[0];
-  ///   // The allocation was made 0x30 bytes to the left of the returned scratch pointer.
+  ///   // The allocation was made 0x10 bytes to the left of the returned scratch pointer.
   ///   assert_eq!(
-  ///     unsafe { p.as_ptr().add(0x30) },
+  ///     unsafe { p.as_ptr().add(0x10) },
   ///     utf8_scratch.as_mut_native().unwrap() as *mut NativeScratch as *mut u8,
   ///   );
   ///
@@ -1133,8 +1133,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, state::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, state::*};
   ///
   ///   let a_expr: Expression = "a+".parse()?;
   ///   let b_expr: Expression = "b+".parse()?;
@@ -1168,8 +1168,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(all(feature = "compiler", feature = "vectored", feature = "stream"))]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let block_db = expr.compile(Flags::default(), Mode::BLOCK)?;
@@ -1191,8 +1191,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, matchers::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*};
   ///
   ///   let expr: Expression = "a+".parse()?;
   ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
@@ -1214,12 +1214,12 @@ impl Scratch {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
-  pub fn scratch_size(&self) -> Result<usize, HyperscanRuntimeError> {
+  pub fn scratch_size(&self) -> Result<usize, VectorscanRuntimeError> {
     match self.as_ref_native() {
       None => Ok(0),
       Some(p) => {
         let mut n: usize = 0;
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
+        VectorscanRuntimeError::from_native(unsafe { hs::hs_scratch_size(p, &mut n) })?;
         Ok(n)
       },
     }
@@ -1233,8 +1233,8 @@ impl Scratch {
   ///
   ///```
   /// #[cfg(all(feature = "alloc", feature = "compiler"))]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, flags::*, alloc::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, alloc::*};
   ///   use std::alloc::System;
   ///
   ///   // Wrap the standard Rust System allocator.
@@ -1260,12 +1260,12 @@ impl Scratch {
   /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
-  pub fn try_clone(&self) -> Result<Self, HyperscanRuntimeError> {
+  pub fn try_clone(&self) -> Result<Self, VectorscanRuntimeError> {
     match self.as_ref_native() {
       None => Ok(Self::blank()),
       Some(p) => {
         let mut scratch_ptr = ptr::null_mut();
-        HyperscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
+        VectorscanRuntimeError::from_native(unsafe { hs::hs_clone_scratch(p, &mut scratch_ptr) })?;
         Ok(Self(NonNull::new(scratch_ptr)))
       },
     }
@@ -1284,9 +1284,9 @@ impl Scratch {
   /// correspond to the entire scratch allocation, this method *must* be
   /// executed in order to avoid leaking resources associated with a scratch
   /// space. The memory *must not* be deallocated elsewhere.
-  pub unsafe fn try_drop(&mut self) -> Result<(), HyperscanRuntimeError> {
+  pub unsafe fn try_drop(&mut self) -> Result<(), VectorscanRuntimeError> {
     if let Some(p) = self.as_mut_native() {
-      HyperscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
+      VectorscanRuntimeError::from_native(unsafe { hs::hs_free_scratch(p) })?;
     }
     Ok(())
   }
@@ -1297,7 +1297,7 @@ impl Clone for Scratch {
 }
 
 impl Resource for Scratch {
-  type Error = HyperscanRuntimeError;
+  type Error = VectorscanRuntimeError;
 
   fn deep_clone(&self) -> Result<Self, Self::Error>
   where Self: Sized {
@@ -1423,8 +1423,8 @@ mod test {
 /// [`Rc::make_mut()`](std::rc::Rc::make_mut):
 ///
 ///```
-/// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-/// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, error::chimera::*, sources::*};
+/// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+/// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, error::chimera::*, sources::*};
 /// use std::rc::Rc;
 ///
 /// let ab_expr: ChimeraExpression = "a.*b".parse()?;
@@ -1509,8 +1509,8 @@ mod test {
 ///
 ///```
 /// #[cfg(feature = "async")]
-/// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
-///   use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
+/// fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> { tokio_test::block_on(async {
+///   use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
 ///   use futures_util::TryStreamExt;
 ///   use std::sync::Arc;
 ///
@@ -1634,8 +1634,8 @@ pub mod chimera {
     /// multiply-initialized scratch space.
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*, sources::*};
     ///
     /// let a_expr: ChimeraExpression = "a+".parse()?;
     /// let a_db = a_expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
@@ -1689,8 +1689,8 @@ pub mod chimera {
     /// Synchronously scan a single contiguous string.
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*};
     ///
     /// let expr: ChimeraExpression = "a+(.)".parse()?;
     /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::GROUPS)?;
@@ -1826,9 +1826,9 @@ pub mod chimera {
     /// Asynchronously scan a single contiguous string.
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
     /// # tokio_test::block_on(async {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, error::chimera::*};
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, error::chimera::*};
     /// use futures_util::TryStreamExt;
     ///
     /// let expr: ChimeraExpression = "a+(.)".parse()?;
@@ -1932,8 +1932,8 @@ pub mod chimera {
     /// [`ManuallyDrop`](mem::ManuallyDrop):
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*, matchers::chimera::*, state::chimera::*};
     /// use std::{mem::ManuallyDrop, ptr};
     ///
     /// // Compile a legitimate db:
@@ -1995,8 +1995,8 @@ pub mod chimera {
     /// character classes, which increases the size of the scratch space:
     ///
     ///```
-    /// # fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    /// use hyperscan::{expression::chimera::*, flags::chimera::*};
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*};
     ///
     /// let expr: ChimeraExpression = r"\w".parse()?;
     /// let utf8_db = expr.compile(
@@ -2019,8 +2019,8 @@ pub mod chimera {
     ///
     ///```
     /// #[cfg(feature = "alloc")]
-    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    /// fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    ///   use vectorscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
     ///   use std::alloc::System;
     ///
     ///   // Wrap the standard Rust System allocator.
@@ -2068,8 +2068,8 @@ pub mod chimera {
     ///
     ///```
     /// #[cfg(feature = "alloc")]
-    /// fn main() -> Result<(), hyperscan::error::chimera::ChimeraError> {
-    ///   use hyperscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
+    /// fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    ///   use vectorscan::{expression::chimera::*, flags::chimera::*, alloc::{*, chimera::*}};
     ///   use std::alloc::System;
     ///
     ///   // Wrap the standard Rust System allocator.

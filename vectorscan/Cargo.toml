@@ -1,6 +1,6 @@
 [package]
-name                    = "hyperscan-async"
-description             = "Wrapper for the hyperscan C++ regex library."
+name                    = "vectorscan"
+description             = "Wrapper for the vectorscan C++ regex library."
 version                 = "0.0.6"
 edition.workspace       = true
 license                 = "BSD-3-Clause"
@@ -9,10 +9,10 @@ authors.workspace       = true
 
 [features]
 default                 = ["static", "compiler", "stream", "vectored", "catch-unwind"]
-static                  = ["hyperscan-sys/static"]
-compiler                = ["hyperscan-sys/compiler"]
-dynamic                 = ["hyperscan-sys/dynamic"]
-chimera                 = ["compiler", "static", "hyperscan-sys/chimera", "dep:smallvec"]
+static                  = ["vectorscan-sys/static"]
+compiler                = ["vectorscan-sys/compiler"]
+dynamic                 = ["vectorscan-sys/dynamic"]
+chimera                 = ["compiler", "static", "vectorscan-sys/chimera", "dep:smallvec"]
 alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 async                   = ["dep:futures-core", "dep:tokio"]
 stream                  = []
@@ -20,11 +20,8 @@ vectored                = []
 catch-unwind            = []
 tokio-impls             = ["async", "stream", "dep:futures-util"]
 
-[lib]
-name                    = "hyperscan"
-
 [dependencies]
-hyperscan-sys.workspace = true
+vectorscan-sys.workspace = true
 
 cfg-if                  = "1"
 displaydoc.workspace    = true

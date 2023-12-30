@@ -17,7 +17,7 @@ use std::{
   os::raw::c_uint,
 };
 
-/// Native error code from the underlying hyperscan library.
+/// Native error code from the underlying vectorscan library.
 #[derive(
   Debug,
   Display,
@@ -34,7 +34,7 @@ use std::{
 )]
 #[repr(i8)]
 #[ignore_extra_doc_attributes]
-pub enum HyperscanRuntimeError {
+pub enum VectorscanRuntimeError {
   /// A parameter passed to this function was invalid.
   ///
   /// This error is only returned in cases where the function can detect an
@@ -53,7 +53,7 @@ pub enum HyperscanRuntimeError {
   /// The pattern compiler failed, and the [`CompileError`] should be
   /// inspected for more detail.
   CompilerError = hs::HS_COMPILER_ERROR,
-  /// The given database was built for a different version of Hyperscan.
+  /// The given database was built for a different version of Vectorscan.
   DbVersionError = hs::HS_DB_VERSION_ERROR,
   /// The given database was built for a different platform (i.e., CPU type).
   DbPlatformError = hs::HS_DB_PLATFORM_ERROR,
@@ -73,13 +73,13 @@ pub enum HyperscanRuntimeError {
   BadAlloc = hs::HS_BAD_ALLOC,
   /// The scratch region was already in use.
   ///
-  /// This error is returned when Hyperscan is able to detect that the scratch
-  /// region given is already in use by another Hyperscan API call.
+  /// This error is returned when Vectorscan is able to detect that the scratch
+  /// region given is already in use by another Vectorscan API call.
   ///
   /// A separate scratch region, allocated with
   /// [`Scratch::setup_for_db()`](crate::state::Scratch::setup_for_db) or
   /// [`Scratch::try_clone()`](crate::state::Scratch::try_clone), is required
-  /// for every concurrent caller of the Hyperscan API.
+  /// for every concurrent caller of the Vectorscan API.
   ///
   /// For example, this error might be returned when
   /// [`scan_sync()`](crate::state::Scratch::scan_sync) has been
@@ -97,10 +97,10 @@ pub enum HyperscanRuntimeError {
   ScratchInUse = hs::HS_SCRATCH_IN_USE,
   /// Unsupported CPU architecture.
   ///
-  /// This error is returned when Hyperscan is able to detect that the current
+  /// This error is returned when Vectorscan is able to detect that the current
   /// system does not support the required instruction set.
   ///
-  /// At a minimum, Hyperscan requires Supplemental Streaming SIMD Extensions 3
+  /// At a minimum, Vectorscan requires Supplemental Streaming SIMD Extensions 3
   /// (SSSE3).
   ArchError = hs::HS_ARCH_ERROR,
   /// Provided buffer was too small.
@@ -128,7 +128,7 @@ pub enum HyperscanRuntimeError {
   UnknownError = hs::HS_UNKNOWN_ERROR,
 }
 
-impl HyperscanRuntimeError {
+impl VectorscanRuntimeError {
   pub(crate) fn from_native(x: hs::hs_error_t) -> Result<(), Self> {
     static_assertions::const_assert_eq!(0, hs::HS_SUCCESS);
     if x == 0 {
@@ -143,12 +143,12 @@ impl HyperscanRuntimeError {
   pub(crate) fn copy_from_native_compile_error(
     x: hs::hs_error_t,
     c: *mut hs::hs_compile_error,
-  ) -> Result<(), HyperscanCompileError> {
+  ) -> Result<(), VectorscanCompileError> {
     match Self::from_native(x) {
       Ok(()) => Ok(()),
       Err(Self::CompilerError) => {
         let e = CompileError::copy_from_native(unsafe { &mut *c }).unwrap();
-        Err(HyperscanCompileError::Compile(e))
+        Err(VectorscanCompileError::Compile(e))
       },
       Err(e) => Err(e.into()),
     }
@@ -177,14 +177,14 @@ pub struct CompileError {
   /// - *Unrecognised flag:* An unrecognised value was passed in the flags
   ///   argument.
   ///
-  /// - *Pattern matches empty buffer:* By default, Hyperscan only supports
+  /// - *Pattern matches empty buffer:* By default, Vectorscan only supports
   ///   patterns that will *always* consume at least one byte of input. Patterns
   ///   that do not have this property (such as `/(abc)?/`) will produce this
   ///   error unless the [`Flags::ALLOWEMPTY`](crate::flags::Flags::ALLOWEMPTY)
   ///   flag is supplied. Note that such patterns will produce a match for
   ///   *every* byte when scanned.
   ///
-  /// - *Embedded anchors not supported:* Hyperscan only supports the use of
+  /// - *Embedded anchors not supported:* Vectorscan only supports the use of
   ///   anchor meta-characters (such as `^` and `$`) in patterns where they
   ///   could *only* match at the start or end of a buffer. A pattern containing
   ///   an embedded anchor, such as `/abc^def/`, can never match, as there is no
@@ -197,7 +197,7 @@ pub struct CompileError {
   ///   the pattern. Consider using [`chimera`](crate::expression::chimera) for
   ///   full PCRE support.
   ///
-  /// - *Unable to generate bytecode:* This error indicates that Hyperscan was
+  /// - *Unable to generate bytecode:* This error indicates that Vectorscan was
   ///   unable to compile a pattern that is syntactically valid. The most common
   ///   cause is a pattern that is very long and complex or contains a large
   ///   repeated subpattern.
@@ -212,7 +212,7 @@ pub struct CompileError {
   ///   data type on this platform.
   ///
   /// - *Internal error:* An unexpected error occurred: if this error is
-  ///   reported, please contact the Hyperscan team with a description of the
+  ///   reported, please contact the Vectorscan team with a description of the
   ///   situation.
   pub message: String,
   /// The zero-based number of the expression that caused the error (if this
@@ -220,12 +220,12 @@ pub struct CompileError {
   /// will be `0`:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, error::*, matchers::*, flags::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, error::*, matchers::*, flags::*};
   ///
   /// let expr: Expression = "as(df".parse()?;
   /// let index = match expr.compile(Flags::default(), Mode::BLOCK) {
-  ///   Err(HyperscanCompileError::Compile(CompileError { expression, .. })) => expression,
+  ///   Err(VectorscanCompileError::Compile(CompileError { expression, .. })) => expression,
   ///   _ => unreachable!(),
   /// };
   /// assert_eq!(index, Some(ExpressionIndex(0)));
@@ -241,14 +241,14 @@ pub struct CompileError {
   /// but instead just from the expression's index in the set:
   ///
   ///```
-  /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  /// use hyperscan::{expression::*, error::*, matchers::*, flags::*};
+  /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  /// use vectorscan::{expression::*, error::*, matchers::*, flags::*};
   ///
   /// let e1: Expression = "aa".parse()?;
   /// let e2: Expression = "as(df".parse()?;
   /// let set = ExpressionSet::from_exprs([&e1, &e2]).with_ids([ExprId(2), ExprId(3)]);
   /// let index = match set.compile(Mode::BLOCK) {
-  ///   Err(HyperscanCompileError::Compile(CompileError { expression, .. })) => expression,
+  ///   Err(VectorscanCompileError::Compile(CompileError { expression, .. })) => expression,
   ///   _ => unreachable!(),
   /// };
   /// assert_eq!(index, Some(ExpressionIndex(1)));
@@ -259,10 +259,10 @@ pub struct CompileError {
   /// If the error is not specific to an expression, then this value will be
   /// [`None`]:
   ///```
-  /// // Using hyperscan::alloc requires the "alloc" feature.
+  /// // Using vectorscan::alloc requires the "alloc" feature.
   /// #[cfg(feature = "alloc")]
-  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
-  ///   use hyperscan::{expression::*, error::*, flags::*, alloc::*};
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, error::*, flags::*, alloc::*};
   ///   use std::{alloc::{GlobalAlloc, Layout}, ptr};
   ///
   ///   // Create a broken allocator:
@@ -276,7 +276,7 @@ pub struct CompileError {
   ///
   ///   let expr: Expression = "a".parse()?;
   ///   let CompileError { message, expression } = match expr.compile(Flags::default(), Mode::BLOCK) {
-  ///     Err(HyperscanCompileError::Compile(err)) => err,
+  ///     Err(VectorscanCompileError::Compile(err)) => err,
   ///     _ => unreachable!(),
   ///   };
   ///   assert_eq!(expression, None);
@@ -304,7 +304,7 @@ impl fmt::Display for CompileError {
 impl CompileError {
   pub(crate) fn copy_from_native(
     x: &mut hs::hs_compile_error,
-  ) -> Result<Self, HyperscanRuntimeError> {
+  ) -> Result<Self, VectorscanRuntimeError> {
     let hs::hs_compile_error {
       message,
       expression,
@@ -320,7 +320,7 @@ impl CompileError {
         Some(ExpressionIndex(*expression as c_uint))
       },
     };
-    HyperscanRuntimeError::from_native(unsafe { hs::hs_free_compile_error(x) })?;
+    VectorscanRuntimeError::from_native(unsafe { hs::hs_free_compile_error(x) })?;
     Ok(ret)
   }
 }
@@ -329,9 +329,9 @@ impl CompileError {
 #[cfg(feature = "compiler")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 #[derive(Debug, Display, Error)]
-pub enum HyperscanCompileError {
+pub enum VectorscanCompileError {
   /// non-compilation error: {0}
-  NonCompile(#[from] HyperscanRuntimeError),
+  NonCompile(#[from] VectorscanRuntimeError),
   /// pattern compilation error: {0}
   Compile(#[from] CompileError),
   /// null byte in expression: {0}
@@ -342,7 +342,7 @@ pub enum HyperscanCompileError {
 #[derive(Debug, Display, Error)]
 pub enum CompressionError {
   /// other error: {0}
-  Other(#[from] HyperscanRuntimeError),
+  Other(#[from] VectorscanRuntimeError),
   /// not enough space for {0} in buf {1:?}
   NoSpace(usize, Vec<u8>),
 }
@@ -355,7 +355,7 @@ pub enum CompressionError {
 #[derive(Debug, Display, Error)]
 pub enum ScanError {
   /// error from return value of `hs_scan*()`: {0}
-  ReturnValue(#[from] HyperscanRuntimeError),
+  ReturnValue(#[from] VectorscanRuntimeError),
   /// task join error: {0}
   Join(#[from] tokio::task::JoinError),
 }
@@ -363,13 +363,13 @@ pub enum ScanError {
 /// Top-level wrapper for errors returned by this library.
 #[derive(Debug, Display, Error)]
 #[ignore_extra_doc_attributes]
-pub enum HyperscanError {
-  /// error from the hyperscan runtime: {0}
-  Runtime(#[from] HyperscanRuntimeError),
+pub enum VectorscanError {
+  /// error from the vectorscan runtime: {0}
+  Runtime(#[from] VectorscanRuntimeError),
   /// compile error: {0}
   #[cfg(feature = "compiler")]
   #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-  Compile(#[from] HyperscanCompileError),
+  Compile(#[from] VectorscanCompileError),
   /// error during scan: {0}
   #[cfg(feature = "async")]
   #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
@@ -464,10 +464,10 @@ pub mod chimera {
     /// to avoid this while preserving the ergonomics of a [`Clone`] and
     /// [`Send`] reference type.
     ScratchInUse = hs::CH_SCRATCH_IN_USE,
-    /// Unexpected internal error from Hyperscan.
+    /// Unexpected internal error from Vectorscan.
     ///
     /// This error indicates that there was unexpected matching behaviors from
-    /// Hyperscan. This could be related to invalid usage of scratch space or
+    /// Vectorscan. This could be related to invalid usage of scratch space or
     /// invalid memory operations by users.
     #[num_enum(default)]
     UnknownError = hs::CH_UNKNOWN_HS_ERROR,
@@ -517,13 +517,13 @@ pub mod chimera {
   pub struct ChimeraInnerCompileError {
     /// A human-readable error message describing the error.
     ///
-    /// Common errors are the same as for the base hyperscan library's
+    /// Common errors are the same as for the base vectorscan library's
     /// [`super::CompileError::message`], except that PCRE constructs are fully
     /// supported and will not cause errors.
     pub message: String,
     /// The zero-based number of the expression that caused the error (if this
     /// can be determined). This value's behavior is the same as for the base
-    /// hyperscan library's [`super::CompileError::expression`].
+    /// vectorscan library's [`super::CompileError::expression`].
     pub expression: Option<ExpressionIndex>,
   }
 
@@ -640,14 +640,14 @@ pub mod chimera {
   pub enum ChimeraError {
     /// error from chimera runtime: {0}
     Runtime(#[from] ChimeraRuntimeError),
-    /// error from hyperscan runtime: {0}
+    /// error from vectorscan runtime: {0}
     ///
     /// This case in particular is helpful to convert the result of
     /// [`Platform::local()`](crate::flags::platform::Platform::local) into a
     /// chimera error.
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-    HyperscanRuntime(#[from] super::HyperscanRuntimeError),
+    VectorscanRuntime(#[from] super::VectorscanRuntimeError),
     /// compile error: {0}
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]

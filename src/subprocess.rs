@@ -270,6 +270,7 @@ pub mod spack {
         spec: commands::CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let installed_spec = bootstrap_install.install_find().await?;
 

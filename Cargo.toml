@@ -3,8 +3,8 @@ members                 = [
     ".",
     "re2",
     "re2/sys",
-    "hyperscan",
-    "hyperscan/sys",
+    "vectorscan",
+    "vectorscan/sys",
     "super-process",
     "handles",
 ]
@@ -12,8 +12,8 @@ default-members         = [
     ".",
     "re2",
     "re2/sys",
-    "hyperscan",
-    "hyperscan/sys",
+    "vectorscan",
+    "vectorscan/sys",
     "super-process",
     "handles",
 ]
@@ -38,8 +38,8 @@ name                    = "spack"
 
 [workspace.dependencies]
 handles                 = { path = "handles", version = "0.0.0" }
-hyperscan-async         = { path = "hyperscan" }
-hyperscan-sys           = { path = "hyperscan/sys", version = "0.0.5", package = "hyperscan-async-sys" }
+vectorscan              = { path = "vectorscan" }
+vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.5" }
 re2                     = { path = "re2" }
 re2-sys                 = { path = "re2/sys", version = "0.0.5" }
 spack                   = { path = ".", version = "0.0.4", package = "spack-rs" }

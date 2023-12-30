@@ -337,7 +337,7 @@ impl ops::Not for Mode {
 /// Flags used for instruction selection with [`platform::Platform`].
 pub mod platform {
   use super::BitSet;
-  use crate::{error::HyperscanRuntimeError, hs};
+  use crate::{error::VectorscanRuntimeError, hs};
 
   use std::{
     mem::MaybeUninit,
@@ -487,9 +487,9 @@ pub mod platform {
     /// This method calls into `hs_populate_platform()` to populate the returned
     /// platform struct with all the features the currently executing processor
     /// has access to when building a database.
-    pub fn local() -> Result<Self, HyperscanRuntimeError> {
+    pub fn local() -> Result<Self, VectorscanRuntimeError> {
       let mut s = MaybeUninit::<hs::hs_platform_info>::uninit();
-      HyperscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
+      VectorscanRuntimeError::from_native(unsafe { hs::hs_populate_platform(s.as_mut_ptr()) })?;
       Ok(Self::from_native(unsafe { s.assume_init() }))
     }
 
