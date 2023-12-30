@@ -686,7 +686,7 @@ pub mod channel {
 }
 
 pub mod compress {
-  use super::LiveStream;
+  use super::{LiveStream, NativeStream};
   use crate::{
     database::Database,
     error::{CompressionError, HyperscanRuntimeError},
@@ -843,8 +843,23 @@ pub mod compress {
         to.as_mut_native(),
         mem::transmute(self.buf.as_ptr()),
         self.buf.len(),
-      ))?;
-      Ok(())
+      ))
+    }
+
+    /// # Safety
+    /// `to` must point to an allocation of at least [`Database::stream_size()`]
+    /// bytes in size given `db`!
+    pub unsafe fn expand_into_at(
+      &self,
+      db: &Database,
+      to: *mut NativeStream,
+    ) -> Result<(), HyperscanRuntimeError> {
+      HyperscanRuntimeError::from_native(hs::hs_expand_stream_at(
+        db.as_ref_native(),
+        mem::transmute(self.buf.as_ptr()),
+        self.buf.len(),
+        to,
+      ))
     }
   }
 }

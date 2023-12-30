@@ -48,10 +48,10 @@ pub mod versions {
     use super::hex;
 
     pub const PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/cargo-patches-v1.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/cargo-patches-v2.tar.gz";
     pub const PATCHES_SHA256SUM: [u8; 32] =
-      hex!("bc921f6caeed7a62df674f9127fd03f0a9c04cd8837f0fe42837efdb6e67833a");
-    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-cargo-patches-v1";
+      hex!("32fc4ed023ecddde91fc5803f20dc8982681914747cbfcacd306dec123283442");
+    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-cargo-patches-v2";
   }
 
   /// The most recently released version of spack.
