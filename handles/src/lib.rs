@@ -35,10 +35,7 @@ pub trait Handle: Any {
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized;
 
-  fn boxed_clone_handle<'a>(
-    &self,
-  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
-  where Self: 'a;
+  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error>;
 
   fn handle_ref(&self) -> &Self::R;
 
@@ -74,10 +71,7 @@ impl<R: Resource> Handle for R {
     self.deep_clone()
   }
 
-  fn boxed_clone_handle<'a>(
-    &self,
-  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
-  where Self: 'a {
+  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
     let r: Box<dyn Any> = self.deep_boxed_clone()?;
     let h: Box<Self> = r.downcast().unwrap();
     Ok(h)
@@ -103,10 +97,7 @@ impl<R: Resource> Handle for Rc<R> {
     Ok(Rc::clone(self))
   }
 
-  fn boxed_clone_handle<'a>(
-    &self,
-  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
-  where Self: 'a {
+  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
     Ok(Box::new(Rc::clone(self)))
   }
 
@@ -150,10 +141,7 @@ impl<R: Resource> Handle for Arc<R> {
     Ok(Arc::clone(self))
   }
 
-  fn boxed_clone_handle<'a>(
-    &self,
-  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
-  where Self: 'a {
+  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
     Ok(Box::new(Arc::clone(self)))
   }
 
@@ -260,7 +248,7 @@ mod test {
   #[test]
   fn test_interchange() {
     let mut r = Box::new(R { state: 0 });
-    let r1: &mut dyn AnyHandle<R=R> = r.as_mut();
+    let r1: &mut dyn Handle<R=R> = r.as_mut();
     let r2 = r1.boxed_clone_handle().unwrap();
 
     let r2_test1: Box<dyn Any> = r2.boxed_clone_handle().unwrap();
@@ -277,7 +265,7 @@ mod test {
     r2.ensure_exclusive().unwrap();
 
     let mut r3 = Rc::new(R { state: 0 });
-    let r3: &mut dyn AnyHandle<R=R> = &mut r3;
+    let r3: &mut dyn Handle<R=R> = &mut r3;
     let r4 = r3.boxed_clone_handle().unwrap();
 
     let r4_test1: Box<dyn Any> = r4.boxed_clone_handle().unwrap();
@@ -300,7 +288,7 @@ mod test {
     assert_ne!(r3.handle_ref(), r4.handle_ref());
 
     let mut r5 = Arc::new(R { state: 0 });
-    let r5: &mut dyn AnyHandle<R=R> = &mut r5;
+    let r5: &mut dyn Handle<R=R> = &mut r5;
     let r6 = r5.boxed_clone_handle().unwrap();
 
     let r6_test1: Box<dyn Any> = r6.boxed_clone_handle().unwrap();

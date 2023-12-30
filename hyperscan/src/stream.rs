@@ -221,25 +221,64 @@ impl<'code> ScratchStreamSink<'code> {
   }
 }
 
-impl<'code> std::io::Write for ScratchStreamSink<'code> {
-  fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-    self
-      .scan(ByteSlice::from_slice(buf))
-      .map(|()| buf.len())
-      .map_err(std::io::Error::other)
+pub mod std_impls {
+  use super::ScratchStreamSink;
+  use crate::sources::{ByteSlice, VectoredByteSlices};
+
+  use std::{io, mem};
+
+  pub(crate) fn copy_vectored_slices<'string, 'slice>(
+    cache: &'slice mut Vec<mem::MaybeUninit<ByteSlice<'static>>>,
+    bufs: &'string [io::IoSlice<'string>],
+  ) -> VectoredByteSlices<'string, 'slice> {
+    cache.clear();
+    cache.reserve(bufs.len());
+    unsafe {
+      cache.set_len(bufs.len());
+    }
+    for (out_slice, in_slice) in cache.iter_mut().zip(bufs.iter()) {
+      let in_slice: &'static io::IoSlice<'static> = unsafe { mem::transmute(in_slice) };
+      out_slice.write(ByteSlice::from_slice(&in_slice));
+    }
+    let bufs: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(&cache[..]) };
+    VectoredByteSlices::from_slices(bufs)
   }
 
-  fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+  pub struct StreamWriter<'code> {
+    pub inner: ScratchStreamSink<'code>,
+    vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
+  }
 
-  /* TODO: impl `is_write_vectored()` when stabilized! */
-  fn write_vectored(&mut self, bufs: &[std::io::IoSlice]) -> std::io::Result<usize> {
-    let bufs: Vec<ByteSlice> = bufs.iter().map(|s| ByteSlice::from_slice(&s)).collect();
-    let bufs = VectoredByteSlices::from_slices(&bufs);
-    let len = bufs.length_sum();
-    self
-      .scan_vectored(bufs)
-      .map(|()| len)
-      .map_err(std::io::Error::other)
+  impl<'code> StreamWriter<'code> {
+    pub fn new(inner: ScratchStreamSink<'code>) -> Self {
+      Self {
+        inner,
+        vectored_buf_cache: Vec::new(),
+      }
+    }
+  }
+
+  impl<'code> io::Write for StreamWriter<'code> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+      self
+        .inner
+        .scan(ByteSlice::from_slice(buf))
+        .map(|()| buf.len())
+        .map_err(io::Error::other)
+    }
+
+    fn flush(&mut self) -> io::Result<()> { Ok(()) }
+
+    /* TODO: impl `is_write_vectored()` when stabilized! */
+    fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+      let bufs = copy_vectored_slices(&mut self.vectored_buf_cache, bufs);
+      let len = bufs.length_sum();
+      self
+        .inner
+        .scan_vectored(bufs)
+        .map(|()| len)
+        .map_err(io::Error::other)
+    }
   }
 }
 
@@ -430,14 +469,15 @@ pub mod channel {
   #[cfg(feature = "tokio-impls")]
   #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
   pub mod tokio_impls {
-    use super::ScratchStreamSinkChannel;
-    use crate::sources::{ByteSlice, VectoredByteSlices};
+    use super::{super::std_impls::copy_vectored_slices, ScratchStreamSinkChannel};
+    use crate::sources::ByteSlice;
 
     use futures_util::TryFutureExt;
     use tokio::io;
 
     use std::{
       future::Future,
+      io::IoSlice,
       mem,
       pin::Pin,
       task::{ready, Context, Poll},
@@ -476,6 +516,7 @@ pub mod channel {
     /// ```
     pub struct StreamWriter<'code> {
       pub inner: ScratchStreamSinkChannel<'code>,
+      vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
       write_future: Option<Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>>,
       shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
     }
@@ -484,6 +525,7 @@ pub mod channel {
       pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
         Self {
           inner,
+          vectored_buf_cache: Vec::new(),
           write_future: None,
           shutdown_future: None,
         }
@@ -511,17 +553,18 @@ pub mod channel {
 
           Poll::Ready(ret)
         } else {
-          let s: *mut Self = self.as_mut().get_mut();
-          let buf_len = buf.len();
-          let buf = ByteSlice::from_slice(buf);
-          let buf: ByteSlice<'static> = unsafe { mem::transmute(buf) };
-          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
-            unsafe { &mut *s }
-              .inner
-              .scan(buf)
-              .map_ok(move |()| buf_len)
-              .map_err(io::Error::other),
-          );
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>+'code>> = {
+            let s: &'code mut Self = unsafe { mem::transmute(self.as_mut().get_mut()) };
+            let buf: &'code [u8] = unsafe { mem::transmute(buf) };
+            let buf_len = buf.len();
+            let buf = ByteSlice::from_slice(buf);
+            Box::pin(
+              s.inner
+                .scan(buf)
+                .map_ok(move |()| buf_len)
+                .map_err(io::Error::other),
+            )
+          };
 
           if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
             return Poll::Ready(ret);
@@ -551,13 +594,10 @@ pub mod channel {
 
           Poll::Ready(ret)
         } else {
-          let s: *mut Self = self.as_mut().get_mut();
-          let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>>> = Box::pin(
-            unsafe { &mut *s }
-              .inner
-              .flush_eod()
-              .map_err(io::Error::other),
-          );
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<()>>+'code>> = {
+            let s: &'code mut Self = unsafe { mem::transmute(self.as_mut().get_mut()) };
+            Box::pin(s.inner.flush_eod().map_err(io::Error::other))
+          };
 
           if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
             return Poll::Ready(ret);
@@ -574,7 +614,7 @@ pub mod channel {
       fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        bufs: &[std::io::IoSlice<'_>],
+        bufs: &[IoSlice<'_>],
       ) -> Poll<io::Result<usize>> {
         if self.write_future.is_some() {
           let ret = ready!(self
@@ -589,18 +629,18 @@ pub mod channel {
 
           Poll::Ready(ret)
         } else {
-          let s: *mut Self = self.as_mut().get_mut();
-          let bufs: Vec<ByteSlice> = bufs.iter().map(|s| ByteSlice::from_slice(&s)).collect();
-          let bufs = VectoredByteSlices::from_slices(&bufs);
-          let len = bufs.length_sum();
-          let bufs: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(bufs) };
-          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
-            unsafe { &mut *s }
-              .inner
-              .scan_vectored(bufs)
-              .map_ok(move |()| len)
-              .map_err(io::Error::other),
-          );
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>+'code>> = {
+            let s: &'code mut Self = unsafe { mem::transmute(self.as_mut().get_mut()) };
+            let bufs: &'code [IoSlice<'code>] = unsafe { mem::transmute(bufs) };
+            let bufs = copy_vectored_slices(&mut s.vectored_buf_cache, bufs);
+            let len = bufs.length_sum();
+            Box::pin(
+              s.inner
+                .scan_vectored(bufs)
+                .map_ok(move |()| len)
+                .map_err(io::Error::other),
+            )
+          };
 
           if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
             return Poll::Ready(ret);
