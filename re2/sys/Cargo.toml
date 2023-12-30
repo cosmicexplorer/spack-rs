@@ -77,6 +77,7 @@ lib_names               = [
   "absl_hash",
   "absl_hashtablez_sampler",
   "absl_int128",
+  "absl_kernel_timeout_internal",
   "absl_leak_check",
   "absl_log_entry",
   "absl_log_flags",
