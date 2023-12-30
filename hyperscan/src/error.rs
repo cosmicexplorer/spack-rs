@@ -518,12 +518,12 @@ pub mod chimera {
     /// A human-readable error message describing the error.
     ///
     /// Common errors are the same as for the base hyperscan library's
-    /// [`CompileError::message`], except that PCRE constructs are fully
+    /// [`super::CompileError::message`], except that PCRE constructs are fully
     /// supported and will not cause errors.
     pub message: String,
     /// The zero-based number of the expression that caused the error (if this
     /// can be determined). This value's behavior is the same as for the base
-    /// hyperscan library's [`CompileError::expression`].
+    /// hyperscan library's [`super::CompileError::expression`].
     pub expression: Option<ExpressionIndex>,
   }
 

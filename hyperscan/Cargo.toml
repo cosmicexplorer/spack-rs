@@ -18,6 +18,7 @@ async                   = ["dep:futures-core", "dep:tokio"]
 stream                  = []
 vectored                = []
 tokio-impls             = ["async", "stream", "dep:futures-util"]
+catch-unwind            = []
 
 [lib]
 name                    = "hyperscan"

@@ -3,6 +3,7 @@
 
 //! Types used in hyperscan match callbacks.
 
+use cfg_if::cfg_if;
 use displaydoc::Display;
 
 use std::{
@@ -99,6 +100,12 @@ pub(crate) mod contiguous_slice {
   use super::*;
   use crate::sources::ByteSlice;
 
+  #[cfg(feature = "catch-unwind")]
+  use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
+  };
+
   /// Match object returned when searching a single contiguous string.
   ///
   /// This is returned by e.g.
@@ -111,9 +118,19 @@ pub(crate) mod contiguous_slice {
     pub source: ByteSlice<'a>,
   }
 
-  pub(crate) struct SliceMatcher<'data, 'code> {
-    parent_slice: ByteSlice<'data>,
-    handler: &'code mut (dyn FnMut(Match<'data>) -> MatchResult),
+  cfg_if! {
+    if #[cfg(feature = "catch-unwind")] {
+      pub(crate) struct SliceMatcher<'data, 'code> {
+        parent_slice: ByteSlice<'data>,
+        handler: &'code mut (dyn FnMut(Match<'data>) -> MatchResult+UnwindSafe+RefUnwindSafe),
+        panic_payload: Option<Box<dyn Any+Send>>,
+      }
+    } else {
+      pub(crate) struct SliceMatcher<'data, 'code> {
+        parent_slice: ByteSlice<'data>,
+        handler: &'code mut (dyn FnMut(Match<'data>) -> MatchResult),
+      }
+    }
   }
 
   impl<'data, 'code> SliceMatcher<'data, 'code> {
@@ -121,9 +138,15 @@ pub(crate) mod contiguous_slice {
       parent_slice: ByteSlice<'data>,
       f: &'code mut F,
     ) -> Self {
+      let f: &'code mut (dyn FnMut(Match<'data>) -> MatchResult) = f;
+      #[cfg(feature = "catch-unwind")]
+      let f: &'code mut (dyn FnMut(Match<'data>) -> MatchResult+UnwindSafe+RefUnwindSafe) =
+        unsafe { mem::transmute(f) };
       Self {
         parent_slice,
         handler: f,
+        #[cfg(feature = "catch-unwind")]
+        panic_payload: None,
       }
     }
 
@@ -133,7 +156,55 @@ pub(crate) mod contiguous_slice {
       self.parent_slice.index_range(range).unwrap()
     }
 
-    pub fn handle_match(&mut self, m: Match<'data>) -> MatchResult { (self.handler)(m) }
+    pub fn has_panic(&self) -> bool {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.panic_payload.is_some()
+        } else {
+          false
+        }
+      }
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_with_panic(
+      &mut self,
+      m: Match<'data>,
+    ) -> Result<MatchResult, Box<dyn Any+Send>> {
+      let mut f = AssertUnwindSafe(&mut self.handler);
+      panic::catch_unwind(move || f(m))
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_wrapping_panic(&mut self, m: Match<'data>) -> MatchResult {
+      match self.handle_match_with_panic(m) {
+        Ok(result) => result,
+        Err(e) => {
+          self.panic_payload = Some(e);
+          MatchResult::CeaseMatching
+        },
+      }
+    }
+
+    pub fn handle_match(&mut self, m: Match<'data>) -> MatchResult {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.handle_match_wrapping_panic(m)
+        } else {
+          (self.handler)(m)
+        }
+      }
+    }
+
+    pub fn resume_panic(self) {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          if let Some(err) = self.panic_payload {
+            panic::resume_unwind(err);
+          }
+        }
+      }
+    }
   }
 
   pub(crate) extern "C" fn match_slice(
@@ -147,6 +218,11 @@ pub(crate) mod contiguous_slice {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut slice_matcher: Pin<&mut SliceMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
+
+    if slice_matcher.has_panic() {
+      return MatchResult::CeaseMatching.into_native();
+    }
+
     let matched_substring = slice_matcher.index_range(range);
     let m = Match {
       id,
@@ -167,6 +243,12 @@ pub(crate) mod vectored_slice {
   use super::*;
   use crate::sources::vectored::{VectoredByteSlices, VectoredSubset};
 
+  #[cfg(feature = "catch-unwind")]
+  use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
+  };
+
   /// Match object returned when searching vectored string data.
   ///
   /// This is returned by e.g.
@@ -180,9 +262,19 @@ pub(crate) mod vectored_slice {
     pub source: VectoredSubset<'a, 'a>,
   }
 
-  pub(crate) struct VectoredMatcher<'data, 'code> {
-    parent_slices: VectoredByteSlices<'data, 'data>,
-    handler: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult),
+  cfg_if! {
+    if #[cfg(feature = "catch-unwind")] {
+      pub(crate) struct VectoredMatcher<'data, 'code> {
+        parent_slices: VectoredByteSlices<'data, 'data>,
+        handler: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult+UnwindSafe+RefUnwindSafe),
+        panic_payload: Option<Box<dyn Any+Send>>,
+      }
+    } else {
+      pub(crate) struct VectoredMatcher<'data, 'code> {
+        parent_slices: VectoredByteSlices<'data, 'data>,
+        handler: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult),
+      }
+    }
   }
 
   impl<'data, 'code> VectoredMatcher<'data, 'code> {
@@ -190,9 +282,15 @@ pub(crate) mod vectored_slice {
       parent_slices: VectoredByteSlices<'data, 'data>,
       f: &'code mut F,
     ) -> Self {
+      let f: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult) = f;
+      #[cfg(feature = "catch-unwind")]
+      let f: &'code mut (dyn FnMut(VectoredMatch<'data>) -> MatchResult+UnwindSafe+RefUnwindSafe) =
+        unsafe { mem::transmute(f) };
       Self {
         parent_slices,
         handler: f,
+        #[cfg(feature = "catch-unwind")]
+        panic_payload: None,
       }
     }
 
@@ -202,7 +300,55 @@ pub(crate) mod vectored_slice {
       self.parent_slices.index_range(range).unwrap()
     }
 
-    pub fn handle_match(&mut self, m: VectoredMatch<'data>) -> MatchResult { (self.handler)(m) }
+    pub fn has_panic(&self) -> bool {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.panic_payload.is_some()
+        } else {
+          false
+        }
+      }
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_with_panic(
+      &mut self,
+      m: VectoredMatch<'data>,
+    ) -> Result<MatchResult, Box<dyn Any+Send>> {
+      let mut f = AssertUnwindSafe(&mut self.handler);
+      panic::catch_unwind(move || f(m))
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_wrapping_panic(&mut self, m: VectoredMatch<'data>) -> MatchResult {
+      match self.handle_match_with_panic(m) {
+        Ok(result) => result,
+        Err(e) => {
+          self.panic_payload = Some(e);
+          MatchResult::CeaseMatching
+        },
+      }
+    }
+
+    pub fn handle_match(&mut self, m: VectoredMatch<'data>) -> MatchResult {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.handle_match_wrapping_panic(m)
+        } else {
+          (self.handler)(m)
+        }
+      }
+    }
+
+    pub fn resume_panic(self) {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          if let Some(err) = self.panic_payload {
+            panic::resume_unwind(err);
+          }
+        }
+      }
+    }
   }
 
   pub(crate) extern "C" fn match_slice_vectored(
@@ -216,6 +362,11 @@ pub(crate) mod vectored_slice {
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
     let mut slice_matcher: Pin<&mut VectoredMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
+
+    if slice_matcher.has_panic() {
+      return MatchResult::CeaseMatching.into_native();
+    }
+
     let matched_substring = slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
@@ -239,6 +390,12 @@ pub use vectored_slice::VectoredMatch;
 pub mod stream {
   use super::*;
   use crate::sources::stream::Range;
+
+  #[cfg(feature = "catch-unwind")]
+  use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
+  };
 
   // ///```
   // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -293,17 +450,81 @@ pub mod stream {
     pub range: Range,
   }
 
-  #[repr(transparent)]
-  pub struct StreamMatcher<'code> {
-    handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code),
+  cfg_if! {
+    if #[cfg(feature = "catch-unwind")] {
+      pub struct StreamMatcher<'code> {
+        handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+UnwindSafe+RefUnwindSafe+'code),
+        panic_payload: Option<Box<dyn Any+Send>>,
+      }
+    } else {
+      #[repr(transparent)]
+      pub struct StreamMatcher<'code> {
+        handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code),
+      }
+    }
   }
 
   impl<'code> StreamMatcher<'code> {
     pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code)) -> Self {
-      Self { handler }
+      #[cfg(feature = "catch-unwind")]
+      let handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+UnwindSafe+RefUnwindSafe+'code) =
+        unsafe { mem::transmute(handler) };
+      Self {
+        handler,
+        #[cfg(feature = "catch-unwind")]
+        panic_payload: None,
+      }
     }
 
-    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult { (self.handler)(m) }
+    pub fn has_panic(&self) -> bool {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.panic_payload.is_some()
+        } else {
+          false
+        }
+      }
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_with_panic(
+      &mut self,
+      m: StreamMatch,
+    ) -> Result<MatchResult, Box<dyn Any+Send>> {
+      let mut f = AssertUnwindSafe(&mut self.handler);
+      panic::catch_unwind(move || f(m))
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_wrapping_panic(&mut self, m: StreamMatch) -> MatchResult {
+      match self.handle_match_with_panic(m) {
+        Ok(result) => result,
+        Err(e) => {
+          self.panic_payload = Some(e);
+          MatchResult::CeaseMatching
+        },
+      }
+    }
+
+    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.handle_match_wrapping_panic(m)
+        } else {
+          (self.handler)(m)
+        }
+      }
+    }
+
+    pub fn resume_panic(&mut self) {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          if let Some(err) = self.panic_payload.take() {
+            panic::resume_unwind(err);
+          }
+        }
+      }
+    }
   }
 
   #[repr(transparent)]
@@ -337,6 +558,10 @@ pub mod stream {
     let mut matcher: Pin<&mut StreamMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
 
+    if matcher.has_panic() {
+      return MatchResult::CeaseMatching.into_native();
+    }
+
     let m = StreamMatch {
       id,
       range: range.into(),
@@ -356,6 +581,11 @@ pub mod chimera {
 
   use smallvec::SmallVec;
 
+  #[cfg(feature = "catch-unwind")]
+  use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
+  };
   use std::{
     ffi::{c_uint, c_ulonglong, c_void},
     hash, ops,
@@ -464,10 +694,21 @@ pub mod chimera {
     }
   }
 
-  pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
-    parent_slice: ByteSlice<'data>,
-    match_handler: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult),
-    error_handler: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult),
+  cfg_if! {
+    if #[cfg(feature = "catch-unwind")] {
+      pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
+        parent_slice: ByteSlice<'data>,
+        match_handler: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult+UnwindSafe+RefUnwindSafe),
+        error_handler: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult+UnwindSafe+RefUnwindSafe),
+        panic_payload: Option<Box<dyn Any+Send>>,
+      }
+    } else {
+      pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
+        parent_slice: ByteSlice<'data>,
+        match_handler: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult),
+        error_handler: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult),
+      }
+    }
   }
 
   impl<'data, 'code> ChimeraSliceMatcher<'data, 'code> {
@@ -476,10 +717,20 @@ pub mod chimera {
       matcher: &'code mut impl FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult,
       error: &'code mut impl FnMut(ChimeraMatchError) -> ChimeraMatchResult,
     ) -> Self {
+      let matcher: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult) = matcher;
+      #[cfg(feature = "catch-unwind")]
+      let matcher: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult+UnwindSafe+RefUnwindSafe) =
+        unsafe { mem::transmute(matcher) };
+      let error: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult) = error;
+      #[cfg(feature = "catch-unwind")]
+      let error: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult+UnwindSafe+RefUnwindSafe) =
+        unsafe { mem::transmute(error) };
       Self {
         parent_slice,
         match_handler: matcher,
         error_handler: error,
+        #[cfg(feature = "catch-unwind")]
+        panic_payload: None,
       }
     }
 
@@ -489,12 +740,84 @@ pub mod chimera {
       self.parent_slice.index_range(range).unwrap()
     }
 
+    pub fn has_panic(&self) -> bool {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.panic_payload.is_some()
+        } else {
+          false
+        }
+      }
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_with_panic(
+      &mut self,
+      m: ChimeraMatch<'data>,
+    ) -> Result<ChimeraMatchResult, Box<dyn Any+Send>> {
+      let mut f = AssertUnwindSafe(&mut self.match_handler);
+      panic::catch_unwind(move || f(m))
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_match_wrapping_panic(&mut self, m: ChimeraMatch<'data>) -> ChimeraMatchResult {
+      match self.handle_match_with_panic(m) {
+        Ok(result) => result,
+        Err(e) => {
+          self.panic_payload = Some(e);
+          ChimeraMatchResult::Terminate
+        },
+      }
+    }
+
     pub fn handle_match(&mut self, m: ChimeraMatch<'data>) -> ChimeraMatchResult {
-      (self.match_handler)(m)
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.handle_match_wrapping_panic(m)
+        } else {
+          (self.match_handler)(m)
+        }
+      }
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_error_with_panic(
+      &mut self,
+      e: ChimeraMatchError,
+    ) -> Result<ChimeraMatchResult, Box<dyn Any+Send>> {
+      let mut f = AssertUnwindSafe(&mut self.error_handler);
+      panic::catch_unwind(move || f(e))
+    }
+
+    #[cfg(feature = "catch-unwind")]
+    fn handle_error_wrapping_panic(&mut self, e: ChimeraMatchError) -> ChimeraMatchResult {
+      match self.handle_error_with_panic(e) {
+        Ok(result) => result,
+        Err(e) => {
+          self.panic_payload = Some(e);
+          ChimeraMatchResult::Terminate
+        },
+      }
     }
 
     pub fn handle_error(&mut self, e: ChimeraMatchError) -> ChimeraMatchResult {
-      (self.error_handler)(e)
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          self.handle_error_wrapping_panic(e)
+        } else {
+          (self.error_handler)(e)
+        }
+      }
+    }
+
+    pub fn resume_panic(self) {
+      cfg_if! {
+        if #[cfg(feature = "catch-unwind")] {
+          if let Some(err) = self.panic_payload {
+            panic::resume_unwind(err);
+          }
+        }
+      }
     }
   }
 
@@ -516,6 +839,11 @@ pub mod chimera {
     } = ChimeraMatchEvent::coerce_args(id, from, to, size, captured, context);
     let mut matcher: Pin<&mut ChimeraSliceMatcher> =
       unsafe { ChimeraMatchEvent::extract_context(context.unwrap()) };
+
+    if matcher.has_panic() {
+      return ChimeraMatchResult::Terminate.into_native();
+    }
+
     let matched_substring = matcher.index_range(range);
     let m = ChimeraMatch {
       id,
@@ -555,6 +883,11 @@ pub mod chimera {
     let ctx = ptr::NonNull::new(ctx);
     let mut matcher: Pin<&mut ChimeraSliceMatcher> =
       unsafe { ChimeraMatchEvent::extract_context(ctx.unwrap()) };
+
+    if matcher.has_panic() {
+      return ChimeraMatchResult::Terminate.into_native();
+    }
+
     let e = ChimeraMatchError { error_type, id };
 
     let result = matcher.handle_error(e);

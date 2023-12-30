@@ -707,7 +707,7 @@ pub mod info {
 
   /// Data produced by hyperscan to analyze a particular expression.
   ///
-  /// This struct is produced by [`Expression::info()`]:
+  /// This struct is produced by [`super::Expression::info()`]:
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -725,7 +725,7 @@ pub mod info {
   /// # }
   /// ```
   ///
-  /// as well as [`Expression::ext_info()`]:
+  /// as well as [`super::Expression::ext_info()`]:
   ///
   ///```
   /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -749,7 +749,8 @@ pub mod info {
     /// has an unbounded minimum length, this will be 0.
     ///
     /// Note: in some cases when using advanced features to suppress matches
-    /// (such as extended parameters or [`Flags::SINGLEMATCH`]) this
+    /// (such as extended parameters or
+    /// [`Flags::SINGLEMATCH`](crate::flags::Flags::SINGLEMATCH)) this
     /// may represent a conservative lower bound for the true minimum length of
     /// a match.
     pub min_width: ExprWidth,
@@ -757,7 +758,8 @@ pub mod info {
     /// has an unbounded maximum length, this will be [`None`].
     ///
     /// Note: in some cases when using advanced features to suppress matches
-    /// (such as extended parameters or [`Flags::SINGLEMATCH`]) this
+    /// (such as extended parameters or
+    /// [`Flags::SINGLEMATCH`](crate::flags::Flags::SINGLEMATCH)) this
     /// may represent a conservative upper bound for the true maximum length of
     /// a match.
     pub max_width: Option<ExprWidth>,

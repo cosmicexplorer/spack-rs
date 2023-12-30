@@ -35,7 +35,10 @@
 //! knowledgeable about their code's performance characteristics anyway.`[no
 //! citation needed]` Indeed, the `regex` crate exposes precisely this
 //! functionality via the separate lower-level `regex-automata` crate through
-//! methods such as [`meta::Regex::search_with()`](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#method.search_with).
+//! methods such as [`meta::Regex::search_with()`](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#method.search_with)
+//! (see [Synchronization and
+//! Cloning](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#synchronization-and-cloning)
+//! from the `regex-automata` crate).
 //! **The hyperscan library takes this (re-)inversion of control to the extreme
 //! in requiring the user to provide exclusive mutable access to a previously
 //! initialized scratch space for every search (see [Setup
@@ -476,7 +479,9 @@ impl Scratch {
         Some(match_slice),
         mem::transmute(&mut matcher),
       )
-    })
+    })?;
+    matcher.resume_panic();
+    Ok(())
   }
 
   /// Synchronously scan a slice of vectored string data.
@@ -553,7 +558,9 @@ impl Scratch {
         Some(match_slice_vectored),
         mem::transmute(&mut matcher),
       )
-    })
+    })?;
+    matcher.resume_panic();
+    Ok(())
   }
 
   /// Write `data` into the stream object `sink`.
@@ -569,6 +576,7 @@ impl Scratch {
     matcher: &mut StreamMatcher<'code>,
     data: ByteSlice<'data>,
   ) -> Result<(), HyperscanRuntimeError> {
+    let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_stream(
         live.as_mut_native(),
@@ -580,7 +588,9 @@ impl Scratch {
         Some(match_slice_stream),
         mem::transmute(matcher),
       )
-    })
+    })?;
+    unsafe { &mut *matcher }.resume_panic();
+    Ok(())
   }
 
   #[cfg(all(feature = "stream", feature = "vectored"))]
@@ -592,6 +602,7 @@ impl Scratch {
     data: VectoredByteSlices<'data, 'data>,
   ) -> Result<(), HyperscanRuntimeError> {
     let (data_pointers, lengths) = data.pointers_and_lengths();
+    let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_scan_vectored_stream(
         live.as_mut_native(),
@@ -604,7 +615,9 @@ impl Scratch {
         Some(match_slice_stream),
         mem::transmute(matcher),
       )
-    })
+    })?;
+    unsafe { &mut *matcher }.resume_panic();
+    Ok(())
   }
 
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
@@ -619,6 +632,7 @@ impl Scratch {
     live: &mut LiveStream,
     matcher: &mut StreamMatcher<'code>,
   ) -> Result<(), HyperscanRuntimeError> {
+    let matcher: *mut StreamMatcher<'static> = unsafe { mem::transmute(matcher) };
     HyperscanRuntimeError::from_native(unsafe {
       hs::hs_direct_flush_stream(
         live.as_mut_native(),
@@ -626,7 +640,9 @@ impl Scratch {
         Some(match_slice_stream),
         mem::transmute(matcher),
       )
-    })
+    })?;
+    unsafe { &mut *matcher }.resume_panic();
+    Ok(())
   }
 }
 
@@ -1112,7 +1128,8 @@ impl Scratch {
   /// # fn main() {}
   /// ```
   ///
-  /// Every single database of the same mode allocates the exact same scratch size:
+  /// Every single database of the same mode allocates the exact same scratch
+  /// size:
   ///
   ///```
   /// #[cfg(feature = "compiler")]
@@ -1713,7 +1730,9 @@ pub mod chimera {
           Some(error_callback_chimera),
           mem::transmute(&mut matcher),
         )
-      })
+      })?;
+      matcher.resume_panic();
+      Ok(())
     }
   }
 
