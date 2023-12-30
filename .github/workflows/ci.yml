@@ -234,19 +234,19 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features static,alloc,compiler -vv
+        args: -p hyperscan-async --no-default-features --features static,alloc,compiler
 
     - name: test hyperscan-static-with-compile-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features static,alloc,async,compiler -vv
+        args: -p hyperscan-async --no-default-features --features static,alloc,async,compiler
 
     - name: test hyperscan-dynamic-with-compile
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features dynamic,compiler -vv
+        args: -p hyperscan-async --no-default-features --features dynamic,compiler
 
     # FIXME: add hyperscan-static-runtime-only and hyperscan-dynamic-runtime-only!!
 
@@ -254,10 +254,10 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,compiler -vv
+        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,compiler
 
     - name: test hyperscan-static-chimera-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,async,compiler -vv
+        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,async,compiler
