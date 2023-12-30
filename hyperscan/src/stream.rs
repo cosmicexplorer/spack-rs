@@ -85,7 +85,8 @@ impl Resource for LiveStream {
 
   fn deep_clone(&self) -> Result<Self, Self::Error> { self.try_clone() }
 
-  fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
+  fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=Self::Error>+'a>, Self::Error>
+  where Self: 'a {
     Ok(Box::new(self.try_clone()?))
   }
 

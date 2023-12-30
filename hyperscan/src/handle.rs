@@ -3,13 +3,14 @@
 
 use std::{any::Any, mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
 
-pub trait Resource: Any+'static {
+pub trait Resource: Any {
   type Error;
 
   fn deep_clone(&self) -> Result<Self, Self::Error>
   where Self: Sized;
 
-  fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error>;
+  fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=Self::Error>+'a>, Self::Error>
+  where Self: 'a;
 
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error>;
 }
@@ -23,17 +24,25 @@ pub trait Handle {
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized;
 
-  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error>;
+  fn boxed_clone_handle<'a>(
+    &self,
+  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
+  where Self: 'a;
 
   fn handle_ref(&self) -> &Self::R;
 
-  fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error>;
+  fn get_mut(&mut self) -> Option<&mut Self::R>;
+
+  fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error>;
+
+  fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
+    self.ensure_exclusive()?;
+    Ok(self.get_mut().unwrap())
+  }
 }
 
 pub fn equal_refs<H: Handle+?Sized>(h1: &H, h2: &H) -> bool {
-  let p1: *const H::R = h1.handle_ref();
-  let p2: *const H::R = h2.handle_ref();
-  p1 == p2
+  ptr::eq(h1.handle_ref(), h2.handle_ref())
 }
 
 impl<R: Resource> Handle for R {
@@ -49,18 +58,23 @@ impl<R: Resource> Handle for R {
     self.deep_clone()
   }
 
-  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
-    let r: Box<dyn Any+'static> = self.deep_boxed_clone()?;
+  fn boxed_clone_handle<'a>(
+    &self,
+  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
+  where Self: 'a {
+    let r: Box<dyn Any> = self.deep_boxed_clone()?;
     let h: Box<Self> = r.downcast().unwrap();
     Ok(h)
   }
 
   fn handle_ref(&self) -> &Self::R { self }
 
-  fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> { Ok(self) }
+  fn get_mut(&mut self) -> Option<&mut Self::R> { Some(self) }
+
+  fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error> { Ok(()) }
 }
 
-impl<R: Resource+'static> Handle for Rc<R> {
+impl<R: Resource> Handle for Rc<R> {
   type R = R;
 
   fn wrap(r: Self::R) -> Self
@@ -73,17 +87,24 @@ impl<R: Resource+'static> Handle for Rc<R> {
     Ok(Rc::clone(self))
   }
 
-  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
+  fn boxed_clone_handle<'a>(
+    &self,
+  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
+  where Self: 'a {
     Ok(Box::new(Rc::clone(self)))
   }
 
   fn handle_ref(&self) -> &Self::R { self.as_ref() }
 
-  fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
+  fn get_mut(&mut self) -> Option<&mut Self::R> { Rc::get_mut(self) }
+
+  fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error> {
     if Rc::strong_count(self) != 1 {
       let new: R = self.as_ref().deep_clone()?;
       *self = Rc::new(new);
-    } else if Rc::weak_count(self) > 0 {
+      return Ok(());
+    }
+    if Rc::weak_count(self) > 0 {
       unsafe {
         let mut tmp: MaybeUninit<Rc<R>> = MaybeUninit::uninit();
         let s: *mut Self = self;
@@ -96,13 +117,11 @@ impl<R: Resource+'static> Handle for Rc<R> {
         /* `self` is now valid again! */
       }
     }
-    /* get_mut() only works if strong_count is 1 and weak_count is 0, which is
-     * what we should have just ensured above. */
-    Ok(Rc::get_mut(self).unwrap())
+    Ok(())
   }
 }
 
-impl<R: Resource+'static> Handle for Arc<R> {
+impl<R: Resource> Handle for Arc<R> {
   type R = R;
 
   fn wrap(r: Self::R) -> Self
@@ -115,17 +134,24 @@ impl<R: Resource+'static> Handle for Arc<R> {
     Ok(Arc::clone(self))
   }
 
-  fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
+  fn boxed_clone_handle<'a>(
+    &self,
+  ) -> Result<Box<dyn Handle<R=Self::R>+'a>, <Self::R as Resource>::Error>
+  where Self: 'a {
     Ok(Box::new(Arc::clone(self)))
   }
 
   fn handle_ref(&self) -> &Self::R { self.as_ref() }
 
-  fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
+  fn get_mut(&mut self) -> Option<&mut Self::R> { Arc::get_mut(self) }
+
+  fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error> {
     if Arc::strong_count(self) != 1 {
       let new: R = self.as_ref().deep_clone()?;
       *self = Arc::new(new);
-    } else if Arc::weak_count(self) > 0 {
+      return Ok(());
+    }
+    if Arc::weak_count(self) > 0 {
       unsafe {
         let mut tmp: MaybeUninit<Arc<R>> = MaybeUninit::uninit();
         let s: *mut Self = self;
@@ -138,16 +164,13 @@ impl<R: Resource+'static> Handle for Arc<R> {
         /* `self` is now valid again! */
       }
     }
-    /* get_mut() only works if strong_count is 1 and weak_count is 0, which is
-     * what we should have just ensured above. */
-    Ok(Arc::get_mut(self).unwrap())
+    Ok(())
   }
 }
 
 #[cfg(test)]
 mod test {
   use super::*;
-  use std::ops::Deref;
 
   #[derive(Debug, PartialEq, Eq)]
   struct R {
@@ -157,7 +180,8 @@ mod test {
   impl Resource for R {
     type Error = ();
     fn deep_clone(&self) -> Result<Self, ()> { Ok(Self { state: self.state }) }
-    fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=()>>, Self::Error> {
+    fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=()>+'a>, Self::Error>
+    where Self: 'a {
       Ok(Box::new(Self { state: self.state }))
     }
     unsafe fn sync_drop(&mut self) -> Result<(), ()> { Ok(()) }
@@ -223,6 +247,8 @@ mod test {
     let mut r = R { state: 0 };
     let r1: &mut dyn Handle<R=R> = &mut r;
     let r2 = r1.boxed_clone_handle().unwrap();
+
+    use std::ops::Deref;
 
     assert_eq!(r1.handle_ref(), r2.handle_ref());
     assert!(!equal_refs(r1.deref(), r2.deref()));
