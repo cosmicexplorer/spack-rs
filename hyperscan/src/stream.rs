@@ -4,12 +4,13 @@
 use crate::{
   database::Database,
   error::{CompressionError, HyperscanRuntimeError},
-  handle::{Handle, Resource},
   hs,
   matchers::stream::StreamMatcher,
   sources::{ByteSlice, VectoredByteSlices},
   state::Scratch,
 };
+
+use handles::{Handle, Resource};
 
 use std::{mem, ops, ptr};
 
@@ -85,8 +86,7 @@ impl Resource for LiveStream {
 
   fn deep_clone(&self) -> Result<Self, Self::Error> { self.try_clone() }
 
-  fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=Self::Error>+'a>, Self::Error>
-  where Self: 'a {
+  fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error> {
     Ok(Box::new(self.try_clone()?))
   }
 
@@ -249,7 +249,6 @@ pub mod channel {
   use super::LiveStream;
   use crate::{
     error::{HyperscanRuntimeError, ScanError},
-    handle::Handle,
     matchers::{
       stream::{SendStreamMatcher, StreamMatch},
       MatchResult,
@@ -259,6 +258,7 @@ pub mod channel {
   };
 
   use futures_core::stream::Stream;
+  use handles::Handle;
   use tokio::{sync::mpsc, task};
 
   use std::mem;

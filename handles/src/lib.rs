@@ -1,5 +1,17 @@
-/* Copyright 2022-2023 Danny McClanahan */
-/* SPDX-License-Identifier: BSD-3-Clause */
+/*
+ * Description: Type-erased strategies for sharing and cloning resources.
+ *
+ * Copyright (C) 2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#![warn(rustdoc::missing_crate_level_docs)]
+#![allow(missing_docs)]
+/* Make all doctests fail if they produce any warnings. */
+#![doc(test(attr(deny(warnings))))]
+#![deny(clippy::all)]
+#![allow(clippy::collapsible_else_if)]
+#![allow(clippy::result_large_err)]
 
 use std::{any::Any, mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
 
@@ -9,8 +21,7 @@ pub trait Resource: Any {
   fn deep_clone(&self) -> Result<Self, Self::Error>
   where Self: Sized;
 
-  fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=Self::Error>+'a>, Self::Error>
-  where Self: 'a;
+  fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error>;
 
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error>;
 }
@@ -185,8 +196,7 @@ mod test {
   impl Resource for R {
     type Error = ();
     fn deep_clone(&self) -> Result<Self, ()> { Ok(Self { state: self.state }) }
-    fn deep_boxed_clone<'a>(&self) -> Result<Box<dyn Resource<Error=()>+'a>, Self::Error>
-    where Self: 'a {
+    fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=()>>, Self::Error> {
       Ok(Box::new(Self { state: self.state }))
     }
     unsafe fn sync_drop(&mut self) -> Result<(), ()> { Ok(()) }
@@ -250,7 +260,7 @@ mod test {
   #[test]
   fn test_interchange() {
     let mut r = Box::new(R { state: 0 });
-    let r1: &mut dyn Handle<R=R> = r.as_mut();
+    let r1: &mut dyn AnyHandle<R=R> = r.as_mut();
     let r2 = r1.boxed_clone_handle().unwrap();
 
     let r2_test1: Box<dyn Any> = r2.boxed_clone_handle().unwrap();
@@ -267,7 +277,7 @@ mod test {
     r2.ensure_exclusive().unwrap();
 
     let mut r3 = Rc::new(R { state: 0 });
-    let r3: &mut dyn Handle<R=R> = &mut r3;
+    let r3: &mut dyn AnyHandle<R=R> = &mut r3;
     let r4 = r3.boxed_clone_handle().unwrap();
 
     let r4_test1: Box<dyn Any> = r4.boxed_clone_handle().unwrap();
@@ -290,7 +300,7 @@ mod test {
     assert_ne!(r3.handle_ref(), r4.handle_ref());
 
     let mut r5 = Arc::new(R { state: 0 });
-    let r5: &mut dyn Handle<R=R> = &mut r5;
+    let r5: &mut dyn AnyHandle<R=R> = &mut r5;
     let r6 = r5.boxed_clone_handle().unwrap();
 
     let r6_test1: Box<dyn Any> = r6.boxed_clone_handle().unwrap();

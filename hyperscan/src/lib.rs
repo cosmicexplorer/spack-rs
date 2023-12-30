@@ -29,7 +29,6 @@ pub mod expression;
 #[cfg(feature = "compiler")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
 pub mod flags;
-pub mod handle;
 pub mod matchers;
 pub mod sources;
 pub mod state;

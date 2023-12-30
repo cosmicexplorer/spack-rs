@@ -804,6 +804,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "handles"
+version = "0.0.0"
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -922,6 +926,7 @@ dependencies = [
  "eyre",
  "futures-core",
  "futures-util",
+ "handles",
  "hyperscan-async-sys",
  "indexmap 1.9.3",
  "jemallocator",
