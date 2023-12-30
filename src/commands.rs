@@ -569,6 +569,7 @@ pub mod find {
         spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
@@ -612,6 +613,7 @@ pub mod find {
         spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install
         .clone()
@@ -624,6 +626,7 @@ pub mod find {
         spack,
         spec: found_spec.hashed_spec(),
         env: None,
+        repos: None,
       };
 
       // .find_prefix() will return the spec's prefix root wrapped in an Option.
@@ -746,6 +749,7 @@ pub mod load {
         spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
@@ -954,6 +958,7 @@ pub mod install {
         spec: CLISpec::new("libiberty@2.37"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install
         .clone()
@@ -980,6 +985,7 @@ pub mod install {
         spec: CLISpec::new("libiberty@2.37"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install
         .clone()
@@ -1123,6 +1129,7 @@ pub mod build_env {
         spec: CLISpec::new("m4"),
         verbosity: Default::default(),
         env: None,
+        repos: None,
       };
       let found_spec = install
         .clone()
@@ -1136,6 +1143,7 @@ pub mod build_env {
         // Use the precise spec we just ensured was installed.
         spec: found_spec.hashed_spec(),
         env: None,
+        repos: None,
         dump: None,
         argv: Default::default(),
       };
@@ -1163,6 +1171,7 @@ pub mod build_env {
         spack: spack.clone(),
         spec: found_spec.hashed_spec(),
         env: None,
+        repos: None,
         dump: Some(dump.clone()),
         argv: Default::default(),
       };
@@ -1189,6 +1198,7 @@ pub mod build_env {
         spack,
         spec: found_spec.hashed_spec(),
         env: None,
+        repos: None,
         dump: None,
         argv: ["sh", "-c", "echo $SPACK_SHORT_SPEC"].as_ref().into(),
       };

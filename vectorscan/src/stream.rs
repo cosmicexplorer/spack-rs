@@ -142,7 +142,9 @@ impl<'code> StreamSink<'code> {
     scratch.flush_eod_sync(live.make_mut()?, matcher)
   }
 
-  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.try_reset() }
+  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> {
+    self.live.make_mut()?.try_reset()
+  }
 }
 
 ///```
@@ -304,7 +306,7 @@ pub mod channel {
   #[cfg(feature = "vectored")]
   use crate::sources::vectored::VectoredByteSlices;
   use crate::{
-    error::{VectorscanRuntimeError, ScanError},
+    error::{ScanError, VectorscanRuntimeError},
     matchers::{
       stream::{SendStreamMatcher, StreamMatch},
       MatchResult,

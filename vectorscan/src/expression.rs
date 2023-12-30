@@ -10,11 +10,11 @@
 //! - [`Literal`]: Literal byte string (`Vec<u8>`) which may contain nulls.
 //! - [`chimera::ChimeraExpression`]: PCRE regex syntax.
 //!
-//! Each vectorscan database only supports matching against *exactly one* type of
-//! these patterns, but each pattern string variant also has a `*Set` form, and
-//! all of these forms support the same interface to vectorscan's most powerful
-//! feature: multi-pattern matching, where patterns registered with [`ExprId`]
-//! in a set can be associated to
+//! Each vectorscan database only supports matching against *exactly one* type
+//! of these patterns, but each pattern string variant also has a `*Set` form,
+//! and all of these forms support the same interface to vectorscan's most
+//! powerful feature: multi-pattern matching, where patterns registered with
+//! [`ExprId`] in a set can be associated to
 //! [`ExpressionIndex`](crate::matchers::ExpressionIndex) instances when matched
 //! against.
 //!
@@ -58,8 +58,8 @@ use std::{
 
 /// Vectorscan regex pattern string.
 ///
-/// Vectorscan itself supports a subset of PCRE syntax in the pattern string; see
-/// [Pattern Support] for reference. The use of unsupported constructs will
+/// Vectorscan itself supports a subset of PCRE syntax in the pattern string;
+/// see [Pattern Support] for reference. The use of unsupported constructs will
 /// result in compilation errors.
 ///
 /// Note that as the underlying vectorscan library interprets pattern strings as

@@ -114,8 +114,8 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// ```
 ///
 /// ## The `UTF8` Flag
-/// It is important to note that vectorscan itself does not assume any particular
-/// string encoding, and the function of e.g.
+/// It is important to note that vectorscan itself does not assume any
+/// particular string encoding, and the function of e.g.
 /// [`Flags::UTF8`](crate::flags::Flags::UTF8) is to determine which bytes
 /// should be included in the state machine, *not* the encoding of any
 /// particular input. This means that the UTF8 flag may be disabled for UTF8
