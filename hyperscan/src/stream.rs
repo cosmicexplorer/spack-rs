@@ -103,12 +103,12 @@ impl ops::Drop for LiveStream {
 
 /* TODO: update ScratchInUse flag docs to point to state/handle module docs! */
 pub struct StreamSink<'code> {
-  pub live: Box<dyn Handle<R=LiveStream>+'code>,
+  pub live: Box<dyn Handle<R=LiveStream>>,
   pub matcher: StreamMatcher<'code>,
 }
 
 impl<'code> StreamSink<'code> {
-  pub fn new(live: impl Handle<R=LiveStream>+'code, matcher: StreamMatcher<'code>) -> Self {
+  pub fn new(live: impl Handle<R=LiveStream>, matcher: StreamMatcher<'code>) -> Self {
     Self {
       live: Box::new(live),
       matcher,
@@ -191,11 +191,11 @@ impl<'code> StreamSink<'code> {
 /// ```
 pub struct ScratchStreamSink<'code> {
   pub sink: StreamSink<'code>,
-  pub scratch: Box<dyn Handle<R=Scratch>+'code>,
+  pub scratch: Box<dyn Handle<R=Scratch>>,
 }
 
 impl<'code> ScratchStreamSink<'code> {
-  pub fn new(sink: StreamSink<'code>, scratch: impl Handle<R=Scratch>+'code) -> Self {
+  pub fn new(sink: StreamSink<'code>, scratch: impl Handle<R=Scratch>) -> Self {
     Self {
       sink,
       scratch: Box::new(scratch),
@@ -264,7 +264,7 @@ pub mod channel {
   use std::mem;
 
   pub struct StreamSinkChannel<'code> {
-    pub live: Box<dyn Handle<R=LiveStream>+Send+'code>,
+    pub live: Box<dyn Handle<R=LiveStream>+Send>,
     pub hf: Box<dyn FnMut(StreamMatch) -> MatchResult+Send+'code>,
     pub rx: mpsc::UnboundedReceiver<StreamMatch>,
   }
@@ -282,7 +282,7 @@ pub mod channel {
     }
 
     pub fn new(
-      live: impl Handle<R=LiveStream>+Send+'code,
+      live: impl Handle<R=LiveStream>+Send,
       hf: &'code mut (dyn FnMut(&StreamMatch) -> MatchResult+Send+'code),
     ) -> Self {
       let (tx, rx) = mpsc::unbounded_channel();
@@ -397,11 +397,11 @@ pub mod channel {
   /// ```
   pub struct ScratchStreamSinkChannel<'code> {
     pub sink: StreamSinkChannel<'code>,
-    pub scratch: Box<dyn Handle<R=Scratch>+Send+'code>,
+    pub scratch: Box<dyn Handle<R=Scratch>+Send>,
   }
 
   impl<'code> ScratchStreamSinkChannel<'code> {
-    pub fn new(sink: StreamSinkChannel<'code>, scratch: impl Handle<R=Scratch>+Send+'code) -> Self {
+    pub fn new(sink: StreamSinkChannel<'code>, scratch: impl Handle<R=Scratch>+Send) -> Self {
       Self {
         sink,
         scratch: Box::new(scratch),

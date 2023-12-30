@@ -15,7 +15,7 @@ pub trait Resource: Any {
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error>;
 }
 
-pub trait Handle {
+pub trait Handle: Any {
   type R: Resource;
 
   fn wrap(r: Self::R) -> Self
@@ -31,6 +31,8 @@ pub trait Handle {
 
   fn handle_ref(&self) -> &Self::R;
 
+  fn eq_ref(&self, other: &dyn Handle<R=Self::R>) -> bool { equal_refs(self, other) }
+
   fn get_mut(&mut self) -> Option<&mut Self::R>;
 
   fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error>;
@@ -41,7 +43,10 @@ pub trait Handle {
   }
 }
 
-pub fn equal_refs<H: Handle+?Sized>(h1: &H, h2: &H) -> bool {
+pub fn equal_refs<R: Resource+?Sized>(
+  h1: &(impl Handle<R=R>+?Sized),
+  h2: &(impl Handle<R=R>+?Sized),
+) -> bool {
   ptr::eq(h1.handle_ref(), h2.handle_ref())
 }
 
@@ -195,15 +200,15 @@ mod test {
     /* Because we do not use any wrapper or smart pointer, cloning a "bare
      * handle" immediately invokes a new allocation. */
     assert_eq!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
 
-    let _ = r1.make_mut().unwrap();
+    r1.ensure_exclusive().unwrap();
     assert_eq!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
 
     r1.make_mut().unwrap().state = 1;
     assert_ne!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
   }
 
   #[test]
@@ -213,15 +218,15 @@ mod test {
 
     /* Copy-on-write semantics with lazy cloning. */
     assert_eq!(r, r1);
-    assert!(equal_refs(&r, &r1));
+    assert!(r.eq_ref(&r1));
 
-    let _ = r1.make_mut().unwrap();
+    r1.ensure_exclusive().unwrap();
     assert_eq!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
 
     r1.make_mut().unwrap().state = 1;
     assert_ne!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
   }
 
   #[test]
@@ -231,54 +236,81 @@ mod test {
 
     /* Copy-on-write semantics with lazy cloning. */
     assert_eq!(r, r1);
-    assert!(equal_refs(&r, &r1));
+    assert!(r.eq_ref(&r1));
 
-    let _ = r1.make_mut().unwrap();
+    r1.ensure_exclusive().unwrap();
     assert_eq!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
 
     r1.make_mut().unwrap().state = 1;
     assert_ne!(r, r1);
-    assert!(!equal_refs(&r, &r1));
+    assert!(!r.eq_ref(&r1));
   }
 
   #[test]
   fn test_interchange() {
-    let mut r = R { state: 0 };
-    let r1: &mut dyn Handle<R=R> = &mut r;
+    let mut r = Box::new(R { state: 0 });
+    let r1: &mut dyn Handle<R=R> = r.as_mut();
     let r2 = r1.boxed_clone_handle().unwrap();
 
-    use std::ops::Deref;
+    let r2_test1: Box<dyn Any> = r2.boxed_clone_handle().unwrap();
+    let r2_test2: Box<dyn Any> = r2.boxed_clone_handle().unwrap();
+    assert!(r2_test1.downcast::<Rc<R>>().is_err());
+    assert!(r2_test2.downcast::<Arc<R>>().is_err());
+    let r2: Box<dyn Any> = r2;
+    let mut r2: Box<R> = r2.downcast().unwrap();
 
     assert_eq!(r1.handle_ref(), r2.handle_ref());
-    assert!(!equal_refs(r1.deref(), r2.deref()));
+    assert!(!r1.eq_ref(r2.as_ref()));
+    /* Should do nothing, since both are unwrapped ("bare") handles. */
+    r1.ensure_exclusive().unwrap();
+    r2.ensure_exclusive().unwrap();
 
     let mut r3 = Rc::new(R { state: 0 });
     let r3: &mut dyn Handle<R=R> = &mut r3;
     let r4 = r3.boxed_clone_handle().unwrap();
 
+    let r4_test1: Box<dyn Any> = r4.boxed_clone_handle().unwrap();
+    let r4_test2: Box<dyn Any> = r4.boxed_clone_handle().unwrap();
+    assert!(r4_test1.downcast::<R>().is_err());
+    assert!(r4_test2.downcast::<Arc<R>>().is_err());
+    let r4: Box<dyn Any> = r4;
+    let r4: Box<Rc<R>> = r4.downcast().unwrap();
+
     assert_eq!(r3.handle_ref(), r4.handle_ref());
     assert_eq!(r3.handle_ref(), r1.handle_ref());
-    assert!(equal_refs(r3.deref(), r4.deref()));
+    assert!(r3.eq_ref(r4.as_ref()));
+    /* Demonstrate that eq_ref() still works for different types of handles. */
+    assert!(!r3.eq_ref(r1));
 
-    let _ = r3.make_mut().unwrap();
+    r3.ensure_exclusive().unwrap();
     assert_eq!(r3.handle_ref(), r4.handle_ref());
-    assert!(!equal_refs(r3.deref(), r4.deref()));
-    r3.make_mut().unwrap().state = 1;
+    assert!(!r3.eq_ref(r4.as_ref()));
+    r3.get_mut().unwrap().state = 1;
     assert_ne!(r3.handle_ref(), r4.handle_ref());
 
     let mut r5 = Arc::new(R { state: 0 });
     let r5: &mut dyn Handle<R=R> = &mut r5;
     let r6 = r5.boxed_clone_handle().unwrap();
 
+    let r6_test1: Box<dyn Any> = r6.boxed_clone_handle().unwrap();
+    let r6_test2: Box<dyn Any> = r6.boxed_clone_handle().unwrap();
+    assert!(r6_test1.downcast::<R>().is_err());
+    assert!(r6_test2.downcast::<Rc<R>>().is_err());
+    let r6: Box<dyn Any> = r6;
+    let r6: Box<Arc<R>> = r6.downcast().unwrap();
+
     assert_eq!(r5.handle_ref(), r6.handle_ref());
     assert_eq!(r5.handle_ref(), r1.handle_ref());
-    assert!(equal_refs(r5.deref(), r6.deref()));
+    assert!(r5.eq_ref(r6.as_ref()));
+    /* Demonstrate that eq_ref() still compiles for different types of handles. */
+    assert!(!r5.eq_ref(r1));
+    assert!(!r5.eq_ref(r3));
 
-    let _ = r5.make_mut().unwrap();
+    r5.ensure_exclusive().unwrap();
     assert_eq!(r5.handle_ref(), r6.handle_ref());
-    assert!(!equal_refs(r5.deref(), r6.deref()));
-    r5.make_mut().unwrap().state = 1;
+    assert!(!r5.eq_ref(r6.as_ref()));
+    r5.get_mut().unwrap().state = 1;
     assert_ne!(r5.handle_ref(), r6.handle_ref());
   }
 }
