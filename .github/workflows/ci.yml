@@ -105,7 +105,7 @@ jobs:
         cache-name: cache-spack-dir-checker-${{ matrix.args }}
       with:
         path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v15
+        key: spack-summonings-${{ env.cache-name }}-v16
 
     - name: check clippy
       uses: actions-rs/cargo@v1
@@ -144,7 +144,7 @@ jobs:
         cache-name: cache-spack-dir-spack-tests
       with:
         path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v15
+        key: spack-summonings-${{ env.cache-name }}-v16
 
     - name: test rust
       uses: actions-rs/cargo@v1
@@ -183,7 +183,7 @@ jobs:
         cache-name: cache-spack-dir-re2-tests
       with:
         path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v15
+        key: spack-summonings-${{ env.cache-name }}-v16
 
     - name: test dynamic
       uses: actions-rs/cargo@v1
@@ -228,7 +228,7 @@ jobs:
         cache-name: cache-spack-dir-vectorscan-tests
       with:
         path: ~/.spack/summonings
-        key: spack-summonings-${{ env.cache-name }}-v15
+        key: spack-summonings-${{ env.cache-name }}-v16
 
     - name: test vectorscan-static-with-compile
       uses: actions-rs/cargo@v1

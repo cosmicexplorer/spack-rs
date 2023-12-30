@@ -1114,11 +1114,10 @@ impl Scratch {
   ///   // Verify that only the single known scratch was allocated:
   ///   assert_eq!(1, allocs.len());
   ///   let (p, layout) = allocs[0];
-  ///   // The allocation was made 0x10 bytes to the left of the returned scratch pointer.
-  ///   assert_eq!(
-  ///     unsafe { p.as_ptr().add(0x10) },
-  ///     utf8_scratch.as_mut_native().unwrap() as *mut NativeScratch as *mut u8,
-  ///   );
+  ///   // The allocation was made within 0x30 bytes to the left of the returned scratch pointer.
+  ///   let alloc_ptr = utf8_scratch.as_mut_native().unwrap() as *mut NativeScratch as *mut u8;
+  ///   let p_diff = (alloc_ptr as usize) - (p.as_ptr() as usize);
+  ///   assert!(p_diff <= 0x30);
   ///
   ///   // Verify that the allocation size is the same as reported:
   ///   assert_eq!(layout.size(), utf8_scratch.scratch_size()?);

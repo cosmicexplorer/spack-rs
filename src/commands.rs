@@ -411,18 +411,31 @@ pub mod find {
   pub struct Find {
     pub spack: SpackInvocation,
     pub spec: CLISpec,
+    pub env: Option<EnvName>,
+    pub repos: Option<RepoDirs>,
   }
 
   #[async_trait]
   impl CommandBase for Find {
     async fn setup_command(self) -> Result<exe::Command, base::SetupError> {
-      let Self { spack, spec } = self;
-      let args = exe::Argv(
+      let Self {
+        spack,
+        spec,
+        env,
+        repos,
+      } = self;
+      let mut args = exe::Argv(
         ["find", "--json", &spec.0]
           .into_iter()
           .map(|s| OsStr::new(s).to_os_string())
           .collect(),
       );
+      if let Some(env) = env {
+        env.modify_argv(&mut args);
+      }
+      if let Some(repos) = repos {
+        repos.modify_argv(&mut args);
+      }
       Ok(
         spack
           .with_spack_exe(exe::Command {
@@ -577,6 +590,8 @@ pub mod find {
       let find = Find {
         spack,
         spec: found_spec.hashed_spec(),
+        env: None,
+        repos: None,
       };
 
       // .find() will return an array of values, which may have any length.
@@ -894,15 +909,23 @@ pub mod install {
 
     /// Execute [`Self::install`], then execute [`Find::find`].
     pub async fn install_find(self) -> Result<FoundSpec, InstallError> {
-      let Self { spack, spec, .. } = self.clone();
+      let Self {
+        spack,
+        spec,
+        env,
+        repos,
+        ..
+      } = self.clone();
 
       /* Check if the spec already exists. */
       let cached_find = Find {
-        spack: spack.clone(),
-        spec: spec.clone(),
+        spack,
+        spec,
+        env,
+        repos,
       };
       /* FIXME: ensure we have a test for both cached and uncached!!! */
-      if let Ok(found_specs) = cached_find.find().await {
+      if let Ok(found_specs) = cached_find.clone().find().await {
         return Ok(found_specs[0].clone());
       }
 
@@ -911,12 +934,11 @@ pub mod install {
       /* Find the first match for the spec we just tried to install. */
       /* NB: this will probably immediately break if the CLI spec covers more than
        * one concrete spec! For now we just take the first result!! */
-      let find = Find { spack, spec };
-      let found_specs = find
+      let found_specs = cached_find
         .clone()
         .find()
         .await
-        .map_err(|e| CommandError::Find(find, e))
+        .map_err(|e| CommandError::Find(cached_find, e))
         .map_err(|e| InstallError::Inner(Box::new(e)))?;
       Ok(found_specs[0].clone())
     }
@@ -1909,8 +1931,20 @@ pub mod env {
       let req = EnvList {
         spack: self.spack.clone(),
       };
-      if Self::env_exists(req.clone(), &self.env).await? {
-        eprintln!("env {:?} already exists!", &self.env);
+
+      let completed_sentinel_filename: PathBuf = format!("SENTINEL@env@{}", &self.env.0).into();
+      let sentinel_file = self
+        .spack
+        .cache_location()
+        .join(completed_sentinel_filename);
+      dbg!(&sentinel_file);
+      if sentinel_file.is_file() {
+        assert!(Self::env_exists(req.clone(), &self.env).await?);
+        eprintln!(
+          "env {:?} already exists and sentinel file {} does too!",
+          &self.env,
+          sentinel_file.display()
+        );
         return Ok(self.env);
       }
 
@@ -1930,22 +1964,22 @@ pub mod env {
       .await
       .unwrap()?;
 
-      if Self::env_exists(req.clone(), &self.env).await? {
-        eprintln!(
-          "the env {:?} was created while waiting for file lock!",
-          &self.env
-        );
-        return Ok(self.env);
-      }
-
       let spack = self.spack.clone();
       let env = self.env.clone();
-      let command = self
-        .setup_command()
-        .await
-        .map_err(|e| e.with_context("in idempotent_env_create()!".to_string()))?;
-      let _ = command.invoke().await?;
-      assert!(Self::env_exists(req, &env).await?);
+
+      if Self::env_exists(req.clone(), &env).await? {
+        eprintln!(
+          "the env {:?} was created while waiting for file lock!",
+          &env
+        );
+      } else {
+        let command = self
+          .setup_command()
+          .await
+          .map_err(|e| e.with_context("in idempotent_env_create()!".to_string()))?;
+        let _ = command.invoke().await?;
+        assert!(Self::env_exists(req, &env).await?);
+      }
 
       /* While holding the lock, install all the specs in the order given. */
       dbg!(&instructions);
@@ -1966,6 +2000,12 @@ pub mod env {
         };
         install.install().await?;
       }
+
+      let outfile = sentinel_file.clone();
+      task::spawn_blocking(move || std::fs::write(outfile, b""))
+        .await
+        .unwrap()?;
+      assert!(sentinel_file.is_file());
 
       Ok(env)
     }
