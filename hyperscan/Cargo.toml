@@ -9,10 +9,10 @@ authors.workspace       = true
 
 [features]
 default                 = ["static", "compiler", "stream"]
-static                  = ["hyperscan-async-sys/static"]
-compiler                = ["hyperscan-async-sys/compiler"]
-dynamic                 = ["hyperscan-async-sys/dynamic"]
-chimera                 = ["compiler", "static", "hyperscan-async-sys/chimera", "dep:smallvec"]
+static                  = ["hyperscan-sys/static"]
+compiler                = ["hyperscan-sys/compiler"]
+dynamic                 = ["hyperscan-sys/dynamic"]
+chimera                 = ["compiler", "static", "hyperscan-sys/chimera", "dep:smallvec"]
 alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 async                   = ["dep:futures-core", "dep:tokio"]
 stream                  = []
@@ -22,7 +22,7 @@ tokio-impls             = ["async", "stream", "dep:futures-util"]
 name                    = "hyperscan"
 
 [dependencies]
-hyperscan-async-sys.workspace = true
+hyperscan-sys.workspace = true
 
 cfg-if                  = "1"
 displaydoc.workspace    = true
