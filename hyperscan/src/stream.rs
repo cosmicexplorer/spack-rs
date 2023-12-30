@@ -1,12 +1,14 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+#[cfg(feature = "vectored")]
+use crate::sources::vectored::VectoredByteSlices;
 use crate::{
   database::Database,
   error::{CompressionError, HyperscanRuntimeError},
   hs,
   matchers::stream::StreamMatcher,
-  sources::{ByteSlice, VectoredByteSlices},
+  sources::ByteSlice,
   state::Scratch,
 };
 
@@ -124,6 +126,8 @@ impl<'code> StreamSink<'code> {
     scratch.scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
+  #[cfg(feature = "vectored")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_vectored<'data>(
     &mut self,
     scratch: &mut Scratch,
@@ -207,6 +211,8 @@ impl<'code> ScratchStreamSink<'code> {
     sink.scan(scratch.make_mut()?, data)
   }
 
+  #[cfg(feature = "vectored")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_vectored<'data>(
     &mut self,
     data: VectoredByteSlices<'data, 'data>,
@@ -223,10 +229,15 @@ impl<'code> ScratchStreamSink<'code> {
 
 pub mod std_impls {
   use super::ScratchStreamSink;
-  use crate::sources::{ByteSlice, VectoredByteSlices};
+  #[cfg(feature = "vectored")]
+  use crate::sources::vectored::VectoredByteSlices;
+  use crate::sources::ByteSlice;
 
-  use std::{io, mem};
+  use std::io;
+  #[cfg(feature = "vectored")]
+  use std::mem;
 
+  #[cfg(feature = "vectored")]
   pub(crate) fn copy_vectored_slices<'string, 'slice>(
     cache: &'slice mut Vec<mem::MaybeUninit<ByteSlice<'static>>>,
     bufs: &'string [io::IoSlice<'string>],
@@ -246,6 +257,7 @@ pub mod std_impls {
 
   pub struct StreamWriter<'code> {
     pub inner: ScratchStreamSink<'code>,
+    #[cfg(feature = "vectored")]
     vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
   }
 
@@ -253,6 +265,7 @@ pub mod std_impls {
     pub fn new(inner: ScratchStreamSink<'code>) -> Self {
       Self {
         inner,
+        #[cfg(feature = "vectored")]
         vectored_buf_cache: Vec::new(),
       }
     }
@@ -270,6 +283,8 @@ pub mod std_impls {
     fn flush(&mut self) -> io::Result<()> { Ok(()) }
 
     /* TODO: impl `is_write_vectored()` when stabilized! */
+    #[cfg(feature = "vectored")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
       let bufs = copy_vectored_slices(&mut self.vectored_buf_cache, bufs);
       let len = bufs.length_sum();
@@ -286,13 +301,15 @@ pub mod std_impls {
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub mod channel {
   use super::LiveStream;
+  #[cfg(feature = "vectored")]
+  use crate::sources::vectored::VectoredByteSlices;
   use crate::{
     error::{HyperscanRuntimeError, ScanError},
     matchers::{
       stream::{SendStreamMatcher, StreamMatch},
       MatchResult,
     },
-    sources::{ByteSlice, VectoredByteSlices},
+    sources::ByteSlice,
     state::Scratch,
   };
 
@@ -354,6 +371,8 @@ pub mod channel {
       Ok(())
     }
 
+    #[cfg(feature = "vectored")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     pub async fn scan_vectored<'data>(
       &mut self,
       scratch: &mut Scratch,
@@ -452,6 +471,8 @@ pub mod channel {
       sink.scan(scratch.make_mut()?, data).await
     }
 
+    #[cfg(feature = "vectored")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     pub async fn scan_vectored<'data>(
       &mut self,
       data: VectoredByteSlices<'data, 'data>,
@@ -469,15 +490,18 @@ pub mod channel {
   #[cfg(feature = "tokio-impls")]
   #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
   pub mod tokio_impls {
-    use super::{super::std_impls::copy_vectored_slices, ScratchStreamSinkChannel};
+    #[cfg(feature = "vectored")]
+    use super::super::std_impls::copy_vectored_slices;
+    use super::ScratchStreamSinkChannel;
     use crate::sources::ByteSlice;
 
     use futures_util::TryFutureExt;
     use tokio::io;
 
+    #[cfg(feature = "vectored")]
+    use std::io::IoSlice;
     use std::{
       future::Future,
-      io::IoSlice,
       mem,
       pin::Pin,
       task::{ready, Context, Poll},
@@ -516,6 +540,7 @@ pub mod channel {
     /// ```
     pub struct StreamWriter<'code> {
       pub inner: ScratchStreamSinkChannel<'code>,
+      #[cfg(feature = "vectored")]
       vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
       write_future: Option<Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>>,
       shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
@@ -525,6 +550,7 @@ pub mod channel {
       pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
         Self {
           inner,
+          #[cfg(feature = "vectored")]
           vectored_buf_cache: Vec::new(),
           write_future: None,
           shutdown_future: None,
@@ -609,8 +635,12 @@ pub mod channel {
         }
       }
 
+      #[cfg(feature = "vectored")]
+      #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
       fn is_write_vectored(&self) -> bool { true }
 
+      #[cfg(feature = "vectored")]
+      #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
       fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,

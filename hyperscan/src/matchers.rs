@@ -162,9 +162,10 @@ pub(crate) mod contiguous_slice {
 }
 pub use contiguous_slice::Match;
 
+#[cfg(feature = "vectored")]
 pub(crate) mod vectored_slice {
   use super::*;
-  use crate::sources::{VectoredByteSlices, VectoredSubset};
+  use crate::sources::vectored::{VectoredByteSlices, VectoredSubset};
 
   /// Match object returned when searching vectored string data.
   ///
@@ -229,13 +230,15 @@ pub(crate) mod vectored_slice {
   /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
    * MatchResult; */
 }
+#[cfg(feature = "vectored")]
+#[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
 pub use vectored_slice::VectoredMatch;
 
 #[cfg(feature = "stream")]
 #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream {
   use super::*;
-  use crate::sources::Range;
+  use crate::sources::stream::Range;
 
   // ///```
   // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {

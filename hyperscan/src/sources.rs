@@ -9,7 +9,7 @@
 //! such as [`Match`](crate::matchers::Match).
 
 use std::{
-  cmp, fmt, mem, ops,
+  fmt,
   os::raw::{c_char, c_uint, c_ulonglong},
   slice, str,
 };
@@ -185,366 +185,384 @@ impl<'a> ByteSlice<'a> {
   }
 }
 
-/// A [`slice`](prim@slice) of [`ByteSlice`].
-///
-/// This struct wraps non-contiguous slices of string data to pass to the
-/// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) search
-/// method, which produces match results of type
-/// [`VectoredMatch`](crate::matchers::VectoredMatch)
-/// pointing to a subset of the original data.
-///
-/// This is currently implemented as
-/// a [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent)
-/// wrapper over `&'slice [ByteSlice<'string>]`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct VectoredByteSlices<'string, 'slice>(&'slice [ByteSlice<'string>]);
+#[cfg(feature = "vectored")]
+#[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
+pub mod vectored {
+  use super::*;
 
-/// # Byte-Oriented Interface
-/// Because hyperscan only partially supports vectored string inputs, this
-/// library does not attempt to provide a UTF8-encoded [`str`](prim@str)
-/// interface for vectored strings as with [`ByteSlice`].
-///
-/// However, [`From`] implementations are still provided to convert from
-/// references to [arrays](prim@array) and [slices](prim@slice):
-///
-///```
-/// use hyperscan::sources::VectoredByteSlices;
-///
-/// let b1 = b"asdf";
-/// let b2 = b"bbbb";
-/// let bb = [b1.into(), b2.into()];
-/// let bs = VectoredByteSlices::from_slices(&bb);
-/// let bb2 = [b1.as_ref(), b2.as_ref()];
-/// let bs2: VectoredByteSlices = bb2.as_ref().into();
-/// assert_eq!(bs, bs2);
-/// ```
-impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
-  /// Wrap a slice of byte slices so they can be scanned in vectored mode.
+  use std::{cmp, mem, ops};
+
+  /// A [`slice`](prim@slice) of [`ByteSlice`].
   ///
-  /// Like [`ByteSlice::from_slice()`], this method is `const` so it can be used
-  /// in `const` values and `static` initializers.
-  pub const fn from_slices(data: &'slice [ByteSlice<'string>]) -> Self { Self(data) }
+  /// This struct wraps non-contiguous slices of string data to pass to the
+  /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) search
+  /// method, which produces match results of type
+  /// [`VectoredMatch`](crate::matchers::VectoredMatch)
+  /// pointing to a subset of the original data.
+  ///
+  /// This is currently implemented as
+  /// a [`#[repr(transparent)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprtransparent)
+  /// wrapper over `&'slice [ByteSlice<'string>]`.
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  #[repr(transparent)]
+  pub struct VectoredByteSlices<'string, 'slice>(&'slice [ByteSlice<'string>]);
 
-  pub fn length_sum(&self) -> usize { self.0.iter().map(|s| s.as_slice().len()).sum() }
+  /// # Byte-Oriented Interface
+  /// Because hyperscan only partially supports vectored string inputs, this
+  /// library does not attempt to provide a UTF8-encoded [`str`](prim@str)
+  /// interface for vectored strings as with [`ByteSlice`].
+  ///
+  /// However, [`From`] implementations are still provided to convert from
+  /// references to [arrays](prim@array) and [slices](prim@slice):
+  ///
+  ///```
+  /// use hyperscan::sources::vectored::VectoredByteSlices;
+  ///
+  /// let b1 = b"asdf";
+  /// let b2 = b"bbbb";
+  /// let bb = [b1.into(), b2.into()];
+  /// let bs = VectoredByteSlices::from_slices(&bb);
+  /// let bb2 = [b1.as_ref(), b2.as_ref()];
+  /// let bs2: VectoredByteSlices = bb2.as_ref().into();
+  /// assert_eq!(bs, bs2);
+  /// ```
+  impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
+    /// Wrap a slice of byte slices so they can be scanned in vectored mode.
+    ///
+    /// Like [`ByteSlice::from_slice()`], this method is `const` so it can be
+    /// used in `const` values and `static` initializers.
+    pub const fn from_slices(data: &'slice [ByteSlice<'string>]) -> Self { Self(data) }
 
-  pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
-    let lengths: Vec<c_uint> = self.0.iter().map(|col| col.native_len()).collect();
-    let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
-    (data_pointers, lengths)
-  }
+    pub fn length_sum(&self) -> usize { self.0.iter().map(|s| s.as_slice().len()).sum() }
 
-  pub(crate) const fn native_len(&self) -> c_uint { self.0.len() as c_uint }
-}
-
-impl<'string, 'slice> From<&'slice [ByteSlice<'string>]> for VectoredByteSlices<'string, 'slice> {
-  fn from(x: &'slice [ByteSlice<'string>]) -> Self { Self::from_slices(x) }
-}
-
-impl<'string, 'slice, const N: usize> From<&'slice [ByteSlice<'string>; N]>
-  for VectoredByteSlices<'string, 'slice>
-{
-  fn from(x: &'slice [ByteSlice<'string>; N]) -> Self { Self::from_slices(x.as_ref()) }
-}
-
-impl<'string, 'slice> From<&'slice [&'string [u8]]> for VectoredByteSlices<'string, 'slice> {
-  fn from(x: &'slice [&'string [u8]]) -> Self {
-    let x: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(x) };
-    Self(x)
-  }
-}
-
-impl<'string, 'slice, const N: usize> From<&'slice [&'string [u8]; N]>
-  for VectoredByteSlices<'string, 'slice>
-{
-  fn from(x: &'slice [&'string [u8]; N]) -> Self {
-    let x: &'slice [ByteSlice<'string>; N] = unsafe { mem::transmute(x) };
-    x.into()
-  }
-}
-
-/// # Ownership and Indexing
-/// Keeping track of a subset of vectored strings
-/// requires some more work than for [`ByteSlice`], since a subset of vectored
-/// data may start or stop in the middle of a particular slice. As a result,
-/// [`Self::index_range()`] cannot simply return `Self` and return a reference
-/// to itself without allocating new memory the way [`ByteSlice::index_range()`]
-/// can.
-///
-/// However, it *is* possible to avoid dynamic memory allocation when extracting
-/// subsets of vectored data; instead, [`Self::index_range()`] returns
-/// [`VectoredSubset`], which tracks offsets within the vectored string data
-/// without additional allocations.
-impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
-  fn find_index_at(
-    &self,
-    mut column: usize,
-    mut within_column_index: usize,
-    mut remaining: usize,
-  ) -> Option<(usize, usize)> {
-    let num_columns = self.0.len();
-    if column >= num_columns {
-      return None;
-    }
-    if remaining == 0 {
-      return Some((column, within_column_index));
+    pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
+      let lengths: Vec<c_uint> = self.0.iter().map(|col| col.native_len()).collect();
+      let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
+      (data_pointers, lengths)
     }
 
-    let within_column_index = loop {
-      let cur_col = &self.0[column];
-      let (prev, max_diff) = if within_column_index > 0 {
-        let x = within_column_index;
-        within_column_index = 0;
-        assert_ne!(cur_col.0.len(), x);
-        (x, cur_col.0.len() - x)
-      } else {
-        (0, cur_col.0.len())
-      };
-      assert_ne!(max_diff, 0);
-      let new_offset = cmp::min(remaining, max_diff);
-      let cur_ind = prev + new_offset;
-      remaining -= new_offset;
-      if remaining == 0 {
-        break cur_ind;
-      } else if column == (num_columns - 1) {
+    pub(crate) const fn native_len(&self) -> c_uint { self.0.len() as c_uint }
+  }
+
+  impl<'string, 'slice> From<&'slice [ByteSlice<'string>]> for VectoredByteSlices<'string, 'slice> {
+    fn from(x: &'slice [ByteSlice<'string>]) -> Self { Self::from_slices(x) }
+  }
+
+  impl<'string, 'slice, const N: usize> From<&'slice [ByteSlice<'string>; N]>
+    for VectoredByteSlices<'string, 'slice>
+  {
+    fn from(x: &'slice [ByteSlice<'string>; N]) -> Self { Self::from_slices(x.as_ref()) }
+  }
+
+  impl<'string, 'slice> From<&'slice [&'string [u8]]> for VectoredByteSlices<'string, 'slice> {
+    fn from(x: &'slice [&'string [u8]]) -> Self {
+      let x: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(x) };
+      Self(x)
+    }
+  }
+
+  impl<'string, 'slice, const N: usize> From<&'slice [&'string [u8]; N]>
+    for VectoredByteSlices<'string, 'slice>
+  {
+    fn from(x: &'slice [&'string [u8]; N]) -> Self {
+      let x: &'slice [ByteSlice<'string>; N] = unsafe { mem::transmute(x) };
+      x.into()
+    }
+  }
+
+  /// # Ownership and Indexing
+  /// Keeping track of a subset of vectored strings
+  /// requires some more work than for [`ByteSlice`], since a subset of vectored
+  /// data may start or stop in the middle of a particular slice. As a result,
+  /// [`Self::index_range()`] cannot simply return `Self` and return a reference
+  /// to itself without allocating new memory the way
+  /// [`ByteSlice::index_range()`] can.
+  ///
+  /// However, it *is* possible to avoid dynamic memory allocation when
+  /// extracting subsets of vectored data; instead, [`Self::index_range()`]
+  /// returns [`VectoredSubset`], which tracks offsets within the vectored
+  /// string data without additional allocations.
+  impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
+    fn find_index_at(
+      &self,
+      mut column: usize,
+      mut within_column_index: usize,
+      mut remaining: usize,
+    ) -> Option<(usize, usize)> {
+      let num_columns = self.0.len();
+      if column >= num_columns {
         return None;
-      } else {
-        column += 1;
       }
-    };
+      if remaining == 0 {
+        return Some((column, within_column_index));
+      }
 
-    Some((column, within_column_index))
-  }
+      let within_column_index = loop {
+        let cur_col = &self.0[column];
+        let (prev, max_diff) = if within_column_index > 0 {
+          let x = within_column_index;
+          within_column_index = 0;
+          assert_ne!(cur_col.0.len(), x);
+          (x, cur_col.0.len() - x)
+        } else {
+          (0, cur_col.0.len())
+        };
+        assert_ne!(max_diff, 0);
+        let new_offset = cmp::min(remaining, max_diff);
+        let cur_ind = prev + new_offset;
+        remaining -= new_offset;
+        if remaining == 0 {
+          break cur_ind;
+        } else if column == (num_columns - 1) {
+          return None;
+        } else {
+          column += 1;
+        }
+      };
 
-  fn collect_slices_range(
-    &self,
-    start: (usize, usize),
-    end: (usize, usize),
-  ) -> Option<VectoredSubset<'string, 'slice>> {
-    let (start_col, start_ind) = start;
-    let (end_col, end_ind) = end;
-    assert!(end_col >= start_col);
+      Some((column, within_column_index))
+    }
 
-    if start_col == end_col {
-      assert!(end_ind >= start_ind);
-      let col_substring = self.0[start_col].index_range(start_ind..end_ind)?;
-      Some(VectoredSubset::from_single_slice(col_substring))
-    } else {
-      Some(VectoredSubset {
-        start: Some(self.0[start_col].index_range(start_ind..)?),
-        directly_referenced: &self.0[(start_col + 1)..end_col],
-        end: Some(self.0[end_col].index_range(..end_ind)?),
-      })
+    fn collect_slices_range(
+      &self,
+      start: (usize, usize),
+      end: (usize, usize),
+    ) -> Option<VectoredSubset<'string, 'slice>> {
+      let (start_col, start_ind) = start;
+      let (end_col, end_ind) = end;
+      assert!(end_col >= start_col);
+
+      if start_col == end_col {
+        assert!(end_ind >= start_ind);
+        let col_substring = self.0[start_col].index_range(start_ind..end_ind)?;
+        Some(VectoredSubset::from_single_slice(col_substring))
+      } else {
+        Some(VectoredSubset {
+          start: Some(self.0[start_col].index_range(start_ind..)?),
+          directly_referenced: &self.0[(start_col + 1)..end_col],
+          end: Some(self.0[end_col].index_range(..end_ind)?),
+        })
+      }
+    }
+
+    /// Return a subset of the input, or [`None`] if the result would be out of
+    /// range:
+    ///
+    ///```
+    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    ///
+    /// let b1 = "asdf";
+    /// let b2 = "ok";
+    /// let b3 = "bsdf";
+    /// let bb = [b1.into(), b2.into(), b3.into()];
+    /// let bs = VectoredByteSlices::from_slices(&bb);
+    ///
+    /// let sub = bs.index_range(2..8).unwrap();
+    /// let collected: Vec<&str> = sub.iter_slices().map(|s| unsafe { s.as_str() }).collect();
+    /// assert_eq!(&collected, &["df", "ok", "bs"]);
+    /// ```
+    ///
+    /// This method is largely intended for internal use inside this library,
+    /// but is exposed in the public API to make it clear how the match
+    /// callback converts match offsets to substrings of the original input
+    /// data.
+    pub fn index_range(&self, range: ops::Range<usize>) -> Option<VectoredSubset<'string, 'slice>> {
+      let ops::Range { start, end } = range;
+      let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
+      let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end - start)?;
+      self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+    }
+
+    /// Iterate over all of the original vectored data.
+    ///
+    /// This is the corollary to [`VectoredSubset::iter_slices()`] and is mainly
+    /// intended to aid in debugging.
+    ///
+    ///```
+    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    ///
+    /// let b1 = "asdf";
+    /// let b2 = "ok";
+    /// let b3 = "bbbb";
+    /// let bb = [b1.into(), b2.into(), b3.into()];
+    /// let bs = VectoredByteSlices::from_slices(&bb);
+    ///
+    /// let collected: Vec<&str> = bs.all_slices().map(|s| unsafe { s.as_str() }).collect();
+    /// assert_eq!(&collected, &["asdf", "ok", "bbbb"]);
+    /// ```
+    pub fn all_slices(
+      &self,
+    ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
+      self.0.iter().cloned()
     }
   }
 
-  /// Return a subset of the input, or [`None`] if the result would be out of
-  /// range:
+  /// A "ragged" subset of [`VectoredByteSlices`].
   ///
-  ///```
-  /// use hyperscan::sources::VectoredByteSlices;
-  ///
-  /// let b1 = "asdf";
-  /// let b2 = "ok";
-  /// let b3 = "bsdf";
-  /// let bb = [b1.into(), b2.into(), b3.into()];
-  /// let bs = VectoredByteSlices::from_slices(&bb);
-  ///
-  /// let sub = bs.index_range(2..8).unwrap();
-  /// let collected: Vec<&str> = sub.iter_slices().map(|s| unsafe { s.as_str() }).collect();
-  /// assert_eq!(&collected, &["df", "ok", "bs"]);
-  /// ```
-  ///
-  /// This method is largely intended for internal use inside this library, but
-  /// is exposed in the public API to make it clear how the match callback
-  /// converts match offsets to substrings of the original input data.
-  pub fn index_range(&self, range: ops::Range<usize>) -> Option<VectoredSubset<'string, 'slice>> {
-    let ops::Range { start, end } = range;
-    let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
-    let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end - start)?;
-    self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+  /// This struct is able to reference a contiguous subset of the vectored
+  /// string data contained in a [`VectoredByteSlices`], including any
+  /// "ragged" start or end component which does not span the entirety of the
+  /// corresponding slice from the input data. This allows the match callback
+  /// provided to
+  /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) to
+  /// receive [`VectoredMatch`](crate::matchers::VectoredMatch)
+  /// instances that reference the input data without introducing
+  /// any additional dynamic allocations.
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct VectoredSubset<'string, 'slice> {
+    start: Option<ByteSlice<'string>>,
+    directly_referenced: &'slice [ByteSlice<'string>],
+    end: Option<ByteSlice<'string>>,
   }
 
-  /// Iterate over all of the original vectored data.
-  ///
-  /// This is the corollary to [`VectoredSubset::iter_slices()`] and is mainly
-  /// intended to aid in debugging.
-  ///
-  ///```
-  /// use hyperscan::sources::VectoredByteSlices;
-  ///
-  /// let b1 = "asdf";
-  /// let b2 = "ok";
-  /// let b3 = "bbbb";
-  /// let bb = [b1.into(), b2.into(), b3.into()];
-  /// let bs = VectoredByteSlices::from_slices(&bb);
-  ///
-  /// let collected: Vec<&str> = bs.all_slices().map(|s| unsafe { s.as_str() }).collect();
-  /// assert_eq!(&collected, &["asdf", "ok", "bbbb"]);
-  /// ```
-  pub fn all_slices(
-    &self,
-  ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
-    self.0.iter().cloned()
+  impl<'string, 'slice> VectoredSubset<'string, 'slice> {
+    pub(crate) fn from_single_slice(data: ByteSlice<'string>) -> Self {
+      Self {
+        start: Some(data),
+        directly_referenced: &[],
+        end: None,
+      }
+    }
+
+    /// Iterate over the referenced data.
+    ///
+    ///```
+    /// use hyperscan::sources::vectored::VectoredByteSlices;
+    ///
+    /// let b1 = "asdf";
+    /// let b2 = "ok";
+    /// let b3 = "bsdf";
+    /// let bb = [b1.into(), b2.into(), b3.into()];
+    /// let bs = VectoredByteSlices::from_slices(&bb);
+    ///
+    /// let sub = bs.index_range(2..8).unwrap();
+    /// let collected: Vec<&str> = sub.iter_slices().map(|s| unsafe { s.as_str() }).collect();
+    /// assert_eq!(&collected, &["df", "ok", "bs"]);
+    /// ```
+    ///
+    /// This iterator is the only interface exposed to access the data because
+    /// "ragged" start and end components cannot be expressed as simple
+    /// subslices of the vectored data in a [`VectoredByteSlices`], so the first
+    /// and/or last iteration result must come from additional references to
+    /// ragged substrings which are also stored in this struct.
+    pub fn iter_slices(
+      &self,
+    ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
+      VectorIter::new(self)
+    }
+  }
+
+  struct VectorIter<'string, 'slice> {
+    done_start: Option<&'slice ByteSlice<'string>>,
+    done_inner: slice::Iter<'slice, ByteSlice<'string>>,
+    done_end: Option<&'slice ByteSlice<'string>>,
+  }
+
+  impl<'string, 'slice> VectorIter<'string, 'slice> {
+    pub fn new(data: &'slice VectoredSubset<'string, 'slice>) -> Self {
+      Self {
+        done_start: data.start.as_ref(),
+        done_inner: data.directly_referenced.iter(),
+        done_end: data.end.as_ref(),
+      }
+    }
+
+    fn remaining_len(&self) -> usize {
+      let mut len: usize = 0;
+      if self.done_start.is_some() {
+        len += 1;
+      }
+      len += self.done_inner.as_slice().len();
+      if self.done_end.is_some() {
+        len += 1;
+      }
+      len
+    }
+  }
+
+  impl<'string, 'slice> Iterator for VectorIter<'string, 'slice> {
+    type Item = ByteSlice<'string>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+      if let Some(start) = self.done_start.take() {
+        return Some(*start);
+      }
+
+      if let Some(inner) = self.done_inner.next() {
+        return Some(*inner);
+      }
+
+      if let Some(end) = self.done_end.take() {
+        return Some(*end);
+      }
+
+      None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+      let rem = self.remaining_len();
+      (rem, Some(rem))
+    }
+  }
+
+  impl<'string, 'slice> ExactSizeIterator for VectorIter<'string, 'slice> {}
+
+  impl<'string, 'slice> DoubleEndedIterator for VectorIter<'string, 'slice> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+      if let Some(end) = self.done_end.take() {
+        return Some(*end);
+      }
+
+      if let Some(inner) = self.done_inner.next_back() {
+        return Some(*inner);
+      }
+
+      if let Some(start) = self.done_start.take() {
+        return Some(*start);
+      }
+
+      None
+    }
   }
 }
 
-/// A "ragged" subset of [`VectoredByteSlices`].
-///
-/// This struct is able to reference a contiguous subset of the vectored string
-/// data contained in a [`VectoredByteSlices`], including any "ragged" start
-/// or end component which does not span the entirety of the corresponding slice
-/// from the input data. This allows the match callback provided to
-/// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) to
-/// receive [`VectoredMatch`](crate::matchers::VectoredMatch)
-/// instances that reference the input data without introducing
-/// any additional dynamic allocations.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct VectoredSubset<'string, 'slice> {
-  start: Option<ByteSlice<'string>>,
-  directly_referenced: &'slice [ByteSlice<'string>],
-  end: Option<ByteSlice<'string>>,
-}
+#[cfg(feature = "stream")]
+#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+pub mod stream {
+  use super::*;
 
-impl<'string, 'slice> VectoredSubset<'string, 'slice> {
-  pub(crate) fn from_single_slice(data: ByteSlice<'string>) -> Self {
-    Self {
-      start: Some(data),
-      directly_referenced: &[],
-      end: None,
+  use std::ops;
+
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+  pub struct Range {
+    pub from: usize,
+    pub to: usize,
+  }
+
+  static_assertions::assert_eq_size!(Range, ops::Range<usize>);
+  static_assertions::assert_eq_size!(usize, c_ulonglong);
+  static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
+
+  impl Range {
+    pub const fn from_range(x: ops::Range<usize>) -> Self {
+      let ops::Range { start, end } = x;
+      Self {
+        from: start,
+        to: end,
+      }
+    }
+
+    pub const fn into_range(self) -> ops::Range<usize> {
+      let Self { from, to } = self;
+      from..to
     }
   }
 
-  /// Iterate over the referenced data.
-  ///
-  ///```
-  /// use hyperscan::sources::VectoredByteSlices;
-  ///
-  /// let b1 = "asdf";
-  /// let b2 = "ok";
-  /// let b3 = "bsdf";
-  /// let bb = [b1.into(), b2.into(), b3.into()];
-  /// let bs = VectoredByteSlices::from_slices(&bb);
-  ///
-  /// let sub = bs.index_range(2..8).unwrap();
-  /// let collected: Vec<&str> = sub.iter_slices().map(|s| unsafe { s.as_str() }).collect();
-  /// assert_eq!(&collected, &["df", "ok", "bs"]);
-  /// ```
-  ///
-  /// This iterator is the only interface exposed to access the data because
-  /// "ragged" start and end components cannot be expressed as simple
-  /// subslices of the vectored data in a [`VectoredByteSlices`], so the first
-  /// and/or last iteration result must come from additional references to
-  /// ragged substrings which are also stored in this struct.
-  pub fn iter_slices(
-    &self,
-  ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
-    VectorIter::new(self)
-  }
-}
-
-struct VectorIter<'string, 'slice> {
-  done_start: Option<&'slice ByteSlice<'string>>,
-  done_inner: slice::Iter<'slice, ByteSlice<'string>>,
-  done_end: Option<&'slice ByteSlice<'string>>,
-}
-
-impl<'string, 'slice> VectorIter<'string, 'slice> {
-  pub fn new(data: &'slice VectoredSubset<'string, 'slice>) -> Self {
-    Self {
-      done_start: data.start.as_ref(),
-      done_inner: data.directly_referenced.iter(),
-      done_end: data.end.as_ref(),
-    }
+  impl From<ops::Range<usize>> for Range {
+    fn from(x: ops::Range<usize>) -> Self { Self::from_range(x) }
   }
 
-  fn remaining_len(&self) -> usize {
-    let mut len: usize = 0;
-    if self.done_start.is_some() {
-      len += 1;
-    }
-    len += self.done_inner.as_slice().len();
-    if self.done_end.is_some() {
-      len += 1;
-    }
-    len
+  impl From<Range> for ops::Range<usize> {
+    fn from(x: Range) -> Self { x.into_range() }
   }
-}
-
-impl<'string, 'slice> Iterator for VectorIter<'string, 'slice> {
-  type Item = ByteSlice<'string>;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    if let Some(start) = self.done_start.take() {
-      return Some(*start);
-    }
-
-    if let Some(inner) = self.done_inner.next() {
-      return Some(*inner);
-    }
-
-    if let Some(end) = self.done_end.take() {
-      return Some(*end);
-    }
-
-    None
-  }
-
-  fn size_hint(&self) -> (usize, Option<usize>) {
-    let rem = self.remaining_len();
-    (rem, Some(rem))
-  }
-}
-
-impl<'string, 'slice> ExactSizeIterator for VectorIter<'string, 'slice> {}
-
-impl<'string, 'slice> DoubleEndedIterator for VectorIter<'string, 'slice> {
-  fn next_back(&mut self) -> Option<Self::Item> {
-    if let Some(end) = self.done_end.take() {
-      return Some(*end);
-    }
-
-    if let Some(inner) = self.done_inner.next_back() {
-      return Some(*inner);
-    }
-
-    if let Some(start) = self.done_start.take() {
-      return Some(*start);
-    }
-
-    None
-  }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Range {
-  pub from: usize,
-  pub to: usize,
-}
-
-static_assertions::assert_eq_size!(Range, ops::Range<usize>);
-static_assertions::assert_eq_size!(usize, c_ulonglong);
-static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
-
-impl Range {
-  pub const fn from_range(x: ops::Range<usize>) -> Self {
-    let ops::Range { start, end } = x;
-    Self {
-      from: start,
-      to: end,
-    }
-  }
-
-  pub const fn into_range(self) -> ops::Range<usize> {
-    let Self { from, to } = self;
-    from..to
-  }
-}
-
-impl From<ops::Range<usize>> for Range {
-  fn from(x: ops::Range<usize>) -> Self { Self::from_range(x) }
-}
-
-impl From<Range> for ops::Range<usize> {
-  fn from(x: Range) -> Self { x.into_range() }
 }

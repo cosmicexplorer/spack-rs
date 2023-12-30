@@ -8,7 +8,7 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["static", "compiler", "stream"]
+default                 = ["static", "compiler", "stream", "vectored"]
 static                  = ["hyperscan-sys/static"]
 compiler                = ["hyperscan-sys/compiler"]
 dynamic                 = ["hyperscan-sys/dynamic"]
@@ -16,6 +16,7 @@ chimera                 = ["compiler", "static", "hyperscan-sys/chimera", "dep:s
 alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 async                   = ["dep:futures-core", "dep:tokio"]
 stream                  = ["dep:handles"]
+vectored                = []
 tokio-impls             = ["async", "stream", "dep:futures-util"]
 
 [lib]

@@ -298,15 +298,19 @@ use crate::{
   hs,
   matchers::{
     contiguous_slice::{match_slice, Match, SliceMatcher},
-    vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
     MatchResult,
   },
-  sources::{ByteSlice, VectoredByteSlices},
+  sources::ByteSlice,
 };
 #[cfg(feature = "stream")]
 use crate::{
   matchers::stream::{match_slice_stream, StreamMatcher},
   stream::LiveStream,
+};
+#[cfg(feature = "vectored")]
+use crate::{
+  matchers::vectored_slice::{match_slice_vectored, VectoredMatch, VectoredMatcher},
+  sources::vectored::VectoredByteSlices,
 };
 
 use handles::Resource;
@@ -527,6 +531,8 @@ impl Scratch {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
+  #[cfg(feature = "vectored")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_sync_vectored<'data>(
     &mut self,
     db: &Database,
@@ -577,8 +583,8 @@ impl Scratch {
     })
   }
 
-  #[cfg(feature = "stream")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+  #[cfg(all(feature = "stream", feature = "vectored"))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "stream", feature = "vectored"))))]
   pub fn scan_sync_vectored_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
@@ -910,6 +916,8 @@ impl Scratch {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
+  #[cfg(feature = "vectored")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_channel_vectored<'data>(
     &mut self,
     db: &Database,

@@ -248,18 +248,22 @@ impl Mode {
   pub const BLOCK: Self = Self(hs::HS_MODE_BLOCK as u32);
   /// Alias for [`BLOCK`](Self::BLOCK).
   pub const NOSTREAM: Self = Self(hs::HS_MODE_NOSTREAM as u32);
+  /// Vectored scanning database.
+  #[cfg(feature = "vectored")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
+  pub const VECTORED: Self = Self(hs::HS_MODE_VECTORED as u32);
   /// Streaming database.
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub const STREAM: Self = Self(hs::HS_MODE_STREAM as u32);
-  /// Vectored scanning database.
-  pub const VECTORED: Self = Self(hs::HS_MODE_VECTORED as u32);
 
   pub(crate) const fn into_native(self) -> c_uint { self.0 as c_uint }
 }
 
 /// # Stream State Precision Modes
 /// These flags are currently only processed when [`Self::STREAM`] is requested.
+#[cfg(feature = "stream")]
+#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 impl Mode {
   /// Use full precision to track start of match offsets in stream state.
   ///
