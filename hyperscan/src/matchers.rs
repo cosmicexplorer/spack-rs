@@ -6,6 +6,11 @@
 use cfg_if::cfg_if;
 use displaydoc::Display;
 
+#[cfg(feature = "catch-unwind")]
+use std::{
+  any::Any,
+  panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
+};
 use std::{
   fmt, mem, ops,
   os::raw::{c_int, c_uint, c_ulonglong, c_void},
@@ -99,12 +104,6 @@ impl MatchEvent {
 pub(crate) mod contiguous_slice {
   use super::*;
   use crate::sources::ByteSlice;
-
-  #[cfg(feature = "catch-unwind")]
-  use std::{
-    any::Any,
-    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
-  };
 
   /// Match object returned when searching a single contiguous string.
   ///
@@ -239,12 +238,6 @@ pub use contiguous_slice::Match;
 pub(crate) mod vectored_slice {
   use super::*;
   use crate::sources::vectored::{VectoredByteSlices, VectoredSubset};
-
-  #[cfg(feature = "catch-unwind")]
-  use std::{
-    any::Any,
-    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
-  };
 
   /// Match object returned when searching vectored string data.
   ///
@@ -383,12 +376,6 @@ pub use vectored_slice::VectoredMatch;
 pub mod stream {
   use super::*;
   use crate::sources::stream::Range;
-
-  #[cfg(feature = "catch-unwind")]
-  use std::{
-    any::Any,
-    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
-  };
 
   // ///```
   // /// # fn main() -> Result<(), hyperscan::error::HyperscanError> {
@@ -574,17 +561,7 @@ pub mod chimera {
 
   use smallvec::SmallVec;
 
-  #[cfg(feature = "catch-unwind")]
-  use std::{
-    any::Any,
-    panic::{self, AssertUnwindSafe, RefUnwindSafe, UnwindSafe},
-  };
-  use std::{
-    ffi::{c_uint, c_ulonglong, c_void},
-    hash, ops,
-    pin::Pin,
-    ptr, slice,
-  };
+  use std::{hash, slice};
 
   /// Return value for all chimera match callbacks.
   #[derive(
