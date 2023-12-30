@@ -249,6 +249,8 @@ impl Mode {
   /// Alias for [`BLOCK`](Self::BLOCK).
   pub const NOSTREAM: Self = Self(hs::HS_MODE_NOSTREAM as u32);
   /// Streaming database.
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub const STREAM: Self = Self(hs::HS_MODE_STREAM as u32);
   /// Vectored scanning database.
   pub const VECTORED: Self = Self(hs::HS_MODE_VECTORED as u32);

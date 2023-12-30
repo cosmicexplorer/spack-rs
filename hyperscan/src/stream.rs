@@ -7,7 +7,7 @@ use crate::{
   handle::{Handle, Resource},
   hs,
   matchers::stream::StreamMatcher,
-  sources::ByteSlice,
+  sources::{ByteSlice, VectoredByteSlices},
   state::Scratch,
 };
 
@@ -123,6 +123,15 @@ impl<'code> StreamSink<'code> {
     scratch.scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
+  pub fn scan_vectored<'data>(
+    &mut self,
+    scratch: &mut Scratch,
+    data: VectoredByteSlices<'data, 'data>,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let Self { live, matcher } = self;
+    scratch.scan_sync_vectored_stream(live.make_mut()?, matcher, data)
+  }
+
   pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), HyperscanRuntimeError> {
     let Self { live, matcher } = self;
     scratch.flush_eod_sync(live.make_mut()?, matcher)
@@ -197,6 +206,14 @@ impl<'code> ScratchStreamSink<'code> {
     sink.scan(scratch.make_mut()?, data)
   }
 
+  pub fn scan_vectored<'data>(
+    &mut self,
+    data: VectoredByteSlices<'data, 'data>,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let Self { sink, scratch } = self;
+    sink.scan_vectored(scratch.make_mut()?, data)
+  }
+
   pub fn flush_eod(&mut self) -> Result<(), HyperscanRuntimeError> {
     let Self { sink, scratch } = self;
     sink.flush_eod(scratch.make_mut()?)
@@ -212,6 +229,17 @@ impl<'code> std::io::Write for ScratchStreamSink<'code> {
   }
 
   fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+
+  /* TODO: impl `is_write_vectored()` when stabilized! */
+  fn write_vectored(&mut self, bufs: &[std::io::IoSlice]) -> std::io::Result<usize> {
+    let bufs: Vec<ByteSlice> = bufs.iter().map(|s| ByteSlice::from_slice(&s)).collect();
+    let bufs = VectoredByteSlices::from_slices(&bufs);
+    let len = bufs.length_sum();
+    self
+      .scan_vectored(bufs)
+      .map(|()| len)
+      .map_err(std::io::Error::other)
+  }
 }
 
 #[cfg(feature = "async")]
@@ -225,7 +253,7 @@ pub mod channel {
       stream::{SendStreamMatcher, StreamMatch},
       MatchResult,
     },
-    sources::ByteSlice,
+    sources::{ByteSlice, VectoredByteSlices},
     state::Scratch,
   };
 
@@ -283,6 +311,29 @@ pub mod channel {
 
       task::spawn_blocking(move || scratch.scan_sync_stream(live, matcher.as_mut_basic(), data))
         .await??;
+      Ok(())
+    }
+
+    pub async fn scan_vectored<'data>(
+      &mut self,
+      scratch: &mut Scratch,
+      data: VectoredByteSlices<'data, 'data>,
+    ) -> Result<(), ScanError> {
+      /* Make the mutable resources static. */
+      let Self { live, hf, .. } = self;
+      let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
+      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
+      let data: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(data) };
+
+      /* Generate a vtable pointing to the heap-allocated handler function hf. */
+      let hf: &mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code) = hf;
+      let matcher = SendStreamMatcher::new(hf);
+      let mut matcher: SendStreamMatcher<'static> = unsafe { mem::transmute(matcher) };
+
+      task::spawn_blocking(move || {
+        scratch.scan_sync_vectored_stream(live, matcher.as_mut_basic(), data)
+      })
+      .await??;
       Ok(())
     }
 
@@ -361,6 +412,14 @@ pub mod channel {
       sink.scan(scratch.make_mut()?, data).await
     }
 
+    pub async fn scan_vectored<'data>(
+      &mut self,
+      data: VectoredByteSlices<'data, 'data>,
+    ) -> Result<(), ScanError> {
+      let Self { sink, scratch, .. } = self;
+      sink.scan_vectored(scratch.make_mut()?, data).await
+    }
+
     pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
       let Self { sink, scratch, .. } = self;
       sink.flush_eod(scratch.make_mut()?).await
@@ -371,15 +430,15 @@ pub mod channel {
   #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
   pub mod tokio_impls {
     use super::ScratchStreamSinkChannel;
-    use crate::sources::ByteSlice;
+    use crate::sources::{ByteSlice, VectoredByteSlices};
 
     use futures_util::TryFutureExt;
     use tokio::io;
 
     use std::{
       future::Future,
+      mem,
       pin::Pin,
-      slice,
       task::{ready, Context, Poll},
     };
 
@@ -416,11 +475,7 @@ pub mod channel {
     /// ```
     pub struct StreamWriter<'code> {
       pub inner: ScratchStreamSinkChannel<'code>,
-      #[allow(clippy::type_complexity)]
-      write_future: Option<(
-        *const u8,
-        Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>,
-      )>,
+      write_future: Option<Pin<Box<dyn Future<Output=io::Result<usize>>+'code>>>,
       shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
     }
 
@@ -443,28 +498,27 @@ pub mod channel {
         buf: &[u8],
       ) -> Poll<io::Result<usize>> {
         if self.write_future.is_some() {
-          let mut s = self.as_mut();
+          let ret = ready!(self
+            .as_mut()
+            .write_future
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .poll(cx));
 
-          let (p, fut) = s.write_future.as_mut().unwrap();
-          /* Sequential .poll_write() calls MUST be for the same buffer! */
-          assert_eq!(*p, buf.as_ptr());
-
-          let ret = ready!(fut.as_mut().poll(cx));
-
-          s.write_future = None;
+          self.write_future = None;
 
           Poll::Ready(ret)
         } else {
           let s: *mut Self = self.as_mut().get_mut();
-          let buf_ptr = buf.as_ptr();
           let buf_len = buf.len();
+          let buf = ByteSlice::from_slice(buf);
+          let buf: ByteSlice<'static> = unsafe { mem::transmute(buf) };
           let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
             unsafe { &mut *s }
               .inner
-              .scan(ByteSlice::from_slice(unsafe {
-                slice::from_raw_parts(buf_ptr, buf_len)
-              }))
-              .and_then(move |()| async move { Ok(buf_len) })
+              .scan(buf)
+              .map_ok(move |()| buf_len)
               .map_err(io::Error::other),
           );
 
@@ -472,7 +526,7 @@ pub mod channel {
             return Poll::Ready(ret);
           }
 
-          self.write_future = Some((buf_ptr, fut));
+          self.write_future = Some(fut);
 
           Poll::Pending
         }
@@ -514,9 +568,48 @@ pub mod channel {
         }
       }
 
-      /* TODO: add vectored write support if vectored streaming databases
-      ever
-      * exist! */
+      fn is_write_vectored(&self) -> bool { true }
+
+      fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+      ) -> Poll<io::Result<usize>> {
+        if self.write_future.is_some() {
+          let ret = ready!(self
+            .as_mut()
+            .write_future
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .poll(cx));
+
+          self.write_future = None;
+
+          Poll::Ready(ret)
+        } else {
+          let s: *mut Self = self.as_mut().get_mut();
+          let bufs: Vec<ByteSlice> = bufs.iter().map(|s| ByteSlice::from_slice(&s)).collect();
+          let bufs = VectoredByteSlices::from_slices(&bufs);
+          let len = bufs.length_sum();
+          let bufs: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(bufs) };
+          let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>>> = Box::pin(
+            unsafe { &mut *s }
+              .inner
+              .scan_vectored(bufs)
+              .map_ok(move |()| len)
+              .map_err(io::Error::other),
+          );
+
+          if let Poll::Ready(ret) = fut.as_mut().poll(cx) {
+            return Poll::Ready(ret);
+          }
+
+          self.write_future = Some(fut);
+
+          Poll::Pending
+        }
+      }
     }
   }
 }

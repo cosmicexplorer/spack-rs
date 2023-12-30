@@ -577,6 +577,30 @@ impl Scratch {
     })
   }
 
+  #[cfg(feature = "stream")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+  pub fn scan_sync_vectored_stream<'data, 'code>(
+    &mut self,
+    live: &mut LiveStream,
+    matcher: &mut StreamMatcher<'code>,
+    data: VectoredByteSlices<'data, 'data>,
+  ) -> Result<(), HyperscanRuntimeError> {
+    let (data_pointers, lengths) = data.pointers_and_lengths();
+    HyperscanRuntimeError::from_native(unsafe {
+      hs::hs_scan_vectored_stream(
+        live.as_mut_native(),
+        data_pointers.as_ptr(),
+        lengths.as_ptr(),
+        data.native_len(),
+        /* NB: ignoring flags for now! */
+        0,
+        self.as_mut_native().unwrap(),
+        Some(match_slice_stream),
+        mem::transmute(matcher),
+      )
+    })
+  }
+
   /// Process any EOD (end-of-data) matches for the stream object `sink`.
   ///
   /// This method is mostly used internally; consumers of this crate will likely

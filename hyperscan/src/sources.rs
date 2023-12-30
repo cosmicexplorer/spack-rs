@@ -226,6 +226,8 @@ impl<'string, 'slice> VectoredByteSlices<'string, 'slice> {
   /// in `const` values and `static` initializers.
   pub const fn from_slices(data: &'slice [ByteSlice<'string>]) -> Self { Self(data) }
 
+  pub fn length_sum(&self) -> usize { self.0.iter().map(|s| s.as_slice().len()).sum() }
+
   pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
     let lengths: Vec<c_uint> = self.0.iter().map(|col| col.native_len()).collect();
     let data_pointers: Vec<*const c_char> = self.0.iter().map(|col| col.as_ptr()).collect();
