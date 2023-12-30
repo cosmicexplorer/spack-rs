@@ -232,9 +232,6 @@ pub(crate) mod contiguous_slice {
     let result = slice_matcher.handle_match(m);
     result.into_native()
   }
-
-  /* TODO: only available on nightly! */
-  /* pub trait Scanner<'data> = FnMut(&Match<'data>) -> MatchResult; */
 }
 pub use contiguous_slice::Match;
 
@@ -376,10 +373,6 @@ pub(crate) mod vectored_slice {
     let result = slice_matcher.handle_match(m);
     result.into_native()
   }
-
-  /* TODO: only available on nightly! */
-  /* pub trait VectorScanner<'data> = FnMut(&VectoredMatch<'data>) ->
-   * MatchResult; */
 }
 #[cfg(feature = "vectored")]
 #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]

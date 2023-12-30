@@ -8,7 +8,7 @@ repository.workspace    = true
 authors.workspace       = true
 
 [features]
-default                 = ["static", "compiler", "stream", "vectored"]
+default                 = ["static", "compiler", "stream", "vectored", "catch-unwind"]
 static                  = ["hyperscan-sys/static"]
 compiler                = ["hyperscan-sys/compiler"]
 dynamic                 = ["hyperscan-sys/dynamic"]
@@ -17,8 +17,8 @@ alloc                   = ["static", "dep:indexmap", "dep:parking_lot"]
 async                   = ["dep:futures-core", "dep:tokio"]
 stream                  = []
 vectored                = []
-tokio-impls             = ["async", "stream", "dep:futures-util"]
 catch-unwind            = []
+tokio-impls             = ["async", "stream", "dep:futures-util"]
 
 [lib]
 name                    = "hyperscan"

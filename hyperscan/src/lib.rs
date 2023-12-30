@@ -7,6 +7,10 @@
 //!
 //! **FIXME: describe any outstanding forks, but also make PRs to include
 //! those!**
+//!
+//! *TODO: describe perf hit (or lack thereof) for `"catch-unwind"` feature via
+//! reference to [Servo's unwind perf issue](https://github.com/rust-lang/rust/issues/34727) and the
+//! [fix PR](https://github.com/rust-lang/rust/pull/67502).*
 
 /* Warn for missing docs in general, and hard require crate-level docs. */
 // #![warn(missing_docs)]
