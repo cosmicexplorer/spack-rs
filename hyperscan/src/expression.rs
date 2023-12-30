@@ -47,8 +47,6 @@ use crate::{
   hs,
 };
 
-use displaydoc::Display;
-
 use std::{
   ffi::{CStr, CString},
   fmt,
@@ -617,7 +615,11 @@ impl<'a> ExpressionSet<'a> {
 /// These structs cover the output of [`Expression::info()`] and
 /// [`Expression::ext_info()`].
 pub mod info {
-  use super::*;
+  use crate::hs;
+
+  use displaydoc::Display;
+
+  use std::os::raw::{c_char, c_uint};
 
   /// The upper or lower bound for the length of any matches returned by a
   /// pattern.
@@ -675,8 +677,8 @@ pub mod info {
   ///
   /// In streaming mode, EOD matches are raised during
   /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync) or
-  /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync), since it is
-  /// only when `flush_eod()` is called that the EOD location is
+  /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync),
+  /// since it is only when `flush_eod()` is called that the EOD location is
   /// known.
   ///
   /// Note: trailing `\b` word boundary assertions may also result in EOD
@@ -766,9 +768,9 @@ pub mod info {
     ///
     /// In streaming mode, EOD matches are raised during
     /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync) or
-    /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync), since it
-    /// is only when `flush_eod()` is called that the EOD location is
-    /// known.
+    /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync),
+    /// since it is only when `flush_eod()` is called that the EOD location
+    /// is known.
     ///
     /// Note: trailing `\b` word boundary assertions may also result in EOD
     /// matches as end-of-data can act as a word boundary.

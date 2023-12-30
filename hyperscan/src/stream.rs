@@ -14,7 +14,7 @@ use crate::{
 
 use handles::{Handle, Resource};
 
-use std::{mem, ops, ptr};
+use std::{ops, ptr};
 
 pub type NativeStream = hs::hs_stream;
 
@@ -686,7 +686,14 @@ pub mod channel {
 }
 
 pub mod compress {
-  use super::*;
+  use super::LiveStream;
+  use crate::{
+    database::Database,
+    error::{CompressionError, HyperscanRuntimeError},
+    hs,
+  };
+
+  use std::{mem, ptr};
 
   pub enum CompressReserveBehavior {
     NewBuf,

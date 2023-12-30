@@ -336,10 +336,14 @@ impl ops::Not for Mode {
 
 /// Flags used for instruction selection with [`platform::Platform`].
 pub mod platform {
-  use super::*;
-  use crate::error::HyperscanRuntimeError;
+  use super::BitSet;
+  use crate::{error::HyperscanRuntimeError, hs};
 
-  use std::mem::MaybeUninit;
+  use std::{
+    mem::MaybeUninit,
+    ops,
+    os::raw::{c_uint, c_ulonglong},
+  };
 
   /// CPU feature support flags
   #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

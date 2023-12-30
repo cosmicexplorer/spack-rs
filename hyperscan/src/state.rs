@@ -1111,6 +1111,92 @@ impl Scratch {
   /// # #[cfg(not(all(feature = "alloc", feature = "compiler")))]
   /// # fn main() {}
   /// ```
+  ///
+  /// Every single database of the same mode allocates the exact same scratch size:
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, state::*};
+  ///
+  ///   let a_expr: Expression = "a+".parse()?;
+  ///   let b_expr: Expression = "b+".parse()?;
+  ///   let a_db = a_expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///   let b_db = b_expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///
+  ///   let a_scratch = a_db.allocate_scratch()?;
+  ///   let b_scratch = b_db.allocate_scratch()?;
+  ///   let mut abc_scratch = Scratch::blank();
+  ///   abc_scratch.setup_for_db(&a_db)?;
+  ///   abc_scratch.setup_for_db(&b_db)?;
+  ///
+  ///   assert_eq!(a_scratch.scratch_size()?, abc_scratch.scratch_size()?);
+  ///   assert_eq!(a_scratch.scratch_size()?, b_scratch.scratch_size()?);
+  ///   assert_eq!(b_scratch.scratch_size()?, abc_scratch.scratch_size()?);
+  ///
+  ///   let c_expr: Expression = "c{,2}|d?e+f?".parse()?;
+  ///   let c_db = c_expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///   let c_scratch = c_db.allocate_scratch()?;
+  ///
+  ///   assert_eq!(a_scratch.scratch_size()?, c_scratch.scratch_size()?);
+  ///   abc_scratch.setup_for_db(&c_db)?;
+  ///   assert_eq!(a_scratch.scratch_size()?, abc_scratch.scratch_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  ///
+  /// However, databases of different modes allocate different scratch sizes:
+  ///
+  ///```
+  /// #[cfg(all(feature = "compiler", feature = "vectored", feature = "stream"))]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let block_db = expr.compile(Flags::default(), Mode::BLOCK)?;
+  ///   let vectored_db = expr.compile(Flags::default(), Mode::VECTORED)?;
+  ///   let stream_db = expr.compile(Flags::default(), Mode::STREAM)?;
+  ///
+  ///   let block_scratch = block_db.allocate_scratch()?;
+  ///   let vectored_scratch = vectored_db.allocate_scratch()?;
+  ///   let stream_scratch = stream_db.allocate_scratch()?;
+  ///   assert!(block_scratch.scratch_size()? > stream_scratch.scratch_size()?);
+  ///   assert!(block_scratch.scratch_size()? < vectored_scratch.scratch_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(all(feature = "compiler", feature = "vectored", feature = "stream")))]
+  /// # fn main() {}
+  /// ```
+  ///
+  /// Scratch sizes do not change when used:
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), hyperscan::error::HyperscanError> {
+  ///   use hyperscan::{expression::*, flags::*, matchers::*};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+  ///
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///   let size = scratch.scratch_size()?;
+  ///
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   scratch
+  ///     .scan_sync(&db, "aardvark".into(), |m| {
+  ///       matches.push(unsafe { m.source.as_str() });
+  ///       MatchResult::Continue
+  ///     })?;
+  ///
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   assert_eq!(size, scratch.scratch_size()?);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub fn scratch_size(&self) -> Result<usize, HyperscanRuntimeError> {
     match self.as_ref_native() {
       None => Ok(0),
@@ -1474,8 +1560,30 @@ mod test {
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
-  use super::*;
-  use crate::{database::chimera::ChimeraDb, error::chimera::*, matchers::chimera::*};
+  #[cfg(feature = "async")]
+  use crate::error::chimera::ChimeraScanError;
+  use crate::{
+    database::chimera::ChimeraDb,
+    error::chimera::{ChimeraMatchError, ChimeraRuntimeError},
+    hs,
+    matchers::chimera::{
+      error_callback_chimera, match_chimera_slice, ChimeraMatch, ChimeraMatchResult,
+      ChimeraSliceMatcher,
+    },
+    sources::ByteSlice,
+  };
+
+  use handles::Resource;
+  #[cfg(feature = "async")]
+  use {
+    futures_core::stream::Stream,
+    tokio::{sync::mpsc, task},
+  };
+
+  use std::{
+    mem, ops,
+    ptr::{self, NonNull},
+  };
 
   /// Pointer type for scratch allocations used in [`ChimeraScratch#Managing
   /// Allocations`](ChimeraScratch#managing-allocations).
@@ -1592,7 +1700,7 @@ pub mod chimera {
       mut m: impl FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult,
       mut e: impl FnMut(ChimeraMatchError) -> ChimeraMatchResult,
     ) -> Result<(), ChimeraRuntimeError> {
-      let mut matcher = ChimeraSyncSliceMatcher::new(data, &mut m, &mut e);
+      let mut matcher = ChimeraSliceMatcher::new(data, &mut m, &mut e);
       ChimeraRuntimeError::from_native(unsafe {
         hs::ch_scan(
           db.as_ref_native(),

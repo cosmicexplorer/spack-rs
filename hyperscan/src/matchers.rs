@@ -145,15 +145,15 @@ pub(crate) mod contiguous_slice {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut sync_slice_matcher: Pin<&mut SliceMatcher> =
+    let mut slice_matcher: Pin<&mut SliceMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
-    let matched_substring = sync_slice_matcher.index_range(range);
+    let matched_substring = slice_matcher.index_range(range);
     let m = Match {
       id,
       source: matched_substring,
     };
 
-    let result = sync_slice_matcher.handle_match(m);
+    let result = slice_matcher.handle_match(m);
     result.into_native()
   }
 
@@ -214,15 +214,15 @@ pub(crate) mod vectored_slice {
   ) -> c_int {
     debug_assert_eq!(flags, 0, "flags are currently unused");
     let MatchEvent { id, range, context } = MatchEvent::coerce_args(id, from, to, context);
-    let mut sync_slice_matcher: Pin<&mut VectoredMatcher> =
+    let mut slice_matcher: Pin<&mut VectoredMatcher> =
       unsafe { MatchEvent::extract_context(context.unwrap()) };
-    let matched_substring = sync_slice_matcher.index_range(range);
+    let matched_substring = slice_matcher.index_range(range);
     let m = VectoredMatch {
       id,
       source: matched_substring,
     };
 
-    let result = sync_slice_matcher.handle_match(m);
+    let result = slice_matcher.handle_match(m);
     result.into_native()
   }
 
@@ -464,13 +464,13 @@ pub mod chimera {
     }
   }
 
-  pub(crate) struct ChimeraSyncSliceMatcher<'data, 'code> {
+  pub(crate) struct ChimeraSliceMatcher<'data, 'code> {
     parent_slice: ByteSlice<'data>,
     match_handler: &'code mut (dyn FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult),
     error_handler: &'code mut (dyn FnMut(ChimeraMatchError) -> ChimeraMatchResult),
   }
 
-  impl<'data, 'code> ChimeraSyncSliceMatcher<'data, 'code> {
+  impl<'data, 'code> ChimeraSliceMatcher<'data, 'code> {
     pub fn new(
       parent_slice: ByteSlice<'data>,
       matcher: &'code mut impl FnMut(ChimeraMatch<'data>) -> ChimeraMatchResult,
@@ -514,7 +514,7 @@ pub mod chimera {
       captures,
       context,
     } = ChimeraMatchEvent::coerce_args(id, from, to, size, captured, context);
-    let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
+    let mut matcher: Pin<&mut ChimeraSliceMatcher> =
       unsafe { ChimeraMatchEvent::extract_context(context.unwrap()) };
     let matched_substring = matcher.index_range(range);
     let m = ChimeraMatch {
@@ -553,7 +553,7 @@ pub mod chimera {
     let id = ExpressionIndex(id);
     debug_assert!(info.is_null(), "info pointer is currently unused");
     let ctx = ptr::NonNull::new(ctx);
-    let mut matcher: Pin<&mut ChimeraSyncSliceMatcher> =
+    let mut matcher: Pin<&mut ChimeraSliceMatcher> =
       unsafe { ChimeraMatchEvent::extract_context(ctx.unwrap()) };
     let e = ChimeraMatchError { error_type, id };
 

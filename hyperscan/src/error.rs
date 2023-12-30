@@ -382,10 +382,16 @@ pub enum HyperscanError {
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
-  use super::*;
-  use crate::matchers::ExpressionIndex;
+  use crate::{hs, matchers::ExpressionIndex};
 
-  use std::fmt;
+  use displaydoc::Display;
+  use thiserror::Error;
+
+  use std::{
+    ffi::{CStr, NulError},
+    fmt,
+    os::raw::c_uint,
+  };
 
   /// Native error code from the underlying chimera library.
   #[derive(
@@ -641,7 +647,7 @@ pub mod chimera {
     /// chimera error.
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]
-    HyperscanRuntime(#[from] HyperscanRuntimeError),
+    HyperscanRuntime(#[from] super::HyperscanRuntimeError),
     /// compile error: {0}
     #[cfg(feature = "compiler")]
     #[cfg_attr(docsrs, doc(cfg(feature = "compiler")))]

@@ -10,7 +10,7 @@
 
 use std::{
   fmt,
-  os::raw::{c_char, c_uint, c_ulonglong},
+  os::raw::{c_char, c_uint},
   slice, str,
 };
 
@@ -188,9 +188,13 @@ impl<'a> ByteSlice<'a> {
 #[cfg(feature = "vectored")]
 #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
 pub mod vectored {
-  use super::*;
+  use super::ByteSlice;
 
-  use std::{cmp, mem, ops};
+  use std::{
+    cmp, mem, ops,
+    os::raw::{c_char, c_uint},
+    slice,
+  };
 
   /// A [`slice`](prim@slice) of [`ByteSlice`].
   ///
@@ -529,9 +533,7 @@ pub mod vectored {
 #[cfg(feature = "stream")]
 #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream {
-  use super::*;
-
-  use std::ops;
+  use std::{ops, os::raw::c_ulonglong};
 
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct Range {

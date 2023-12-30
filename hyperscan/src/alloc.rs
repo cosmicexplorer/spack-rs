@@ -634,8 +634,12 @@ pub fn set_allocator(
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
-  use super::*;
-  use crate::error::chimera::*;
+  use super::{alloc_or_libc_fallback, dealloc_or_libc_fallback, LayoutTracker};
+  use crate::{error::chimera::ChimeraRuntimeError, hs};
+
+  use parking_lot::RwLock;
+
+  use std::{alloc::GlobalAlloc, ops, os::raw::c_void, sync::Arc};
 
   allocator![
     CHIMERA_DB_ALLOCATOR,
