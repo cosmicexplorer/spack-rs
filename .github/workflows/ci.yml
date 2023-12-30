@@ -18,7 +18,7 @@ jobs:
           - -p super-process
           # Fails due to tokio for some reason due to event-listener dep from the "fs" feature?
           # - -p spack-rs
-          - -p hyperscan-async
+          - -p vectorscan
           - -p re2
     runs-on: ubuntu-latest
 
@@ -78,8 +78,8 @@ jobs:
         args:
           - -p super-process -p spack-rs
           - -p re2 -vv
-          # This keeps rebuilding hyperscan and taking 20 minutes, not clear why.
-          # - -p hyperscan-async --no-default-features --features chimera,static,compiler,async -vv
+          # This keeps rebuilding vectorscan and taking 20 minutes, not clear why.
+          # - -p vectorscan --no-default-features --features chimera,static,compiler,async -vv
     runs-on: ubuntu-latest
 
     steps:
@@ -197,8 +197,8 @@ jobs:
         command: test
         args: -p re2 --no-default-features --features static -vv
 
-  test-hyperscan:
-    name: test hyperscan against ${{ matrix.rust-toolchain }} rust
+  test-vectorscan:
+    name: test vectorscan against ${{ matrix.rust-toolchain }} rust
     strategy:
       fail-fast: true
       matrix:
@@ -225,39 +225,39 @@ jobs:
       name: cache spack
       uses: actions/cache@v3
       env:
-        cache-name: cache-spack-dir-hyperscan-tests
+        cache-name: cache-spack-dir-vectorscan-tests
       with:
         path: ~/.spack/summonings
         key: spack-summonings-${{ env.cache-name }}-v15
 
-    - name: test hyperscan-static-with-compile
+    - name: test vectorscan-static-with-compile
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features static,alloc,compiler -vv
+        args: -p vectorscan --no-default-features --features static,alloc,compiler -vv
 
-    - name: test hyperscan-static-with-compile-async
+    - name: test vectorscan-static-with-compile-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features static,alloc,async,compiler -vv
+        args: -p vectorscan --no-default-features --features static,alloc,async,compiler -vv
 
-    - name: test hyperscan-dynamic-with-compile
+    - name: test vectorscan-dynamic-with-compile
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features dynamic,compiler -vv
+        args: -p vectorscan --no-default-features --features dynamic,compiler -vv
 
-    # FIXME: add hyperscan-static-runtime-only and hyperscan-dynamic-runtime-only!!
+    # FIXME: add vectorscan-static-runtime-only and vectorscan-dynamic-runtime-only!!
 
-    - name: test hyperscan-static-chimera
+    - name: test vectorscan-static-chimera
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,compiler -vv
+        args: -p vectorscan --no-default-features --features chimera,static,alloc,compiler -vv
 
-    - name: test hyperscan-static-chimera-async
+    - name: test vectorscan-static-chimera-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p hyperscan-async --no-default-features --features chimera,static,alloc,async,compiler -vv
+        args: -p vectorscan --no-default-features --features chimera,static,alloc,async,compiler -vv

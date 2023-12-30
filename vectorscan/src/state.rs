@@ -20,7 +20,7 @@
 //! The `re2` library goes above and beyond to avoid handing this thorny problem
 //! down to its users, implementing a re-entrant protocol for accessing the
 //! stateful lazy DFA from multiple threads.`[FIXME: citation needed]` This is
-//! impressive partially because it is considered so complex that `hyperscan`
+//! impressive partially because it is considered so complex that `vectorscan`
 //! and `regex` don't plan to implement this approach at all.`[FIXME: citation
 //! needed]` **A performant implementation of a lock-free lazy DFA (or a data
 //! structure to help in implementing such a DFA) might
@@ -39,7 +39,7 @@
 //! (see [Synchronization and
 //! Cloning](https://docs.rs/regex-automata/latest/regex_automata/meta/struct.Regex.html#synchronization-and-cloning)
 //! from the `regex-automata` crate).
-//! **The hyperscan library takes this (re-)inversion of control to the extreme
+//! **The vectorscan library takes this (re-)inversion of control to the extreme
 //! in requiring the user to provide exclusive mutable access to a previously
 //! initialized scratch space for every search (see [Setup
 //! Methods](Scratch#setup-methods)).**
@@ -47,17 +47,17 @@
 //! ### Atypical Search Interface
 //! Because this scratch space represents the only mutable state involved in a
 //! search, this crate has chosen to make the [`Scratch`] type the main entry
-//! point to hyperscan's [search methods](Scratch#synchronous-string-scanning).
+//! point to vectorscan's [search methods](Scratch#synchronous-string-scanning).
 //! Because a single scratch space can be initialized for multiple dbs, the
 //! immutable [`Database`] type is provided as a parameter. This is contrary to
 //! most other regex engines such as `regex` and `re2`, where the compiled regex
 //! itself is typically used as the `&self` parameter to most search methods.
 //!
 //! ## Handling Cache Contention in Rust
-//! While the hyperscan native library must expose a simple C ABI, Rust offers a
-//! much richer library of tools for sharing and explicitly cloning state in
+//! While the vectorscan native library must expose a simple C ABI, Rust offers
+//! a much richer library of tools for sharing and explicitly cloning state in
 //! order to mutate it. **Indeed, safe Rust code should never experience scratch
-//! space contention.** While the hyperscan library performs a best-effort
+//! space contention.** While the vectorscan library performs a best-effort
 //! attempt to identify scratch space contention and error out with
 //! [`VectorscanRuntimeError::ScratchInUse`], a user of this crate should never
 //! see that error from safe Rust code.
@@ -72,9 +72,9 @@
 //!
 //! However, there remain several use cases that require multiple separate
 //! mutable scratch spaces to be available at the same time. **In particular,
-//! invoking hyperscan recursively (inside a match callback) always requires
+//! invoking vectorscan recursively (inside a match callback) always requires
 //! exclusive mutable access to multiple distinct scratch allocations at once.**
-//! While recursive searches are supported by the hyperscan library, the
+//! While recursive searches are supported by the vectorscan library, the
 //! creative use of [`ExpressionSet`](crate::expression::ExpressionSet) with
 //! [`Flags::COMBINATION`](crate::flags::Flags::COMBINATION) and/or
 //! [`ExprExt`](crate::expression::ExprExt) configuration may be able to express
@@ -88,7 +88,7 @@
 //! in single and multi-threaded regimes. Some specialized use cases that may
 //! benefit from CoW semantics include:
 //! - **minimizing allocations for complex search invocations:** Recursive
-//!   hyperscan searches are commonly used to implement a form of capturing
+//!   vectorscan searches are commonly used to implement a form of capturing
 //!   groups (although see [`chimera`] for complete PCRE support, including
 //!   capture groups). It often makes sense to share the scratch space used for
 //!   inner searches, but the same scratch cannot be used for the inner search
@@ -114,7 +114,7 @@
 //!
 //! #### Synchronous
 //! In synchronous, single-threaded code, scratch space contention
-//! can only ever occur if another hyperscan search is invoked from within a
+//! can only ever occur if another vectorscan search is invoked from within a
 //! match callback. Safe Rust will avoid any runtime contention, but it will
 //! refuse to compile unless a distinct mutable scratch space is allocated
 //! for the recursive search within the match callback. While the scratch space
@@ -147,7 +147,7 @@
 //!   // Use unsafe code to get multiple mutable references to the same allocation:
 //!   unsafe { &mut *s }
 //!     .scan_sync(&ab_db, msg.into(), |m| {
-//!       // Hyperscan was able to detect this contention!
+//!       // Vectorscan was able to detect this contention!
 //!       // But this is described as an unreliable best-effort runtime check.
 //!       assert_eq!(
 //!         unsafe { &mut *s }.scan_sync(&cd_db, m.source, |_| MatchResult::Continue),
@@ -204,7 +204,7 @@
 //!
 //! #### Asynchronous
 //! In multi-threaded and/or asynchronous safe Rust code, scratch space
-//! contention should *still* only ever occur if another hyperscan search is
+//! contention should *still* only ever occur if another vectorscan search is
 //! invoked from within a match callback, because Rust exclusive ownership rules
 //! can *only* be broken by unsafe code, never by the use of `async` or
 //! threading. As a result, the concerns about contention are very similar to
@@ -218,9 +218,9 @@
 //! decouple match processing from the synchronously-invoked match callback in
 //! order to maximize search performance, but that only addresses contention
 //! over the synchronously-invoked match callback. **A separate, uncontended
-//! scratch space is still necessary in order to perform any recursive hyperscan
-//! search on the results of a match in async code, especially if the matches
-//! are being processed in parallel with the search.**
+//! scratch space is still necessary in order to perform any recursive
+//! vectorscan search on the results of a match in async code, especially if the
+//! matches are being processed in parallel with the search.**
 //!
 //! Where a [`Send`] reference is necessary,
 //! [`Arc::make_mut()`](std::sync::Arc) can be used over `Rc` as it uses atomic
@@ -410,11 +410,11 @@ impl Scratch {
 }
 
 /// # Synchronous String Scanning
-/// Hyperscan's string search interface requires a C function pointer to call
+/// Vectorscan's string search interface requires a C function pointer to call
 /// synchronously upon each match. This guarantee of synchronous invocation
 /// enables the function to mutate data under the expectation of exclusive
 /// access (we formalize this guarantee as [`FnMut`]). While Rust closures
-/// cannot be converted into C function pointers automatically, hyperscan also
+/// cannot be converted into C function pointers automatically, vectorscan also
 /// passes in a `*mut c_void` context pointer to each invocation of the match
 /// callback, and this can be used to hold a type-erased container for a
 /// Rust-level closure.
@@ -422,7 +422,7 @@ impl Scratch {
 /// ## Ephemeral Match Objects
 /// In all of these synchronous search methods, the provided match callback `f`
 /// is converted into a `dyn` reference and invoked within the C function
-/// pointer provided to the hyperscan library. Match objects like [`Match`]
+/// pointer provided to the vectorscan library. Match objects like [`Match`]
 /// provided to the match callback are synthesized by this crate and are not
 /// preserved after each invocation of `f`, so the match callback must modify
 /// some external state to store match results.
@@ -742,10 +742,10 @@ impl Scratch {
 /// searching.
 ///
 /// ## Minimizing Work in the Match Callback
-/// Because the hyperscan match callback is always invoked synchronously, it
+/// Because the vectorscan match callback is always invoked synchronously, it
 /// also stops the regex engine from making any further progress while it
 /// executes. If the match callback does too much work before returning control
-/// to the hyperscan library, this may harm search performance by thrashing the
+/// to the vectorscan library, this may harm search performance by thrashing the
 /// processor caches or other state.`[FIXME: citation needed/benchmark this]`
 ///
 /// ### Producer-Consumer Pattern
@@ -754,7 +754,7 @@ impl Scratch {
 /// thread of control in order to decouple match processing from text searching.
 /// Multi-processor systems in particular may be able to achieve higher search
 /// throughput if a separate thread is used to perform further match processing
-/// in parallel while a hyperscan search is executing.
+/// in parallel while a vectorscan search is executing.
 ///
 /// **Note that the [Synchronous String Scanning
 /// API](#synchronous-string-scanning) can still be used to implement
@@ -1055,7 +1055,7 @@ impl Scratch {
   /// Get a read-only reference to the scratch allocation.
   ///
   /// This method is mostly used internally and converted to a nullable pointer
-  /// to provide to the hyperscan native library methods.
+  /// to provide to the vectorscan native library methods.
   pub fn as_ref_native(&self) -> Option<&NativeScratch> { self.0.map(|p| unsafe { p.as_ref() }) }
 
   /// Get a mutable reference to the scratch allocation.
@@ -1389,11 +1389,11 @@ mod test {
 ///
 /// The chimera library also hews to the [Atypical Search
 /// Interface](crate::state#atypical-search-interface) from the base
-/// hyperscan library to manage mutable state (as described in [Mutable State
+/// vectorscan library to manage mutable state (as described in [Mutable State
 /// and String Searching](crate::state#mutable-state-and-string-searching)), so
 /// the discussions and solutions from [Manual Cache
 /// Management](crate::state#manual-cache-management) should equally apply to
-/// uses of the chimera library. As with the base hyperscan library, chimera
+/// uses of the chimera library. As with the base vectorscan library, chimera
 /// provides the
 /// [`ChimeraDb::allocate_scratch()`](crate::database::chimera::ChimeraDb::allocate_scratch)
 /// method to encourage allocating one scratch per db, which avoids scratch
@@ -1403,9 +1403,9 @@ mod test {
 /// The most significant difference to note in how state is managed across these
 /// libraries is a result of chimera's support for capture groups (see
 /// [`crate::expression::chimera`]), which would otherwise typically require a
-/// recursive search invocation to implement in the base hyperscan library. As
+/// recursive search invocation to implement in the base vectorscan library. As
 /// detailed in [Handling Cache Contention in
-/// Rust](crate::state#handling-cache-contention-in-rust), recursive hyperscan
+/// Rust](crate::state#handling-cache-contention-in-rust), recursive vectorscan
 /// invocations require a separately allocated scratch space, so using chimera
 /// for its capture group support can be one way to avoid that additional
 /// mutable state, if PCRE groups are sufficiently expressive to avoid a
@@ -1413,13 +1413,13 @@ mod test {
 ///
 /// # Copy-on-Write
 /// If needed, similar [CoW approaches](crate::state#copy-on-write) as in the
-/// base hyperscan library are available to chimera scratch allocations.
+/// base vectorscan library are available to chimera scratch allocations.
 /// Examples are provided here using CoW techniques to perform a recursive
 /// search for the sake of completeness.
 ///
 /// ## Synchronous
 /// Similarly to the [Synchronous CoW approach from
-/// hyperscan](crate::state#synchronous), we can use
+/// vectorscan](crate::state#synchronous), we can use
 /// [`Rc::make_mut()`](std::rc::Rc::make_mut):
 ///
 ///```
@@ -1504,7 +1504,7 @@ mod test {
 ///
 /// ## Asynchronous
 /// For asynchronous or multi-threaded use cases, we can adopt the [Asynchronous
-/// CoW approach from hyperscan](crate::state#asynchronous) and use
+/// CoW approach from vectorscan](crate::state#asynchronous) and use
 /// [`Arc::make_mut()`](std::sync::Arc::make_mut):
 ///
 ///```
@@ -1681,7 +1681,7 @@ pub mod chimera {
   /// # Synchronous String Scanning
   /// The chimera string search interface is very similar to the [Synchronous
   /// String Scanning](super::Scratch#synchronous-string-scanning) API
-  /// provided by the base hyperscan library. The biggest difference is that
+  /// provided by the base vectorscan library. The biggest difference is that
   /// chimera requires two separate callbacks, one for match objects and one
   /// for PCRE match errors (which can often simply be ignored). Chimera also
   /// does not support vectored or stream searches.
@@ -1802,7 +1802,7 @@ pub mod chimera {
   /// The chimera `async` string search interface is very similar to the
   /// [Asynchronous String
   /// Scanning](super::Scratch#asynchronous-string-scanning) API provided by the
-  /// base hyperscan library, and the async match callbacks also take
+  /// base vectorscan library, and the async match callbacks also take
   /// references before writing match objects to the returned stream. The
   /// biggest difference is that vectored and stream searching are not
   /// supported.

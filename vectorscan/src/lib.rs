@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Wrapper for the hyperscan C++ regex library.
+//! Wrapper for the vectorscan C++ regex library.
 //!
 //! *TODO: describe feature flags!*
 //!
@@ -65,16 +65,16 @@ unsafe fn free_misc_chimera(p: *mut u8) {
 
 /// Utility function to test the current system architecture.
 ///
-/// Hyperscan requires the Supplemental Streaming SIMD Extensions 3 instruction
+/// Vectorscan requires the Supplemental Streaming SIMD Extensions 3 instruction
 /// set. This function can be called on any x86 platform to determine if the
 /// system provides the required instruction set.
 ///
-/// This function does not test for more advanced features if Hyperscan has
+/// This function does not test for more advanced features if Vectorscan has
 /// been built for a more specific architecture, for example the AVX2
 /// instruction set.
 ///
 /// Returns [`ArchError`](error::VectorscanRuntimeError::ArchError) if system
-/// does not support Hyperscan.
+/// does not support Vectorscan.
 ///
 /// # Dependency on `"compiler"` Feature
 /// This method is not available in the `hs_runtime` library for some reason, so
@@ -99,10 +99,10 @@ pub fn check_valid_platform() -> Result<(), error::VectorscanRuntimeError> {
 /// be freed by the caller.
 ///
 ///```
-/// let v = vectorscan::hyperscan_version().to_str().unwrap();
+/// let v = vectorscan::vectorscan_version().to_str().unwrap();
 /// assert!(v.starts_with("5.4.11 2023"));
 /// ```
-pub fn hyperscan_version() -> &'static std::ffi::CStr {
+pub fn vectorscan_version() -> &'static std::ffi::CStr {
   unsafe { std::ffi::CStr::from_ptr(hs::hs_version()) }
 }
 

@@ -2,19 +2,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Routines for overriding the allocators used in several components of
-//! hyperscan.
+//! vectorscan.
 //!
 //! # Use Cases
 //! [`set_allocator()`] will set all of the allocators at once, while the
 //! `set_*_allocator()` methods such as [`set_db_allocator()`] enable overriding
-//! allocation logic for individual components of hyperscan. In either case,
+//! allocation logic for individual components of vectorscan. In either case,
 //! `get_*_allocator()` methods such as [`get_db_allocator()`] enable
 //! introspection of the active allocator (which defaults to [`libc::malloc()`]
 //! and [`libc::free()`] if unset).
 //!
 //! ## Nonstandard Allocators
 //! These methods can be used to wrap nonstandard allocators such as
-//! [jemalloc](https://docs.rs/jemallocator) for hyperscan usage:
+//! [jemalloc](https://docs.rs/jemallocator) for vectorscan usage:
 //!
 //!```
 //! #[cfg(feature = "compiler")]
@@ -22,7 +22,7 @@
 //!   use vectorscan::{expression::*, flags::*, matchers::*};
 //!   use jemallocator::Jemalloc;
 //!
-//!   // Use jemalloc for all hyperscan allocations.
+//!   // Use jemalloc for all vectorscan allocations.
 //!   vectorscan::alloc::set_allocator(Jemalloc.into())?;
 //!
 //!   // Everything works as normal.
@@ -88,7 +88,7 @@
 //! # Global State
 //! These methods mutate global process state when setting function pointers for
 //! alloc and free, so this module requires the `"alloc"` feature, which itself
-//! requires the `"static"` feature which statically links the hyperscan native
+//! requires the `"static"` feature which statically links the vectorscan native
 //! library to ensure exclusive access to this global state.
 //!
 //! ## Lifetimes and Dangling Pointers
@@ -111,7 +111,7 @@
 //!   assert!(set_db_allocator(tracker)?.is_none());
 //!
 //!   let expr: Expression = "asdf".parse()?;
-//!   // Use ManuallyDrop to avoid calling the hyperscan db free method,
+//!   // Use ManuallyDrop to avoid calling the vectorscan db free method,
 //!   // since we will be invalidating the pointer by changing the allocator,
 //!   // and the .try_drop() method and Drop impl both call into
 //!   // whatever allocator is currently active to free the pointer, which will error.
@@ -164,7 +164,7 @@
 //! ```
 //!
 //! # Allocation Failures
-//! Allocation failure should cause hyperscan methods to fail with
+//! Allocation failure should cause vectorscan methods to fail with
 //! [`VectorscanRuntimeError::NoMem`]:
 //!
 //!```
@@ -222,7 +222,7 @@ use std::{
   sync::Arc,
 };
 
-/// The alloc/free interface required by hyperscan methods.
+/// The alloc/free interface required by vectorscan methods.
 ///
 /// This is named "malloc-like" because it mirrors the interface provided by
 /// [`libc::malloc()`] and [`libc::free()`]. This differs from [`GlobalAlloc`]
@@ -458,9 +458,9 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
   STREAM_ALLOCATOR.read()
 }
 
-/// Convenience method to reset all hyperscan dynamic allocators at once.
+/// Convenience method to reset all vectorscan dynamic allocators at once.
 ///
-/// Example: use [jemalloc](https://docs.rs/jemallocator) for all hyperscan allocations:
+/// Example: use [jemalloc](https://docs.rs/jemallocator) for all vectorscan allocations:
 ///
 ///```
 /// #[cfg(feature = "compiler")]
@@ -468,7 +468,7 @@ pub fn get_stream_allocator() -> impl ops::Deref<Target=Option<LayoutTracker>> {
 ///   use vectorscan::{expression::*, flags::*, matchers::*};
 ///   use jemallocator::Jemalloc;
 ///
-///   // Use jemalloc for all hyperscan allocations.
+///   // Use jemalloc for all vectorscan allocations.
 ///   vectorscan::alloc::set_allocator(Jemalloc.into())?;
 ///
 ///   // Everything works as normal.
@@ -508,7 +508,7 @@ pub fn set_allocator(
 /// Routines for overriding the allocators used in the chimera library.
 ///
 /// # Use Cases
-/// As with the base [`hyperscan#Use Cases`](crate::alloc#use-cases), this has
+/// As with the base [`vectorscan#Use Cases`](crate::alloc#use-cases), this has
 /// setter methods for all allocators at once, or for a single component at a
 /// time, as well as getter methods.
 ///
@@ -580,14 +580,14 @@ pub fn set_allocator(
 /// Because the `"chimera"` feature already requires the `"static"` feature
 /// (this is [enforced by the build
 /// script](https://github.com/intel/hyperscan/blob/bc3b191ab56055e8560c7cdc161c289c4d76e3d2/CMakeLists.txt#L494)
-/// in the hyperscan/chimera codebase), there are no additional restrictions
+/// in the vectorscan/chimera codebase), there are no additional restrictions
 /// required to enable modification of process-global state (unlike the
-/// corresponding [`hyperscan#Global State`](crate::alloc#global-state)).
+/// corresponding [`vectorscan#Global State`](crate::alloc#global-state)).
 ///
 /// ## Lifetimes and Dangling Pointers
 /// Similar methods as in the parent
-/// [`hyperscan#Lifetimes`](crate::alloc#lifetimes-and-dangling-pointers) can be
-/// used to handle object lifetimes if multiple allocators are used over the
+/// [`vectorscan#Lifetimes`](crate::alloc#lifetimes-and-dangling-pointers) can
+/// be used to handle object lifetimes if multiple allocators are used over the
 /// lifetime of the program.
 ///
 /// # Allocation Failures

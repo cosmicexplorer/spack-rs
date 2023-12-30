@@ -3,16 +3,16 @@
 
 //! FFI wrappers for different types of pattern strings.
 //!
-//! Hyperscan supports 3 distinct types of pattern strings which can be formed
+//! Vectorscan supports 3 distinct types of pattern strings which can be formed
 //! to produce a database:
-//! - [`Expression`]: Hyperscan PCRE-like regex syntax (null-terminated
+//! - [`Expression`]: Vectorscan PCRE-like regex syntax (null-terminated
 //!   [`CString`]).
 //! - [`Literal`]: Literal byte string (`Vec<u8>`) which may contain nulls.
 //! - [`chimera::ChimeraExpression`]: PCRE regex syntax.
 //!
-//! Each hyperscan database only supports matching against *exactly one* type of
+//! Each vectorscan database only supports matching against *exactly one* type of
 //! these patterns, but each pattern string variant also has a `*Set` form, and
-//! all of these forms support the same interface to hyperscan's most powerful
+//! all of these forms support the same interface to vectorscan's most powerful
 //! feature: multi-pattern matching, where patterns registered with [`ExprId`]
 //! in a set can be associated to
 //! [`ExpressionIndex`](crate::matchers::ExpressionIndex) instances when matched
@@ -56,13 +56,13 @@ use std::{
   ptr, slice, str,
 };
 
-/// Hyperscan regex pattern string.
+/// Vectorscan regex pattern string.
 ///
-/// Hyperscan itself supports a subset of PCRE syntax in the pattern string; see
+/// Vectorscan itself supports a subset of PCRE syntax in the pattern string; see
 /// [Pattern Support] for reference. The use of unsupported constructs will
 /// result in compilation errors.
 ///
-/// Note that as the underlying hyperscan library interprets pattern strings as
+/// Note that as the underlying vectorscan library interprets pattern strings as
 /// null-terminated [`CStr`]s, null bytes are *not* supported within
 /// `Expression` strings. Use a [`Literal`] or [`LiteralSet`] database if you
 /// need to match against pattern strings containing explicit null bytes.
@@ -81,7 +81,7 @@ use std::{
 /// # }
 /// ```
 ///
-/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/compilation.html#pattern-support
+/// [Pattern Support]: https://intel.github.io/vectorscan/dev-reference/compilation.html#pattern-support
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expression(CString);
 
@@ -112,7 +112,7 @@ impl Expression {
   /// Produce a `NULL`-terminated C-style wrapper for the given pattern string.
   ///
   /// This will fail if the string contains any internal `NULL` bytes, as those
-  /// are not supported by the hyperscan regex compiler:
+  /// are not supported by the vectorscan regex compiler:
   ///```
   /// use vectorscan::{expression::*, error::*};
   ///
@@ -135,7 +135,7 @@ impl Expression {
   /// imply that compilation of the same expression (via
   /// [`Database::compile()`] or [`Database::compile_multi()`]) would succeed.
   /// This function may return [`Ok`] for regular expressions that
-  /// Hyperscan cannot compile.
+  /// Vectorscan cannot compile.
   ///
   /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
   /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
@@ -191,7 +191,7 @@ impl Expression {
   /// imply that compilation of the same expression (via
   /// [`Database::compile()`] or [`Database::compile_multi()`]) would succeed.
   /// This function may return [`Ok`] for regular expressions that
-  /// Hyperscan cannot compile.
+  /// Vectorscan cannot compile.
   ///
   /// Note: some per-pattern flags (such as [`Flags::ALLOWEMPTY`] and
   /// [`Flags::SOM_LEFTMOST`]) are accepted by this call, but as they do not
@@ -266,7 +266,7 @@ impl str::FromStr for Expression {
 /// and `?`. The `?` here doesn't mean 0 or 1 quantifier under regular
 /// semantics.
 ///
-/// Also unlike [`Expression`], the underlying hyperscan library interprets
+/// Also unlike [`Expression`], the underlying vectorscan library interprets
 /// literal patterns with a pointer and a length instead of a `NULL`-terminated
 /// string. **Importantly, this allows it to contain `\0` or `NULL` bytes
 /// itself!**
@@ -361,7 +361,7 @@ pub struct ExprId(pub c_uint);
 
 /// Collection of regular expressions.
 ///
-/// This is the main entry point to hyperscan's primary functionality: matching
+/// This is the main entry point to vectorscan's primary functionality: matching
 /// against sets of patterns at once, which is typically poorly supported or
 /// less featureful than single-pattern matching in many other regex engines.
 ///
@@ -465,7 +465,7 @@ impl<'a> ExpressionSet<'a> {
   /// The length of `ids` is checked to be the same as [`Self::len()`]. Multiple
   /// patterns can be assigned the same ID.
   ///
-  /// If this builder method is not used, hyperscan will assign them all the ID
+  /// If this builder method is not used, vectorscan will assign them all the ID
   /// number 0:
   ///
   ///```
@@ -527,7 +527,7 @@ impl<'a> ExpressionSet<'a> {
   ///
   /// If [`Expression::ext_info()`] succeeds with a given
   /// [`Expression`]/[`ExprExt`] pair, then compiling the same pattern and
-  /// configuration into a hyperscan database via an expression set with this
+  /// configuration into a vectorscan database via an expression set with this
   /// method is likely but not guaranteed to succeed.
   ///
   ///```
@@ -610,7 +610,7 @@ impl<'a> ExpressionSet<'a> {
   }
 }
 
-/// Data produced by hyperscan to analyze a particular expression.
+/// Data produced by vectorscan to analyze a particular expression.
 ///
 /// These structs cover the output of [`Expression::info()`] and
 /// [`Expression::ext_info()`].
@@ -705,7 +705,7 @@ pub mod info {
     }
   }
 
-  /// Data produced by hyperscan to analyze a particular expression.
+  /// Data produced by vectorscan to analyze a particular expression.
   ///
   /// This struct is produced by [`super::Expression::info()`]:
   ///
@@ -802,12 +802,12 @@ pub mod info {
   }
 }
 
-/// Configuration for extended hyperscan parameters.
+/// Configuration for extended vectorscan parameters.
 ///
 /// These parameters cover various types of fuzzy search as well as input
 /// subsetting features. See [Extended Parameters] for a further reference.
 ///
-/// [Extended Parameters]: https://intel.github.io/hyperscan/dev-reference/compilation.html#extparam
+/// [Extended Parameters]: https://intel.github.io/vectorscan/dev-reference/compilation.html#extparam
 ///
 /// This structure may be passed in when building a database with
 /// [`ExpressionSet::with_exts()`], or used to interrogate a single expression
@@ -1141,7 +1141,7 @@ impl<'a> LiteralSet<'a> {
   /// The length of `ids` is checked to be the same as [`Self::len()`]. Multiple
   /// patterns can be assigned the same ID.
   ///
-  /// If this builder method is not used, hyperscan will assign them all the ID
+  /// If this builder method is not used, vectorscan will assign them all the ID
   /// number 0:
   ///
   ///```
@@ -1239,11 +1239,11 @@ impl<'a> LiteralSet<'a> {
 ///
 /// As per [Pattern Support], chimera has full support for PCRE.
 ///
-/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/chimera.html#pattern-support
+/// [Pattern Support]: https://intel.github.io/vectorscan/dev-reference/chimera.html#pattern-support
 ///
 /// As chimera focuses mainly on supporting PCRE compatibility and group
 /// matching support, this interface is less full-featured than the standard
-/// hyperscan library [`super::expression`]. However, the same idioms apply:
+/// vectorscan library [`super::expression`]. However, the same idioms apply:
 /// creating expression instances performs no pattern compilation itself, and
 /// references to these structs can be reused without re-allocating the
 /// underlying pattern string data:
@@ -1288,11 +1288,11 @@ pub mod chimera {
   /// null-terminated [`CStr`]s, null bytes are *not* supported within
   /// `ChimeraExpression` strings. If matching against patterns containing
   /// explicit null bytes is necessary, consider [`super::Literal`] or
-  /// [`super::LiteralSet`] from the base hyperscan library.
+  /// [`super::LiteralSet`] from the base vectorscan library.
   ///
   /// Note also that the chimera library does not support an "info" interface
   /// such as [`super::Expression::info()`] and
-  /// [`super::Expression::ext_info()`] from the base hyperscan library.
+  /// [`super::Expression::ext_info()`] from the base vectorscan library.
   ///
   /// Instances can be created equivalently with [`Self::new()`] or
   /// [`str::parse()`] via the [`str::FromStr`] impl:
@@ -1494,7 +1494,7 @@ pub mod chimera {
     /// The length of `ids` is checked to be the same as [`Self::len()`].
     /// Multiple patterns can be assigned the same ID.
     ///
-    /// If this builder method is not used, hyperscan will assign them all the
+    /// If this builder method is not used, vectorscan will assign them all the
     /// ID number 0:
     ///
     ///```

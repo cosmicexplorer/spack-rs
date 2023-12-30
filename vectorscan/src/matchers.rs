@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Types used in hyperscan match callbacks.
+//! Types used in vectorscan match callbacks.
 
 use cfg_if::cfg_if;
 use displaydoc::Display;

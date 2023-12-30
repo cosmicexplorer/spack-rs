@@ -70,7 +70,7 @@ impl Flags {
   /// Allow expressions which can match against an empty string, such as `.*`.
   ///
   /// This flag instructs the compiler to allow expressions that can match
-  /// against empty buffers, such as `.?`, `.*`, `(a|)`. Since Hyperscan can
+  /// against empty buffers, such as `.?`, `.*`, `(a|)`. Since Vectorscan can
   /// return every possible match for an expression, such expressions
   /// generally execute very slowly; the default behaviour is to return an
   /// error when an attempt to compile one is made. Using this flag will force
@@ -78,19 +78,19 @@ impl Flags {
   ///
   /// Also consider
   /// [`ExprExt::from_min_length()`](crate::expression::ExprExt::from_min_length)
-  /// to bound the minimum match length instead of forcing hyperscan to accept
+  /// to bound the minimum match length instead of forcing vectorscan to accept
   /// possibly slow match behavior.
   pub const ALLOWEMPTY: Self = Self(hs::HS_FLAG_ALLOWEMPTY as c_uint);
   /// Enable UTF-8 mode for this expression.
   ///
-  /// This flag instructs Hyperscan to treat the pattern as a sequence of UTF-8
+  /// This flag instructs Vectorscan to treat the pattern as a sequence of UTF-8
   /// characters. The results of scanning invalid UTF-8 sequences with a
-  /// Hyperscan library that has been compiled with one or more patterns using
+  /// Vectorscan library that has been compiled with one or more patterns using
   /// this flag are undefined.
   pub const UTF8: Self = Self(hs::HS_FLAG_UTF8 as c_uint);
   /// Enable Unicode property support for this expression.
   ///
-  /// This flag instructs Hyperscan to use Unicode properties, rather than the
+  /// This flag instructs Vectorscan to use Unicode properties, rather than the
   /// default ASCII interpretations, for character mnemonics like `\w` and `\s`
   /// as well as the POSIX character classes. It is only meaningful in
   /// conjunction with [`Self::UTF8`].
@@ -108,7 +108,7 @@ impl Flags {
   /// This flag sets the expression's match ID to match at most once. In
   /// streaming mode, this means that the expression will return only a single
   /// match over the lifetime of the stream, rather than reporting every match
-  /// as per standard Hyperscan semantics. In block mode or vectored mode,
+  /// as per standard Vectorscan semantics. In block mode or vectored mode,
   /// only the first match for each invocation of
   /// [`scan_sync()`](crate::state::Scratch::scan_sync) or
   /// [`scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored) will
@@ -125,7 +125,7 @@ impl Flags {
   pub const SINGLEMATCH: Self = Self(hs::HS_FLAG_SINGLEMATCH as c_uint);
   /// Parse the expression in [logical combination] syntax.
   ///
-  /// This flag instructs Hyperscan to parse this expression as logical
+  /// This flag instructs Vectorscan to parse this expression as logical
   /// combination syntax.
   /// Logical constraints consist of operands, operators and parentheses.
   /// The operands are expression indices, and operators can be:
@@ -146,19 +146,19 @@ impl Flags {
   pub const COMBINATION: Self = Self(hs::HS_FLAG_COMBINATION as c_uint);
   /// Compile pattern in prefiltering mode.
   ///
-  /// This flag instructs Hyperscan to compile an "approximate" version of this
-  /// pattern for use in a prefiltering application, even if Hyperscan does not
+  /// This flag instructs Vectorscan to compile an "approximate" version of this
+  /// pattern for use in a prefiltering application, even if Vectorscan does not
   /// support the pattern in normal operation.
   ///
   /// The set of matches returned when this flag is used is guaranteed to be a
   /// superset of the matches specified by the non-prefiltering expression.
   ///
-  /// If the pattern contains pattern constructs not supported by Hyperscan
+  /// If the pattern contains pattern constructs not supported by Vectorscan
   /// (such as zero-width assertions, back-references or conditional
   /// references) these constructs will be replaced internally with broader
   /// constructs that may match more often.
   ///
-  /// Furthermore, in prefiltering mode Hyperscan may simplify a pattern that
+  /// Furthermore, in prefiltering mode Vectorscan may simplify a pattern that
   /// would otherwise return a "Pattern too large" error at compile time, or for
   /// performance reasons (subject to the matching guarantee above).
   ///
@@ -174,7 +174,7 @@ impl Flags {
   pub const QUIET: Self = Self(hs::HS_FLAG_QUIET as c_uint);
   /// Report the leftmost start of match offset when a match is found.
   ///
-  /// This flag instructs Hyperscan to report the leftmost possible start of
+  /// This flag instructs Vectorscan to report the leftmost possible start of
   /// match offset when a match is reported for this expression. (By default,
   /// no start of match is returned.)
   ///
@@ -242,7 +242,7 @@ static_assertions::const_assert_eq!(hs::HS_MODE_BLOCK, hs::HS_MODE_NOSTREAM);
 
 /// # Basic Database Types
 /// For now, each database can only be one of these types (this is checked by
-/// hyperscan upon database creation).
+/// vectorscan upon database creation).
 impl Mode {
   /// Block scan (non-streaming) database.
   pub const BLOCK: Self = Self(hs::HS_MODE_BLOCK as u32);

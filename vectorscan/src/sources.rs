@@ -44,7 +44,7 @@ impl<'a> fmt::Display for ByteSlice<'a> {
 }
 
 /// # Byte-Oriented Interface
-/// Hyperscan can search over arbitrary byte patterns in any encoding, so
+/// Vectorscan can search over arbitrary byte patterns in any encoding, so
 /// [`Self::from_slice()`] and [`Self::as_slice()`] offer the most general
 /// byte-oriented interface. This may be particularly useful when matching
 /// against non-UTF8 data, possibly with [`Literal`](crate::expression::Literal)
@@ -70,7 +70,7 @@ impl<'a> fmt::Display for ByteSlice<'a> {
 /// associate the data with, even if it's just the local `'_` lifetime or the
 /// global `'static` lifetime.
 impl<'a> ByteSlice<'a> {
-  /// Wrap a byte slice so it can be used by hyperscan.
+  /// Wrap a byte slice so it can be used by vectorscan.
   ///
   /// This method is [`const`](https://doc.rust-lang.org/std/keyword.const.html) so it can be used
   /// to define `const` values as well as
@@ -80,7 +80,7 @@ impl<'a> ByteSlice<'a> {
   /// Extract the byte slice.
   ///
   /// A [slice](prim@slice) can be split into a pointer/length pair which is
-  /// consumed by hyperscan's underlying C ABI.
+  /// consumed by vectorscan's underlying C ABI.
   pub const fn as_slice(&self) -> &'a [u8] { self.0 }
 
   pub(crate) const fn as_ptr(&self) -> *const c_char { self.as_slice().as_ptr() as *const c_char }
@@ -97,7 +97,7 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 }
 
 /// # String-Oriented Interface
-/// When hyperscan is being used with UTF8-encoded inputs (e.g. with
+/// When vectorscan is being used with UTF8-encoded inputs (e.g. with
 /// [`Self::from_str()`]), it will produce UTF8 encoded match outputs, and
 /// [`Self::as_str()`] can be invoked safely on match results.
 ///
@@ -114,7 +114,7 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// ```
 ///
 /// ## The `UTF8` Flag
-/// It is important to note that hyperscan itself does not assume any particular
+/// It is important to note that vectorscan itself does not assume any particular
 /// string encoding, and the function of e.g.
 /// [`Flags::UTF8`](crate::flags::Flags::UTF8) is to determine which bytes
 /// should be included in the state machine, *not* the encoding of any
@@ -123,7 +123,7 @@ impl<'a, const N: usize> From<&'a [u8; N]> for ByteSlice<'a> {
 /// [`Flags::default()`](crate::flags::Flags::default)). Note however that
 /// enabling the UTF8 flag for non-UTF8 inputs produces undefined behavior.
 impl<'a> ByteSlice<'a> {
-  /// Wrap a UTF8-encoded byte slice so it can be used by hyperscan.
+  /// Wrap a UTF8-encoded byte slice so it can be used by vectorscan.
   ///
   /// As with [`Self::from_slice()`], this method is `const` and can produce
   /// `const` values or `static` initializers.
@@ -212,7 +212,7 @@ pub mod vectored {
   pub struct VectoredByteSlices<'string, 'slice>(&'slice [ByteSlice<'string>]);
 
   /// # Byte-Oriented Interface
-  /// Because hyperscan only partially supports vectored string inputs, this
+  /// Because vectorscan only partially supports vectored string inputs, this
   /// library does not attempt to provide a UTF8-encoded [`str`](prim@str)
   /// interface for vectored strings as with [`ByteSlice`].
   ///

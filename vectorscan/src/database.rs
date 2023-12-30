@@ -3,8 +3,8 @@
 
 //! Compile state machines from expressions or deserialize them from bytes.
 //!
-//! Hyperscan supports two distinct types of databases:
-//! - [`Database`]: from the base hyperscan library and supports [`Expression`]
+//! Vectorscan supports two distinct types of databases:
+//! - [`Database`]: from the base vectorscan library and supports [`Expression`]
 //!   and [`Literal`] patterns.
 //! - [`chimera::ChimeraDb`]: from the chimera library and supports
 //!   [`ChimeraExpression`](crate::expression::chimera::ChimeraExpression)
@@ -15,7 +15,7 @@
 //! [`chimera::ChimeraDb::compile()`].
 //!
 //! # Database Instantiation
-//! The base hyperscan library offers a serialization interface for database
+//! The base vectorscan library offers a serialization interface for database
 //! objects which allows them to be transferred across hosts. The
 //! [`SerializedDb`] type provides an interface to locate serialized data from
 //! multiple locations. Consumers of this crate which disable the `"compiler"`
@@ -66,7 +66,7 @@ pub struct Database(*mut NativeDb);
 /// with the methods in [Managing Allocations](#managing-allocations). However,
 /// databases also impose a sort of implicit dynamic lifetime constraint on
 /// [`Scratch`] objects, which must be initialized against a db with
-/// [`Scratch::setup_for_db()`] before hyperscan can do any searching.
+/// [`Scratch::setup_for_db()`] before vectorscan can do any searching.
 ///
 /// It is encouraged to re-use [`Scratch`] objects across databases where
 /// possible to minimize unnecessary allocations, but
@@ -148,7 +148,7 @@ impl Database {
 }
 
 /// # Pattern Compilers
-/// Hyperscan supports compiling state machines for PCRE-like and literal
+/// Vectorscan supports compiling state machines for PCRE-like and literal
 /// pattern strings, as well as parallel sets of those patterns (although note
 /// that literal and non-literal patterns cannot be mixed). Each compile method
 /// supports a subset of all [`Flags`] arguments, documented in each method.
@@ -733,7 +733,7 @@ impl Database {
   /// Get a read-only reference to the db allocation.
   ///
   /// This method is mostly used internally and cast to a pointer to provide to
-  /// the hyperscan native library methods.
+  /// the vectorscan native library methods.
   pub fn as_ref_native(&self) -> &NativeDb { unsafe { &*self.0 } }
 
   /// Get a mutable reference to the db allocation.
@@ -821,7 +821,7 @@ pub mod alloc {
   /// Wrapper over a misc or rust-level allocation.
   ///
   /// Used to provide [`super::SerializedDb`] with the ability to source data
-  /// allocated by the hyperscan library itself or by other Rust code.
+  /// allocated by the vectorscan library itself or by other Rust code.
   #[derive(Debug)]
   pub enum DbAllocation<'a> {
     /// Memory was allocated with a `'static` lifetime using the registered misc
@@ -870,7 +870,7 @@ pub mod alloc {
   /// Wrappers over allocations performed by the chimera library.
   ///
   /// Since chimera does not support database deserialization like the base
-  /// hyperscan library, there is no analogy to [`DbAllocation`].
+  /// vectorscan library, there is no analogy to [`DbAllocation`].
   #[cfg(feature = "chimera")]
   #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
   pub mod chimera {
@@ -927,9 +927,9 @@ impl DbInfo {
 
   /// Return a view of the allocated string data.
   ///
-  /// Hyperscan will always return valid UTF-8 data for this string, so it skips
-  /// the validity check. Note that the returned string does not include the
-  /// trailing null byte allocated by the underlying hyperscan library.
+  /// Vectorscan will always return valid UTF-8 data for this string, so it
+  /// skips the validity check. Note that the returned string does not include
+  /// the trailing null byte allocated by the underlying vectorscan library.
   pub fn as_str(&self) -> &str {
     unsafe { str::from_utf8_unchecked(&self.0.as_slice()[self.without_null()]) }
   }
@@ -1150,7 +1150,7 @@ impl Clone for SerializedDb<'static> {
 
 /// Compile chimera state machines from expressions.
 ///
-/// Unlike the base hyperscan library, chimera does not support database
+/// Unlike the base vectorscan library, chimera does not support database
 /// serialization, so new [`chimera::ChimeraDb`] instances can only be created
 /// by compiling them. That is why the `"chimera"` feature for this crate
 /// requires the `"compiler"` feature.
@@ -1192,7 +1192,7 @@ pub mod chimera {
   /// with the methods in [Managing Allocations](#managing-allocations).
   /// However, databases also impose a sort of implicit dynamic lifetime
   /// constraint on [`ChimeraScratch`] objects, which must be initialized
-  /// against a db with [`ChimeraScratch::setup_for_db()`] before hyperscan
+  /// against a db with [`ChimeraScratch::setup_for_db()`] before vectorscan
   /// can do any searching.
   ///
   /// It is encouraged to re-use [`ChimeraScratch`] objects across databases
@@ -1241,9 +1241,9 @@ pub mod chimera {
   /// current processor, some features can be disabled in order to produce a
   /// database which can execute on a wider variety of target platforms.
   /// **However, note that since chimera does not support deserialization like
-  /// the base hyperscan library, there currently seems to be no real benefit to
-  /// a more-generic but less-performant compiled database, so using [`None`]
-  /// is recommended in all cases.**
+  /// the base vectorscan library, there currently seems to be no real benefit
+  /// to a more-generic but less-performant compiled database, so using
+  /// [`None`] is recommended in all cases.**
   ///
   ///```
   /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
