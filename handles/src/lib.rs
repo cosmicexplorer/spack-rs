@@ -13,7 +13,7 @@
 #![allow(clippy::collapsible_else_if)]
 #![allow(clippy::result_large_err)]
 
-use std::{any::Any, mem::MaybeUninit, ptr, rc::Rc, sync::Arc};
+use std::{any::Any, mem, ptr, rc::Rc, sync::Arc};
 
 pub trait Resource: Any {
   type Error;
@@ -72,7 +72,8 @@ impl<R: Resource> Handle for R {
   }
 
   fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error> {
-    let r: Box<dyn Any> = self.deep_boxed_clone()?;
+    /* TODO: remove the transmute when https://github.com/rust-lang/rust/issues/65991 lands! */
+    let r: Box<dyn Any> = unsafe { mem::transmute(self.deep_boxed_clone()?) };
     let h: Box<Self> = r.downcast().unwrap();
     Ok(h)
   }
@@ -113,7 +114,7 @@ impl<R: Resource> Handle for Rc<R> {
     }
     if Rc::weak_count(self) > 0 {
       unsafe {
-        let mut tmp: MaybeUninit<Rc<R>> = MaybeUninit::uninit();
+        let mut tmp: mem::MaybeUninit<Rc<R>> = mem::MaybeUninit::uninit();
         let s: *mut Self = self;
         ptr::swap(s, tmp.as_mut_ptr());
         /* `self`/`s` is now invalid, and `tmp` is now valid! */
@@ -157,7 +158,7 @@ impl<R: Resource> Handle for Arc<R> {
     }
     if Arc::weak_count(self) > 0 {
       unsafe {
-        let mut tmp: MaybeUninit<Arc<R>> = MaybeUninit::uninit();
+        let mut tmp: mem::MaybeUninit<Arc<R>> = mem::MaybeUninit::uninit();
         let s: *mut Self = self;
         ptr::swap(s, tmp.as_mut_ptr());
         /* `self`/`s` is now invalid, and `tmp` is now valid! */
