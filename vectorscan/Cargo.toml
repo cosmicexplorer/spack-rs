@@ -1,5 +1,5 @@
 [package]
-name                    = "vectorscan"
+name                    = "vectorscan-async"
 description             = "Wrapper for the vectorscan C++ regex library."
 version                 = "0.0.0"
 edition.workspace       = true
@@ -19,6 +19,9 @@ stream                  = []
 vectored                = []
 catch-unwind            = []
 tokio-impls             = ["async", "stream", "dep:futures-util"]
+
+[lib]
+name                    = "vectorscan"
 
 [dependencies]
 vectorscan-sys.workspace = true

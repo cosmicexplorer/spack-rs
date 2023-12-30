@@ -18,7 +18,7 @@ jobs:
           - -p super-process
           # Fails due to tokio for some reason due to event-listener dep from the "fs" feature?
           # - -p spack-rs
-          - -p vectorscan
+          - -p vectorscan-async
           - -p re2
     runs-on: ubuntu-latest
 
@@ -79,7 +79,7 @@ jobs:
           - -p super-process -p spack-rs
           - -p re2 -vv
           # This keeps rebuilding vectorscan and taking 20 minutes, not clear why.
-          # - -p vectorscan --no-default-features --features chimera,static,compiler,async -vv
+          # - -p vectorscan-async --no-default-features --features chimera,static,compiler,async -vv
     runs-on: ubuntu-latest
 
     steps:
@@ -234,19 +234,19 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p vectorscan --no-default-features --features static,alloc,compiler -vv
+        args: -p vectorscan-async --no-default-features --features static,alloc,compiler -vv
 
     - name: test vectorscan-static-with-compile-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p vectorscan --no-default-features --features static,alloc,async,compiler -vv
+        args: -p vectorscan-async --no-default-features --features static,alloc,async,compiler -vv
 
     - name: test vectorscan-dynamic-with-compile
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p vectorscan --no-default-features --features dynamic,compiler -vv
+        args: -p vectorscan-async --no-default-features --features dynamic,compiler -vv
 
     # FIXME: add vectorscan-static-runtime-only and vectorscan-dynamic-runtime-only!!
 
@@ -254,10 +254,10 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p vectorscan --no-default-features --features chimera,static,alloc,compiler -vv
+        args: -p vectorscan-async --no-default-features --features chimera,static,alloc,compiler -vv
 
     - name: test vectorscan-static-chimera-async
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: -p vectorscan --no-default-features --features chimera,static,alloc,async,compiler -vv
+        args: -p vectorscan-async --no-default-features --features chimera,static,alloc,async,compiler -vv
