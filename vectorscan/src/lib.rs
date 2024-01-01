@@ -96,7 +96,7 @@ pub fn check_valid_platform() -> Result<(), error::VectorscanRuntimeError> {
 ///
 ///```
 /// let v = vectorscan::vectorscan_version().to_str().unwrap();
-/// assert!(v.starts_with("5.4.11 2023"));
+/// assert!(v.starts_with("5.4.11 "));
 /// ```
 pub fn vectorscan_version() -> &'static std::ffi::CStr {
   unsafe { std::ffi::CStr::from_ptr(hs::hs_version()) }
@@ -110,7 +110,7 @@ pub fn vectorscan_version() -> &'static std::ffi::CStr {
 ///
 ///```
 /// let v = vectorscan::chimera_version().to_str().unwrap();
-/// assert!(v.starts_with("5.4.11 2023"));
+/// assert!(v.starts_with("5.4.11 "));
 /// ```
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
