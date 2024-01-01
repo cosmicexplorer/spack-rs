@@ -16,10 +16,11 @@
 //!   unsigned long long from, // always 0, if SOM_LEFTMOST is disabled
 //!   unsigned long long to,   // index of match end in input
 //!   unsigned int flags, // unused
-//!   void *context, // context provided by user to hyperscan search methods
+//!   void *context, // context provided by user to vectorscan search methods
 //! );
 //! ```
 //!
+//! ### Advantages
 //! This particular API has several advantages over returning a single value:
 //! - **Overlapping matches** are much easier to support, because the matching
 //!   engine doesn't have to reconstruct its entire state across calls to the
@@ -52,7 +53,7 @@
 //! [Synchronous String Scanning]: crate::state::Scratch#synchronous-string-scanning
 //! [Asynchronous String Scanning]: crate::state::Scratch#asynchronous-string-scanning
 //!
-//! ## Assurances
+//! ### Assurances
 //! Two assurances vectorscan provides which are particularly convenient are:
 //! 1. **The match callback will always be invoked synchronously** (although
 //!    the results may not always be in order; see [`UnorderedMatchBehavior::AllowsUnordered`](crate::expression::info::UnorderedMatchBehavior::AllowsUnordered)
@@ -72,7 +73,7 @@
 //!    [`crate::stream`] and the doctests for e.g.
 //!    [`ScratchStreamSink`](crate::stream::ScratchStreamSink).
 //!
-//! ### `"catch-unwind"`
+//! ## `"catch-unwind"`
 //! There is an additional assurance that this crate provides when the
 //! `"catch-unwind"` feature is enabled, which is to catch any
 //! [`panic`](macro@panic) from the Rust-level callback method and safely
@@ -82,6 +83,8 @@
 //! performance issues for hot-loop function calls in the Servo research browser](https://github.com/rust-lang/rust/issues/34727),
 //! this problem was known to be solvable by just generating the LLVM code used
 //! for `try`/`catch` in C++, and indeed [Servo's issue was fixed after doing so](https://github.com/rust-lang/rust/pull/67502).
+//! In particular, the code now generated is described as having no slowdown
+//! for the "happy path" in which no panic occurs.
 //!
 //! This feature is enabled by default to avoid undefined behavior because of
 //! the work that has gone into optimizing this particular use case from the
@@ -115,10 +118,11 @@
 //!   [`stream::StreamMatch`] for
 //!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
 //!   or [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync),
-//!   which can only store a [`Range`](crate::sources::stream::Range) as a match
-//!   may span across multiple separate inputs, which vectorscan does not
-//!   otherwise retain. While it is possible to provide a
-//!   [`stream::StreamMatcher`] directly to
+//!   which can only store a [`Range`](crate::sources::Range) as a match may
+//!   span across multiple separate inputs, which neither the vectorscan library
+//!   nor this crate otherwise retain in order to provide a strict "zero-copy"
+//!   interface. While it is possible to provide a [`stream::StreamMatcher`]
+//!   directly to
 //!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream),
 //!   the higher-level API provided by the [`crate::stream`] module provides a
 //!   more restricted interface making use of the separate [`handles`] crate to
@@ -143,14 +147,18 @@ use std::{
 /// Reference to the source expression that produced a match result or error.
 ///
 /// This is provided to match results such as [`Match`] as well as errors like
-/// [`CompileError`](crate::error::CompileError).
+/// [`CompileError`](crate::error::CompileError), although note that its value
+/// should be interpreted differently when received as part of a compile error.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ExpressionIndex(
   /// This corresponds to the value of an
   /// [`ExprId`](crate::expression::ExprId) argument provided during expression
-  /// set compilation, but will be `0` if only a single expression
-  /// was compiled or if no expression ids were provided.
+  /// set compilation using e.g.
+  /// [`ExpressionSet::with_ids()`](crate::expression::ExpressionSet::with_ids).
+  ///
+  /// This value will be `0` if only a single expression was compiled or if no
+  /// expression ids were provided.
   pub c_uint,
 );
 
@@ -162,7 +170,16 @@ impl From<c_uint> for ExpressionIndex {
   fn from(x: c_uint) -> Self { Self(x) }
 }
 
+impl From<ExpressionIndex> for c_uint {
+  fn from(x: ExpressionIndex) -> Self { x.0 }
+}
+
 /// Return value for all match callbacks.
+///
+/// As described in [Advantages](crate::matchers#advantages), this return value
+/// can be thought of as a form of lisp restart or other coroutine system,
+/// allowing the application to define relatively complex search behavior for
+/// any parsing that cannot be expressed with the vectorscan library itself.
 #[derive(
   Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
 )]
@@ -170,6 +187,9 @@ impl From<c_uint> for ExpressionIndex {
 #[ignore_extra_doc_attributes]
 pub enum MatchResult {
   /// Continue matching.
+  ///
+  /// Most use cases will likely return this value unconditionally from the
+  /// callback after storing the match somewhere.
   Continue = 0,
   /// Immediately cease matching.
   ///
@@ -181,7 +201,14 @@ pub enum MatchResult {
   /// or [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan)
   /// for the same stream will also immediately return with
   /// [`ScanTerminated`](crate::error::VectorscanRuntimeError::ScanTerminated).
-  /* This is documented to be just any non-zero value at the moment. */
+  ///
+  /// This is documented to be just any non-zero value at the moment, so **the
+  /// current constant value of `1` should not be considered stable!**
+  ///
+  /// When the `"catch-unwind"` feature is enabled (as it is by default) and the
+  /// match callback raises a Rust-level panic, the callback method from this
+  /// crate will immediately return with this value to stop the vectorscan
+  /// search before re-raising the panic once control returns to Rust code.
   CeaseMatching = 1,
 }
 
@@ -236,6 +263,15 @@ pub(crate) mod contiguous_slice {
     /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
     /// The entire text matching the given pattern.
+    ///
+    /// This reference is alive for as long as the `'data` lifetime parameter
+    /// provided to
+    /// [`Scratch::scan_sync()`](crate::state::Scratch::scan_sync), so match
+    /// objects can safely be dereferenced and processed after a scan
+    /// completes instead of performing complex logic in the match callback
+    /// itself. For example, a common pattern is to write the match objects
+    /// into some growable array like a [`Vec`] in the callback, then to
+    /// process them in bulk when the scan is complete.
     pub source: ByteSlice<'a>,
   }
 
@@ -371,6 +407,38 @@ pub(crate) mod vectored_slice {
     pub id: ExpressionIndex,
     /// The entire "ragged" subset of vectored string data matching the given
     /// pattern.
+    ///
+    /// As with [`Match::source`](super::Match::source) for contiguous strings,
+    /// this reference is alive for as long as the `'data` lifetime
+    /// parameter provided to
+    /// [`Scratch::scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored), and can be
+    /// dereferenced and processed after a scan completes. The two lifetime
+    /// parameters of [`VectoredSubset`] are collapsed into one here since the
+    /// difference between the `'string` and `'slice` lifetimes does not matter
+    /// to the search method.
+    ///
+    /// Note that [`VectoredSubset::iter_slices()`] is the only method this
+    /// crate exposes to access subsets of non-contiguous slice data, but the
+    /// result can simply be concatenated with
+    /// [`[T]::concat()`](prim@slice::concat()) or with [`itertools::concat()`](https://docs.rs/itertools/latest/itertools/fn.concat.html),
+    /// at the cost of copying the data. [`VectoredSubset::range`] is
+    /// also provided, which is what is used to index into
+    /// [`VectoredByteSlices::index_range()`].
+    ///
+    /// Note that if you do not need to know anything other than the offsets of
+    /// the matches, then using
+    /// [`stream::Streammatch`](super::stream::StreamMatch) is recommended.
+    /// The stream matching methods exposed by this crate do not perform the
+    /// work to carve out the matching subsets of the vectored input, and
+    /// the method
+    /// [`Scratch::scan_sync_vectored_stream()`](crate::state::Scratch::scan_sync_vectored_stream)
+    /// will scan in all the data into a single vectorscan method call (although
+    /// a subsequent
+    /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync)
+    /// call is necessary to match against end-of-stream markers; see
+    /// [`MatchAtEndBehavior`](crate::expression::info::MatchAtEndBehavior),
+    /// which is returned by
+    /// [`Expression::info()`](crate::expression::Expression::info)).
     pub source: VectoredSubset<'a, 'a>,
   }
 
@@ -493,11 +561,12 @@ pub(crate) mod vectored_slice {
 #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
 pub use vectored_slice::VectoredMatch;
 
+/// Match callback types and type-erased callback wrappers for stream parsing.
 #[cfg(feature = "stream")]
 #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
 pub mod stream {
   use super::*;
-  use crate::sources::stream::Range;
+  use crate::sources::Range;
 
   // ///```
   // /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -546,19 +615,87 @@ pub mod stream {
   // /// # Ok(())
   // /// # })}
   // /// ```
+  /// Match objects returned when searching streaming data.
+  ///
+  /// This is returned by e.g.
+  /// [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream),
+  /// [`Scratch::scan_sync_vectored_stream()`](crate::state::Scratch::scan_sync_vectored_stream), or
+  /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync).
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct StreamMatch {
+    /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
+    /// The start (if [`Flags::SOM_LEFTMOST`]
+    /// is provided) and end offsets of the match, with reference to the entire
+    /// history of string data that has been provided to this
+    /// [`LiveStream`](crate::stream::LiveStream) object.
+    ///
+    /// [`Flags::SOM_LEFTMOST`]: crate::flags::Flags::SOM_LEFTMOST
+    ///
+    /// Because streaming matches may span any number of individual contiguous
+    /// inputs, neither the vectorscan library nor this crate make any
+    /// attempt to preserve any reference to the original string data, as part
+    /// of a "zero-copy" interface. However, this means that the
+    /// application performing stream parsing can tee the stream input
+    /// elsewhere while feeding it to vectorscan (perhaps in a compacted form),
+    /// and only needs to pull out that lookup mechanism if needed to perform
+    /// further processing on a match that depends on the match's string
+    /// contents. When performing this strategy, disabling
+    /// [`Flags::SOM_LEFTMOST`] (as it is by default) can be used to speed
+    /// up searches, at the cost of needing to perform more work to
+    /// find match starts outside of vectorscan.
+    ///
+    /// However, before looking into complex mechanisms to keep data around so
+    /// it can be queried later, keep in mind that the vectorscan library
+    /// makes a great deal of effort to support complex search queries at
+    /// "compile time" using features like [`ExpressionSet::with_ids()`] to
+    /// identify matched sub-patterns, or [`Flags::COMBINATION`] to generate
+    /// complex acceptance criteria for matching a pattern. If possible, a scan
+    /// should be performed so that only tracking matches for [`Self::id`] is
+    /// necessary, with [`Self::range`] being used to *order* the matches
+    /// instead of to look up their data.
+    ///
+    /// [`ExpressionSet::with_ids()`]: crate::expression::ExpressionSet::with_ids
+    /// [`Flags::COMBINATION`]: crate::flags::Flags::COMBINATION
+    ///
+    /// Finally, it's useful to understand that this stateful stream parsing
+    /// interface was primarily motivated by use cases from Intel customers
+    /// performing extremely low-latency network traffic analysis, where e.g.
+    /// tokenizing the data into lines or generally copying/moving it at all
+    /// introduces an unacceptable level of latency. This is why even the
+    /// smallest `SOM_LEFTMOST` horizon size [`Mode::SOM_HORIZON_SMALL`] still
+    /// stores start-of-match offsets within the last 2^16 bytes!
+    ///
+    /// [`Mode::SOM_HORIZON_SMALL`]: crate::flags::Mode::SOM_HORIZON_SMALL
+    ///
+    /// So while this stateful streaming feature is also extremely useful for
+    /// *correctness* of streaming parsers which rely on vectorscan (allowing
+    /// them to avoid heuristic tokenization methods and avoiding any
+    /// error-prone buffering or copying), it should be understood that the
+    /// *performance* of this feature is mainly tuned for extremely low-latency
+    /// use cases, and it isn't quite as necessary outside of those. Stream
+    /// parsing also [disables several search optimizations], so even the
+    /// Intel documentation recommends using [`Mode::BLOCK`] (which returns
+    /// [`Match`] in this crate) where possible for best performance.
+    ///
+    /// [Advantages]: crate::matchers#advantages
+    /// [disables several search optimizations]: https://intel.github.io/hyperscan/dev-reference/performance.html#block-based-matching
+    /// [`Mode::BLOCK`]: crate::flags::Mode::BLOCK
+    /// [`Match`]: super::Match
     pub range: Range,
   }
 
   cfg_if! {
     if #[cfg(feature = "catch-unwind")] {
+      /// A struct holding a reference with the `&'code` lifetime to a [`dyn`](https://doc.rust-lang.org/std/keyword.dyn.html)
+      /// `FnMut`, which is a type-erased vtable.
       pub struct StreamMatcher<'code> {
         handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+UnwindSafe+RefUnwindSafe+'code),
         panic_payload: Option<Box<dyn Any+Send>>,
       }
     } else {
+      /// A struct holding a reference with the `&'code` lifetime to a [`dyn`](https://doc.rust-lang.org/std/keyword.dyn.html)
+      /// `FnMut`, which is a type-erased vtable.
       #[repr(transparent)]
       pub struct StreamMatcher<'code> {
         handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code),
@@ -567,6 +704,14 @@ pub mod stream {
   }
 
   impl<'code> StreamMatcher<'code> {
+    /// Create a matcher instance which wraps the provided `dyn` vtable
+    /// reference.
+    ///
+    /// Any variables closed over by a closure reference provided to `handler`
+    /// will become available again after this object is dropped (which must
+    /// occur within the span of the `'code` lifetime parameter), so any state
+    /// which is modified by a match callback can be examined once the
+    /// stream is dropped!
     pub fn new(handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+'code)) -> Self {
       #[cfg(feature = "catch-unwind")]
       let handler: &'code mut (dyn FnMut(StreamMatch) -> MatchResult+UnwindSafe+RefUnwindSafe+'code) =
@@ -578,7 +723,7 @@ pub mod stream {
       }
     }
 
-    pub fn has_panic(&self) -> bool {
+    pub(crate) fn has_panic(&self) -> bool {
       cfg_if! {
         if #[cfg(feature = "catch-unwind")] {
           self.panic_payload.is_some()
@@ -608,7 +753,7 @@ pub mod stream {
       }
     }
 
-    pub fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
+    pub(crate) fn handle_match(&mut self, m: StreamMatch) -> MatchResult {
       cfg_if! {
         if #[cfg(feature = "catch-unwind")] {
           self.handle_match_wrapping_panic(m)
@@ -618,7 +763,7 @@ pub mod stream {
       }
     }
 
-    pub fn resume_panic(&mut self) {
+    pub(crate) fn resume_panic(&mut self) {
       cfg_if! {
         if #[cfg(feature = "catch-unwind")] {
           if let Some(err) = self.panic_payload.take() {
@@ -675,6 +820,67 @@ pub mod stream {
 }
 
 /// Types used in chimera match callbacks.
+///
+/// # Tradeoffs with Vectorscan for PCRE
+/// The chimera library does not support several features of the base vectorscan
+/// library (including vectored or stream parsing) in order to implement full
+/// support for PCRE patterns, including **capture groups**, which typically
+/// must be implemented with some form of recursive searching in the base
+/// vectorscan library (see [Minimizing Scratch Contention]). These features may
+/// be able to replace multiple separate vectorscan calls, at the cost of [some
+/// performance].
+///
+/// [Minimizing Scratch Contention]: crate::state#minimizing-scratch-contention
+/// [some performance]: https://intel.github.io/hyperscan/dev-reference/chimera.html#scanning
+///
+/// So while the chimera matching interface is generally smaller and less
+/// complex than vectorscan, the library still avoids unbounded computation from
+/// exponential blowup by explicitly [handling PCRE failure cases]. That means
+/// it needs two match callbacks instead of one:
+///
+/// [handling PCRE failure cases]: https://intel.github.io/hyperscan/dev-reference/chimera.html#handling-runtime-errors
+///
+/// ## [`ch_match_event_handler()`](https://intel.github.io/hyperscan/dev-reference/chimera.html#c.ch_match_event_handler)
+///
+///```c
+/// typedef ch_callback_t (*ch_match_event_handler)(
+///   unsigned int id, // expression that matched (0 for single expression)
+///   unsigned long long from, // index of match start in input
+///   unsigned long long to,   // index of match end in input
+///   unsigned int flags,  // unused
+///   unsigned int size, // number of capture groups (0 if NOGROUPS is used)
+///   const ch_capture_t *captured, // pointer to array of capture groups
+///   void *ctx, // context provided by user to chimera search method
+/// );
+/// ```
+///
+/// This callback receives a
+/// [`ChimeraMatch`](crate::matchers::chimera::ChimeraMatch) object and returns
+/// a [`ChimeraMatchResult`](crate::matchers::chimera::ChimeraMatchResult),
+/// similar to the vectorscan library's match callbacks.
+///
+/// ## [`ch_error_event_handler()`](https://intel.github.io/hyperscan/dev-reference/chimera.html#c.ch_error_event_handler)
+///
+///```c
+/// typedef ch_callback_t (*ch_error_event_handler)(
+///   ch_error_event_t error_type, // the variant of PCRE error
+///   unsigned int id, // expression that caused the error
+///   void *info, // unused
+///   void *ctx, // context provided by user to chimera search method
+/// );
+/// ```
+///
+/// This callback receives a
+/// [`ChimeraMatchError`](crate::error::chimera::ChimeraMatchError) object and
+/// also returns a
+/// [`ChimeraMatchResult`](crate::matchers::chimera::ChimeraMatchResult).
+/// Depending on your use case, regular expressions that exceed these PCRE
+/// limits may or may not be useful matches, so you can choose to ignore them
+/// with [`ChimeraMatchResult::Continue`](crate::matchers::chimera::ChimeraMatchResult::Continue)
+/// or immediately cease matching with
+/// [`ChimeraMatchResult::Terminate`](crate::matchers::chimera::ChimeraMatchResult::Terminate).
+/// The PCRE limits may be configured for a particular database using
+/// [`ChimeraExpressionSet::with_limits()`](crate::expression::chimera::ChimeraExpressionSet::with_limits).
 #[cfg(feature = "chimera")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chimera")))]
 pub mod chimera {
@@ -686,6 +892,9 @@ pub mod chimera {
   use std::{hash, slice};
 
   /// Return value for all chimera match callbacks.
+  ///
+  /// Note that this type also has the [`Self::SkipPattern`] case, which has no
+  /// analogue in the base vectorscan library's [`super::MatchResult`].
   #[derive(
     Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
   )]
@@ -756,21 +965,32 @@ pub mod chimera {
   /// used, [`Self::captures`] will always be [`None`], and `.clone()` can be
   /// called without any heap allocation. As an additional optimization,
   /// patterns with up to 9 capturing groups (the 0th group being the entire
-  /// match) are stored on the stack.
+  /// match) are stored on the stack with [`smallvec`].
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
   pub struct ChimeraMatch<'a> {
     /// ID of matched expression, or `0` if unspecified.
     pub id: ExpressionIndex,
     /// The entire text matching the given pattern.
+    ///
+    /// As with [`super::Match`], this reference is alive for as long as the
+    /// `'data` lifetime parameter provided to
+    /// [`ChimeraScratch::scan_sync()`](crate::state::chimera::ChimeraScratch::scan_sync), so match
+    /// objects can safely be dereferenced and processed after a scan
+    /// completes instead of performing complex logic in the match callback
+    /// itself. For example, a common pattern is to write the match objects
+    /// into some growable array like a [`Vec`] in the callback, then to
+    /// process them in bulk when the scan is complete.
     pub source: ByteSlice<'a>,
     /// Captured text, if
     /// [`ChimeraMode::GROUPS`](crate::flags::chimera::ChimeraMode::GROUPS) was
-    /// specified during compilation.
+    /// specified during compilation (otherwise [`None`]).
     ///
     /// Individual captures are themselves optional because of patterns like
     /// `"hell(o)?"`, which would produce [`None`] for the 1st capture if
-    /// the pattern `o` isn't matched. The 0th capture always corresponds to
-    /// the entire match text, so it is always [`Some`] and should always be
+    /// the pattern `o` isn't matched. Using [`Option`] here lets us distinguish
+    /// a non-matching capture group from a capture group that matched the
+    /// empty string. The 0th capture always corresponds to the entire match
+    /// text, so it is always [`Some`] and should always be
     /// equal to [`Self::source`].
     pub captures: Option<SmallVec<Option<ByteSlice<'a>>, 10>>,
   }

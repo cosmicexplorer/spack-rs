@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Wrappers for types of string data which can be searched and indexed.
@@ -9,8 +9,8 @@
 //! such as [`Match`](crate::matchers::Match).
 
 use std::{
-  fmt,
-  os::raw::{c_char, c_uint},
+  fmt, ops,
+  os::raw::{c_char, c_uint, c_ulonglong},
   slice, str,
 };
 
@@ -188,7 +188,7 @@ impl<'a> ByteSlice<'a> {
 #[cfg(feature = "vectored")]
 #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
 pub mod vectored {
-  use super::ByteSlice;
+  use super::{ByteSlice, Range};
 
   use std::{
     cmp, mem, ops,
@@ -329,6 +329,7 @@ pub mod vectored {
 
     fn collect_slices_range(
       &self,
+      range: Range,
       start: (usize, usize),
       end: (usize, usize),
     ) -> Option<VectoredSubset<'string, 'slice>> {
@@ -339,9 +340,10 @@ pub mod vectored {
       if start_col == end_col {
         assert!(end_ind >= start_ind);
         let col_substring = self.0[start_col].index_range(start_ind..end_ind)?;
-        Some(VectoredSubset::from_single_slice(col_substring))
+        Some(VectoredSubset::from_single_slice(range, col_substring))
       } else {
         Some(VectoredSubset {
+          range,
           start: Some(self.0[start_col].index_range(start_ind..)?),
           directly_referenced: &self.0[(start_col + 1)..end_col],
           end: Some(self.0[end_col].index_range(..end_ind)?),
@@ -371,10 +373,11 @@ pub mod vectored {
     /// callback converts match offsets to substrings of the original input
     /// data.
     pub fn index_range(&self, range: ops::Range<usize>) -> Option<VectoredSubset<'string, 'slice>> {
-      let ops::Range { start, end } = range;
+      let ops::Range { start, end } = range.clone();
+      let range: Range = range.into();
       let (start_col, start_ind) = self.find_index_at(0, 0, start)?;
       let (end_col, end_ind) = self.find_index_at(start_col, start_ind, end - start)?;
-      self.collect_slices_range((start_col, start_ind), (end_col, end_ind))
+      self.collect_slices_range(range, (start_col, start_ind), (end_col, end_ind))
     }
 
     /// Iterate over all of the original vectored data.
@@ -391,14 +394,10 @@ pub mod vectored {
     /// let bb = [b1.into(), b2.into(), b3.into()];
     /// let bs = VectoredByteSlices::from_slices(&bb);
     ///
-    /// let collected: Vec<&str> = bs.all_slices().map(|s| unsafe { s.as_str() }).collect();
+    /// let collected: Vec<&str> = bs.as_slices().iter().map(|s| unsafe { s.as_str() }).collect();
     /// assert_eq!(&collected, &["asdf", "ok", "bbbb"]);
     /// ```
-    pub fn all_slices(
-      &self,
-    ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
-      self.0.iter().cloned()
-    }
+    pub fn as_slices(&self) -> &'slice [ByteSlice<'string>] { unsafe { mem::transmute(self.0) } }
   }
 
   /// A "ragged" subset of [`VectoredByteSlices`].
@@ -414,14 +413,16 @@ pub mod vectored {
   /// any additional dynamic allocations.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct VectoredSubset<'string, 'slice> {
+    pub range: Range,
     start: Option<ByteSlice<'string>>,
     directly_referenced: &'slice [ByteSlice<'string>],
     end: Option<ByteSlice<'string>>,
   }
 
   impl<'string, 'slice> VectoredSubset<'string, 'slice> {
-    pub(crate) fn from_single_slice(data: ByteSlice<'string>) -> Self {
+    pub(crate) fn from_single_slice(range: Range, data: ByteSlice<'string>) -> Self {
       Self {
+        range,
         start: Some(data),
         directly_referenced: &[],
         end: None,
@@ -530,41 +531,42 @@ pub mod vectored {
   }
 }
 
-#[cfg(feature = "stream")]
-#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
-pub mod stream {
-  use std::{ops, os::raw::c_ulonglong};
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Range {
+  pub from: usize,
+  pub to: usize,
+}
 
-  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  pub struct Range {
-    pub from: usize,
-    pub to: usize,
-  }
+static_assertions::assert_eq_size!(Range, ops::Range<usize>);
+static_assertions::assert_eq_size!(usize, c_ulonglong);
+static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
 
-  static_assertions::assert_eq_size!(Range, ops::Range<usize>);
-  static_assertions::assert_eq_size!(usize, c_ulonglong);
-  static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
-
-  impl Range {
-    pub const fn from_range(x: ops::Range<usize>) -> Self {
-      let ops::Range { start, end } = x;
-      Self {
-        from: start,
-        to: end,
-      }
-    }
-
-    pub const fn into_range(self) -> ops::Range<usize> {
-      let Self { from, to } = self;
-      from..to
+impl Range {
+  pub const fn from_range(x: ops::Range<usize>) -> Self {
+    let ops::Range { start, end } = x;
+    Self {
+      from: start,
+      to: end,
     }
   }
 
-  impl From<ops::Range<usize>> for Range {
-    fn from(x: ops::Range<usize>) -> Self { Self::from_range(x) }
+  pub const fn into_range(self) -> ops::Range<usize> {
+    let Self { from, to } = self;
+    from..to
   }
 
-  impl From<Range> for ops::Range<usize> {
-    fn from(x: Range) -> Self { x.into_range() }
+  pub const fn len(&self) -> usize {
+    assert!(self.to >= self.from);
+    self.to - self.from
   }
+
+  pub const fn is_empty(&self) -> bool { self.len() == 0 }
+}
+
+impl From<ops::Range<usize>> for Range {
+  fn from(x: ops::Range<usize>) -> Self { Self::from_range(x) }
+}
+
+impl From<Range> for ops::Range<usize> {
+  fn from(x: Range) -> Self { x.into_range() }
 }
