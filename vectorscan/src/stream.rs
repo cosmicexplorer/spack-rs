@@ -498,7 +498,7 @@ impl<'code> ScratchStreamSink<'code> {
   ///     let matcher = StreamMatcher::new(&mut match_fn);
   ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
   ///
-  ///     sink.scan("aadvarka".into())?;
+  ///     sink.scan("aardvarka".into())?;
   ///     sink.scan("a".into())?;
   ///     sink.flush_eod()?;
   ///   }
@@ -507,7 +507,8 @@ impl<'code> ScratchStreamSink<'code> {
   ///     .into_iter()
   ///     .map(|m| m.range.into())
   ///     .collect();
-  ///   assert_eq!(&matches, &[0..1, 0..2, 4..5, 7..8, 7..9]);
+  ///   // 8..10 is across a non-contiguous input boundary!
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
   ///   Ok(())
   /// }
   /// # #[cfg(not(feature = "compiler"))]
@@ -565,6 +566,7 @@ impl<'code> ScratchStreamSink<'code> {
   ///     .into_iter()
   ///     .map(|m| m.range.into())
   ///     .collect();
+  ///   // 8..10 is across a non-contiguous input boundary!
   ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
   ///   Ok(())
   /// }
@@ -811,6 +813,9 @@ pub mod channel {
       })
     }
 
+    /// Generate an [`mpsc::unbounded_channel()`] and a wrapper over the
+    /// provided handler function `hf` that sends match objects into the
+    /// channel as messages.
     pub fn new(
       live: impl Handle<R=LiveStream>+Send,
       hf: &'code mut (dyn FnMut(&StreamMatch) -> MatchResult+Send+'code),
@@ -826,6 +831,38 @@ pub mod channel {
       }
     }
 
+    /// Write a single contiguous string into the automaton.
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+    ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*};
+    ///   use futures_util::StreamExt;
+    ///   use std::ops::Range;
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let live = db.allocate_stream()?;
+    ///
+    ///   let mut match_fn = |_: &_| MatchResult::Continue;
+    ///   let mut sink = ScratchStreamSinkChannel::new(live, &mut match_fn, scratch);
+    ///
+    ///   sink.scan("aardvarka".into()).await?;
+    ///   sink.scan("a".into()).await?;
+    ///   sink.flush_eod().await?;
+    ///
+    ///   let matches: Vec<Range<usize>> = sink.collect_matches()
+    ///     .map(|m| m.range.into())
+    ///     .collect()
+    ///     .await;
+    ///   // 8..10 crossed our non-contiguous inputs!
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
+    ///   Ok(())
+    /// })}
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
       /* Make the mutable resources static. */
       let Self {
@@ -845,6 +882,42 @@ pub mod channel {
       Ok(())
     }
 
+    /// Write vectored string data into the automaton.
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+    ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*, sources::*};
+    ///   use futures_util::StreamExt;
+    ///   use std::ops::Range;
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let live = db.allocate_stream()?;
+    ///
+    ///   let mut match_fn = |_: &_| MatchResult::Continue;
+    ///   let mut sink = ScratchStreamSinkChannel::new(live, &mut match_fn, scratch);
+    ///
+    ///   let input: [ByteSlice; 2] = [
+    ///     "aardvarka".into(),
+    ///     "a".into(),
+    ///   ];
+    ///
+    ///   sink.scan_vectored(input.as_ref().into()).await?;
+    ///   sink.flush_eod().await?;
+    ///
+    ///   let matches: Vec<Range<usize>> = sink.collect_matches()
+    ///     .map(|m| m.range.into())
+    ///     .collect()
+    ///     .await;
+    ///   // 8..10 crossed our non-contiguous inputs!
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
+    ///   Ok(())
+    /// })}
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     #[cfg(feature = "vectored")]
     #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     pub async fn scan_vectored<'data>(
@@ -871,6 +944,16 @@ pub mod channel {
       Ok(())
     }
 
+    /// Trigger any match callbacks that require matching against the end of
+    /// data (EOD).
+    ///
+    /// [`Expression::info()`] returns a [`MatchAtEndBehavior`] can be used to
+    /// determine whether this check is necessary. But it typically makes sense
+    /// to execute it exactly once at the end of every stream instead of trying
+    /// to optimize this away.
+    ///
+    /// [`Expression::info()`]: crate::expression::Expression::info
+    /// [`MatchAtEndBehavior`]: crate::expression::info::MatchAtEndBehavior
     pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
       /* Make the mutable resources static. */
       let Self {
@@ -891,11 +974,14 @@ pub mod channel {
       Ok(())
     }
 
+    /// Call [`mpsc::UnboundedReceiver::close()`] on [`Self::rx`] then convert
+    /// it into an async iterable stream.
     pub fn collect_matches(mut self) -> impl Stream<Item=StreamMatch> {
       self.rx.close();
       crate::async_utils::UnboundedReceiverStream(self.rx)
     }
 
+    /// Reach into [`Self::live`] and call [`LiveStream::reset()`].
     pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
   }
 
