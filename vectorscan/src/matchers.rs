@@ -20,6 +20,11 @@
 //! );
 //! ```
 //!
+//! This crate wraps that C ABI method call to synthesize one of the match
+//! result types [`Match`], [`VectoredMatch`], or [`StreamMatch`]. It
+//! then provides this input to the user's Rust-level callback method, which
+//! returns a [`MatchResult`].
+//!
 //! ### Advantages
 //! This particular API has several advantages over returning a single value:
 //! - **Overlapping matches** are much easier to support, because the matching
@@ -66,11 +71,10 @@
 //!    longer mutably bound, so it can be immediately re-used in another scan.
 //!    While stream parsing still requires retaining state across multiple
 //!    method calls, Rust's fantastic lifetime system comes into play here, as
-//!    the compiler is often able to detect precisely when a
-//!    [`StreamMatcher`](crate::matchers::stream::StreamMatcher) is dropped and
-//!    frees up the closed-over mutable state. For doctests demonstrating this
-//!    interaction, please see the higher-level stream interface in
-//!    [`crate::stream`] and the doctests for e.g.
+//!    the compiler is often able to detect precisely when a [`StreamMatcher`]
+//!    is dropped and frees up the closed-over mutable state. For doctests
+//!    demonstrating this interaction, please see the higher-level stream
+//!    interface in [`crate::stream`] and the doctests for e.g.
 //!    [`ScratchStreamSink`](crate::stream::ScratchStreamSink).
 //!
 //! ## `"catch-unwind"`
@@ -115,14 +119,13 @@
 //!   [`VectoredByteSlices`](crate::sources::vectored::VectoredByteSlices)
 //!   input.
 //! - Finally, [`Mode::STREAM`](crate::flags::Mode::STREAM) produces
-//!   [`stream::StreamMatch`] for
+//!   [`StreamMatch`] for
 //!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
 //!   or [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync),
 //!   which can only store a [`Range`](crate::sources::Range) as a match may
 //!   span across multiple separate inputs, which neither the vectorscan library
 //!   nor this crate otherwise retain in order to provide a strict "zero-copy"
-//!   interface. While it is possible to provide a [`stream::StreamMatcher`]
-//!   directly to
+//!   interface. While it is possible to provide a [`StreamMatcher`] directly to
 //!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream),
 //!   the higher-level API provided by the [`crate::stream`] module provides a
 //!   more restricted interface making use of the separate [`handles`] crate to
@@ -427,7 +430,7 @@ pub(crate) mod vectored_slice {
     ///
     /// Note that if you do not need to know anything other than the offsets of
     /// the matches, then using
-    /// [`stream::Streammatch`](super::stream::StreamMatch) is recommended.
+    /// [`StreamMatch`](super::StreamMatch) is recommended.
     /// The stream matching methods exposed by this crate do not perform the
     /// work to carve out the matching subsets of the vectored input, and
     /// the method
@@ -561,10 +564,9 @@ pub(crate) mod vectored_slice {
 #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
 pub use vectored_slice::VectoredMatch;
 
-/// Match callback types and type-erased callback wrappers for stream parsing.
 #[cfg(feature = "stream")]
 #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
-pub mod stream {
+pub(crate) mod stream {
   use super::*;
   use crate::sources::Range;
 
@@ -818,6 +820,9 @@ pub mod stream {
     result.into_native()
   }
 }
+#[cfg(feature = "stream")]
+#[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+pub use stream::{StreamMatch, StreamMatcher};
 
 /// Types used in chimera match callbacks.
 ///
@@ -899,10 +904,17 @@ pub mod chimera {
     Debug, Display, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::IntoPrimitive,
   )]
   #[repr(u8)]
+  #[ignore_extra_doc_attributes]
   pub enum ChimeraMatchResult {
     /// Continue matching.
     Continue = hs::CH_CALLBACK_CONTINUE,
     /// Terminate matching.
+    ///
+    /// When the `"catch-unwind"` feature is enabled (as it is by default) and
+    /// the match callback raises a Rust-level panic, the callback method
+    /// from this crate will immediately return with this value to stop the
+    /// chimera search before re-raising the panic once control returns
+    /// to Rust code.
     Terminate = hs::CH_CALLBACK_TERMINATE,
     /// Skip remaining matches for this ID and continue.
     SkipPattern = hs::CH_CALLBACK_SKIP_PATTERN,

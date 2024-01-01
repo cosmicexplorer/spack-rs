@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #[cfg(feature = "vectored")]
@@ -150,7 +150,7 @@ impl<'code> StreamSink<'code> {
 ///```
 /// #[cfg(feature = "compiler")]
 /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
-///   use vectorscan::{expression::*, flags::*, stream::*, matchers::{*, stream::*}};
+///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
 ///   use std::{ops::Range, mem};
 ///
 ///   let expr: Expression = "a+".parse()?;
