@@ -232,7 +232,7 @@ impl LiveStream {
   }
 
   /// Write the stream's current state into a buffer according to the `into`
-  /// strategy.
+  /// strategy using [`compress::CompressedStream::compress()`].
   ///
   /// The stream can later be deserialized from this state into a working
   /// in-memory stream again with methods such as
@@ -631,7 +631,8 @@ pub(crate) mod std_impls {
   /// [`VectoredByteSlices`]. This would typically require a dynamic memory
   /// allocation, but this struct maintains an internal buffer of strings
   /// which is re-used for subsequent vectored writes to avoid repeated dynamic
-  /// memory allocation.
+  /// memory allocation. This buffer isn't needed except for compatibility with
+  /// the [`io::IoSlice`] API.
   ///
   ///```
   /// #[cfg(feature = "compiler")]
@@ -1001,6 +1002,21 @@ pub mod channel {
       task::{ready, Context, Poll},
     };
 
+    /// A wrapper over [`ScratchStreamSinkChannel`] which implements
+    /// [`tokio::io::AsyncWrite`].
+    ///
+    /// The reason this is separate from [`ScratchStreamSinkChannel`] is that in
+    /// the case of vectored writes, [`std::io::IoSlice`] must be converted into
+    /// [`VectoredByteSlices`]. As in the synchronous
+    /// [`super::super::StreamWriter`], this would typically require a dynamic
+    /// memory allocation, but this struct maintains an internal buffer of
+    /// strings which is re-used for subsequent vectored writes to avoid
+    /// repeated dynamic memory allocation. Additionally, in the async case,
+    /// implementing poll methods like [`io::AsyncWrite::poll_write()`] and
+    /// [`io::AsyncWrite::poll_shutdown()`] requires storing
+    /// [`Waker`](std::task::Waker) state inside the object whenever it is
+    /// polled.
+    ///
     ///```
     /// #[cfg(feature = "compiler")]
     /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
@@ -1040,6 +1056,7 @@ pub mod channel {
     }
 
     impl<'code> AsyncStreamWriter<'code> {
+      /// Construct a wrapper over `inner`.
       pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
         Self {
           inner,
@@ -1359,284 +1376,3 @@ pub mod compress {
     }
   }
 }
-
-/* ///``` */
-/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
- * tokio_test::block_on(async { */
-/* /// use vectorscan::{expression::*, matchers::*, flags::*, stream::*,
- * error::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// use tokio::io::AsyncWriteExt; */
-/* /// */
-/* /// let expr: Expression = "a+".parse()?; */
-/* /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?; */
-/* /// let scratch = db.allocate_scratch()?; */
-/* /// */
-/* /// struct S(usize); */
-/* /// impl StreamScanner for S { */
-/* ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { */
-/* ///     if self.0 < 2 { self.0 += 1; MatchResult::Continue } else {
- * MatchResult::CeaseMatching } */
-/* ///   } */
-/* ///   fn new() -> Self where Self: Sized { Self(0) } */
-/* ///   fn reset(&mut self) { self.0 = 0; } */
-/* ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> {
- * Box::new(Self(self.0)) } */
-/* /// } */
-/* /// */
-/* /// let mut s = Streamer::open::<S>(&db, scratch.into())?; */
-/* /// */
-/* /// let msg = "aardvark"; */
-/* /// if let Err(e) = s.write_all(msg.as_bytes()).await { */
-/* ///   let e = *e.into_inner().unwrap().downcast::<ScanError>().unwrap(); */
-/* ///   if let ScanError::ReturnValue(ref e) = e { */
-/* ///     assert_eq!(*e, VectorscanRuntimeError::ScanTerminated); */
-/* ///   } else { unreachable!(); }; */
-/* /// } else { unreachable!(); } */
-/* /// s.shutdown().await.unwrap(); */
-/* /// let rx = s.stream_results(); */
-/* /// */
-/* /// let results: Vec<&str> = rx.map(|StreamMatch { range, .. }|
- * &msg[range]).collect().await; */
-/* /// // NB: results have no third "aardva" result because of the early
- * CeaseMatching! */
-/* /// assert_eq!(results, vec!["a", "aa"]); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* /// ``` */
-/* pub struct Streamer { */
-/* pub sink: StreamSink, */
-/* pub rx: mpsc::UnboundedReceiver<StreamMatch>, */
-/* } */
-
-/* ///``` */
-/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
- * tokio_test::block_on(async { */
-/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// */
-/* /// let expr: Expression = "a+".parse()?; */
-/* /// let db = expr.compile( */
-/* ///   Flags::UTF8 | Flags::SOM_LEFTMOST, */
-/* ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE, */
-/* /// )?; */
-/* /// let scratch = db.allocate_scratch()?; */
-/* /// */
-/* /// let s1 = Streamer::open::<TrivialScanner>(&db, scratch.into())?; */
-/* /// */
-/* /// let compressed = s1.compress(CompressReserveBehavior::NewBuf)?; */
-/* /// std::mem::drop(s1); */
-/* /// */
-/* /// let msg = "aardvark"; */
-/* /// let mut s2 = compressed.expand(&db)?; */
-/* /// s2.scan(msg.as_bytes().into()).await?; */
-/* /// s2.flush_eod().await?; */
-/* /// let rx = s2.stream_results(); */
-/* /// */
-/* /// let results: Vec<&str> = rx */
-/* ///   .map(|StreamMatch { range, .. }| &msg[range]) */
-/* ///   .collect() */
-/* ///   .await; */
-/* /// assert_eq!(results, vec!["a", "aa", "a"]); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* pub fn compress( */
-/* &self, */
-/* into: CompressReserveBehavior, */
-/* ) -> Result<CompressedStream, CompressionError> { */
-/* self.sink.compress(into) */
-/* } */
-
-/* ///``` */
-/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
- * tokio_test::block_on(async { */
-/* /// use vectorscan::{expression::*, matchers::*, flags::*, stream::*,
- * error::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// use tokio::io::AsyncWriteExt; */
-/* /// */
-/* /// let expr: Literal = "asdf".parse()?; */
-/* /// let db = expr.compile(Flags::default(), Mode::STREAM)?; */
-/* /// let scratch = db.allocate_scratch()?; */
-/* /// */
-/* /// struct S(usize); */
-/* /// impl StreamScanner for S { */
-/* ///   fn stream_scan(&mut self, _m: &StreamMatch) -> MatchResult { */
-/* ///     if self.0 < 2 { self.0 += 1; MatchResult::Continue } else {
- * MatchResult::CeaseMatching } */
-/* ///   } */
-/* ///   fn new() -> Self where Self: Sized { Self(0) } */
-/* ///   fn reset(&mut self) { self.0 = 0; } */
-/* ///   fn boxed_clone(&self) -> Box<dyn StreamScanner> {
- * Box::new(Self(self.0)) } */
-/* /// } */
-/* /// */
-/* /// let mut s1 = Streamer::open::<S>(&db, scratch.into())?; */
-/* /// */
-/* /// s1.write_all(b"asdf").await.unwrap(); */
-/* /// let mut s2 = s1.try_clone()?; */
-/* /// s1.shutdown().await.unwrap(); */
-/* /// let rx1 = s1.stream_results(); */
-/* /// s2.write_all(b"asdf").await.unwrap(); */
-/* /// s2.reset_no_flush()?; */
-/* /// let rx2 = s2.reset_channel(); */
-/* /// if let Err(e) = s2.write_all(b"asdfasdfasdf").await { */
-/* ///   let e = *e.into_inner().unwrap().downcast::<ScanError>().unwrap(); */
-/* ///   if let ScanError::ReturnValue(ref e) = e { */
-/* ///     assert_eq!(*e, VectorscanRuntimeError::ScanTerminated); */
-/* ///   } else { unreachable!(); } */
-/* /// } else { unreachable!(); } */
-/* /// s2.shutdown().await.unwrap(); */
-/* /// let rx3 = s2.stream_results(); */
-/* /// */
-/* /// let m1: Vec<_> = rx1.collect().await; */
-/* /// let m2: Vec<_> = rx2.collect().await; */
-/* /// let m3: Vec<_> = rx3.collect().await; */
-/* /// assert_eq!(1, m1.len()); */
-/* /// assert_eq!(1, m2.len()); */
-/* /// assert_eq!(2, m3.len()); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* /// ``` */
-/* /// */
-/* /// **TODO: docs** */
-/* /// */
-/* ///``` */
-/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
- * tokio_test::block_on(async { */
-/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// use tokio::io::AsyncWriteExt; */
-/* /// */
-/* /// let expr: Expression = "asdf$".parse()?; */
-/* /// let db = expr.compile(Flags::UTF8, Mode::STREAM)?; */
-/* /// let scratch = db.allocate_scratch()?; */
-/* /// */
-/* /// let mut s = Streamer::open::<TrivialScanner>(&db, scratch.into())?; */
-/* /// */
-/* /// s.write_all(b"asdf").await.unwrap(); */
-/* /// s.reset_flush().await?; */
-/* /// let rx = s.reset_channel(); */
-/* /// s.write_all(b"asdf").await.unwrap(); */
-/* /// s.reset_no_flush()?; */
-/* /// let rx2 = s.reset_channel(); */
-/* /// s.write_all(b"asdf").await.unwrap(); */
-/* /// s.shutdown().await.unwrap(); */
-/* /// let rx3 = s.stream_results(); */
-/* /// */
-/* /// let m1: Vec<_> = rx.collect().await; */
-/* /// let m2: Vec<_> = rx2.collect().await; */
-/* /// let m3: Vec<_> = rx3.collect().await; */
-/* /// assert!(!m1.is_empty()); */
-/* /// // This will be empty, because .reset_no_flush() was called on sink2 */
-/* /// // and the pattern "asdf$" requires matching against the end of data: */
-/* /// assert!(m2.is_empty()); */
-/* /// assert!(!m3.is_empty()); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* /// ``` */
-/* pub fn reset_no_flush(&mut self) -> Result<(), VectorscanRuntimeError> { */
-/* self.sink.reset_no_flush() */
-/* } */
-
-/* ///``` */
-/* /// # fn main() -> Result<(), vectorscan::error::VectorscanError> {
- * tokio_test::block_on(async { */
-/* /// use vectorscan::{expression::*, flags::*, stream::*}; */
-/* /// use futures_util::StreamExt; */
-/* /// use tokio::io::AsyncWriteExt; */
-/* /// use std::ops; */
-/* /// */
-/* /// let expr: Literal = "asdf".parse()?; */
-/* /// let db = expr.compile( */
-/* ///   Flags::SOM_LEFTMOST, */
-/* ///   Mode::STREAM | Mode::SOM_HORIZON_LARGE, */
-/* /// )?; */
-/* /// let scratch = db.allocate_scratch()?; */
-/* /// */
-/* /// let mut s = Streamer::open::<TrivialScanner>(&db, scratch.into())?; */
-/* /// */
-/* /// s.write_all(b"asdf..").await.unwrap(); */
-/* /// let rx = s.reset_channel(); */
-/* /// s.reset_flush().await?; */
-/* /// s.write_all(b"..asdf").await.unwrap(); */
-/* /// s.shutdown().await.unwrap(); */
-/* /// let rx2 = s.stream_results(); */
-/* /// */
-/* /// let m1: Vec<ops::Range<usize>> = rx.map(|m| m.range).collect().await; */
-/* /// let m2: Vec<ops::Range<usize>> = rx2.map(|m| m.range).collect().await; */
-/* /// // The stream state should have been reset, so rx2 should have
- * restarted the stream offset */
-/* /// // from the beginning: */
-/* /// assert_eq!(m1, vec![0..4]); */
-/* /// assert_eq!(m2, vec![2..6]); */
-/* /// # Ok(()) */
-/* /// # })} */
-/* /// ``` */
-/* pub async fn reset_flush(&mut self) -> Result<(), ScanError> {
- * self.sink.reset_flush().await } */
-
-/* } */
-
-/* #[cfg(all(test, feature = "compiler"))] */
-/* mod test { */
-/* use super::*; */
-/* use crate::{ */
-/* expression::Expression, */
-/* flags::{Flags, Mode}, */
-/* }; */
-
-/* use futures_util::StreamExt; */
-
-/* use std::{mem, sync::Arc}; */
-
-/* #[tokio::test] */
-/* async fn clone_scratch() -> Result<(), eyre::Report> { */
-/* let expr: Expression = "asdf$".parse()?; */
-/* let db = expr.compile(Flags::UTF8, Mode::STREAM)?; */
-
-/* let live = LiveStream::open(&db)?; */
-
-/* let scratch = Arc::new(db.allocate_scratch()?; */
-/* let s2 = Arc::clone(&scratch); */
-
-/* let msg = "asdf"; */
-/* let mut s = StreamSinkChannel::new::<TrivialScanner>(&db, s2)?; */
-/* mem::drop(scratch); */
-/* s.scan(msg.into()).await?; */
-/* s.flush_eod().await?; */
-/* let rx = s.stream_results(); */
-
-/* let results: Vec<&str> = rx.map(|m| &msg[m.range]).collect().await; */
-/* assert_eq!(&results, &["asdf"]); */
-/* Ok(()) */
-/* } */
-
-/* #[tokio::test] */
-/* async fn compress() -> Result<(), eyre::Report> { */
-/* let expr: Expression = "a+".parse()?; */
-/* let db = expr.compile( */
-/* Flags::UTF8 | Flags::SOM_LEFTMOST, */
-/* Mode::STREAM | Mode::SOM_HORIZON_LARGE, */
-/* )?; */
-/* let scratch = db.allocate_scratch()?; */
-
-/* let s1 = Streamer::open::<TrivialScanner>(&db, scratch.into())?; */
-
-/* let compressed = s1.compress(CompressReserveBehavior::NewBuf)?; */
-/* mem::drop(s1); */
-
-/* let msg = "aardvark"; */
-/* let mut s2 = compressed.expand(&db)?; */
-/* s2.scan(msg.as_bytes().into()).await?; */
-/* s2.flush_eod().await?; */
-/* let rx = s2.stream_results(); */
-
-/* let results: Vec<&str> = rx */
-/* .map(|StreamMatch { range, .. }| &msg[range]) */
-/* .collect() */
-/* .await; */
-/* assert_eq!(results, vec!["a", "aa", "a"]); */
-/* Ok(()) */
-/* } */
-/* } */
