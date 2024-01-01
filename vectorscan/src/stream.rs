@@ -967,10 +967,7 @@ pub mod channel {
       let matcher = SendStreamMatcher::new(hf);
       let mut matcher: SendStreamMatcher<'static> = unsafe { mem::transmute(matcher) };
 
-      task::spawn_blocking(move || {
-        scratch.flush_eod_sync(live.make_mut()?, matcher.as_mut_basic())
-      })
-      .await??;
+      task::spawn_blocking(move || scratch.flush_eod_sync(live, matcher.as_mut_basic())).await??;
       Ok(())
     }
 
