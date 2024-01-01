@@ -38,9 +38,8 @@
 //!   callback doesn't provide nor require any reference to the string data it
 //!   was provided.
 //! - **FFI wrappers in other languages (like this crate)** are typically
-//!   easier, as they can figure out how to **most efficiently store the matches**
-//!   and reference the string data they provided to vectorscan's search
-//!   functions using their own language. In comparison, the [`re2`](https://docs.rs/re2) crate
+//!   easier, as **they can figure out how to most efficiently store the matches in their own language**.
+//!   In comparison, the [`re2`](https://docs.rs/re2) crate
 //!   (also wrapped by this crate's author) required [a separate C++ wrapper](https://github.com/cosmicexplorer/spack-rs/blob/1faa9c32982b4705bc5c9addeb5800d489037dd9/re2/sys/src/c-bindings.hpp#L11)
 //!   in order to wrap things like `std::string` or `absl::string_view` with templated or unstable
 //!   binary interfaces.
@@ -442,6 +441,10 @@ pub(crate) mod vectored_slice {
     /// [`MatchAtEndBehavior`](crate::expression::info::MatchAtEndBehavior),
     /// which is returned by
     /// [`Expression::info()`](crate::expression::Expression::info)).
+    ///
+    ///```
+    /// todo!("idk");
+    /// ```
     pub source: VectoredSubset<'a, 'a>,
   }
 
@@ -634,56 +637,16 @@ pub(crate) mod stream {
     ///
     /// [`Flags::SOM_LEFTMOST`]: crate::flags::Flags::SOM_LEFTMOST
     ///
-    /// Because streaming matches may span any number of individual contiguous
-    /// inputs, neither the vectorscan library nor this crate make any
-    /// attempt to preserve any reference to the original string data, as part
-    /// of a "zero-copy" interface. However, this means that the
-    /// application performing stream parsing can tee the stream input
-    /// elsewhere while feeding it to vectorscan (perhaps in a compacted form),
-    /// and only needs to pull out that lookup mechanism if needed to perform
-    /// further processing on a match that depends on the match's string
-    /// contents. When performing this strategy, disabling
-    /// [`Flags::SOM_LEFTMOST`] (as it is by default) can be used to speed
-    /// up searches, at the cost of needing to perform more work to
-    /// find match starts outside of vectorscan.
+    /// Note that [`LiveStream::try_reset()`] will reset the stream automaton to
+    /// its start state and cause match offsets reported to the callback after
+    /// the reset to start once again from 0.
     ///
-    /// However, before looking into complex mechanisms to keep data around so
-    /// it can be queried later, keep in mind that the vectorscan library
-    /// makes a great deal of effort to support complex search queries at
-    /// "compile time" using features like [`ExpressionSet::with_ids()`] to
-    /// identify matched sub-patterns, or [`Flags::COMBINATION`] to generate
-    /// complex acceptance criteria for matching a pattern. If possible, a scan
-    /// should be performed so that only tracking matches for [`Self::id`] is
-    /// necessary, with [`Self::range`] being used to *order* the matches
-    /// instead of to look up their data.
+    /// [`LiveStream::try_reset()`]: crate::stream::LiveStream::try_reset
     ///
-    /// [`ExpressionSet::with_ids()`]: crate::expression::ExpressionSet::with_ids
-    /// [`Flags::COMBINATION`]: crate::flags::Flags::COMBINATION
-    ///
-    /// Finally, it's useful to understand that this stateful stream parsing
-    /// interface was primarily motivated by use cases from Intel customers
-    /// performing extremely low-latency network traffic analysis, where e.g.
-    /// tokenizing the data into lines or generally copying/moving it at all
-    /// introduces an unacceptable level of latency. This is why even the
-    /// smallest `SOM_LEFTMOST` horizon size [`Mode::SOM_HORIZON_SMALL`] still
-    /// stores start-of-match offsets within the last 2^16 bytes!
-    ///
-    /// [`Mode::SOM_HORIZON_SMALL`]: crate::flags::Mode::SOM_HORIZON_SMALL
-    ///
-    /// So while this stateful streaming feature is also extremely useful for
-    /// *correctness* of streaming parsers which rely on vectorscan (allowing
-    /// them to avoid heuristic tokenization methods and avoiding any
-    /// error-prone buffering or copying), it should be understood that the
-    /// *performance* of this feature is mainly tuned for extremely low-latency
-    /// use cases, and it isn't quite as necessary outside of those. Stream
-    /// parsing also [disables several search optimizations], so even the
-    /// Intel documentation recommends using [`Mode::BLOCK`] (which returns
-    /// [`Match`] in this crate) where possible for best performance.
-    ///
-    /// [Advantages]: crate::matchers#advantages
-    /// [disables several search optimizations]: https://intel.github.io/hyperscan/dev-reference/performance.html#block-based-matching
-    /// [`Mode::BLOCK`]: crate::flags::Mode::BLOCK
-    /// [`Match`]: super::Match
+    /// See the [`crate::stream`] module for a further discussion of how and
+    /// when to effectively use the streaming interface, especially how to work
+    /// around not being able to reference the contents of the original data
+    /// stream.
     pub range: Range,
   }
 

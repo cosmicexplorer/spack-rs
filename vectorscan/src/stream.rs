@@ -1,6 +1,101 @@
 /* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
+//! Higher-level wrappers to manage state needed for stream parsing.
+//!
+//! # Stream Parsing
+//! "Stream parsing", which in this case refers simply to "matching a pattern
+//! against a non-contiguous data stream" (like a pipe), is surprisingly poorly
+//! supported by most regex engines as well as higher-level parsers. Most of the
+//! time, this is the correct tradeoff to make, as many more optimizations are
+//! available for contiguous string search, and in practice many
+//! non-contiguous streams can be "tokenized" beforehand e.g. by splitting them
+//! into lines, or some other sentinel character known not to appear in any of
+//! the input patterns such as a null byte.
+//!
+//! ## Stream Parsing for Correctness
+//! However, it should also be noted that these heuristic methods for
+//! tokenization may suddenly break, especially if the application is receiving
+//! uncontrolled user input (and therefore can't rely on identifying sentinel
+//! characters). Additionally, as discussed in [Advantages], many other regex
+//! engines simply find it much more difficult to support interruptible use
+//! cases like stream parsing, because they return a single synchronous result
+//! instead of using vectorscan's coroutine-like match callback API. This is
+//! also why vectorscan is more easily able to report *overlapping matches*,
+//! which also improves correctness in that longest-match semantics don't have
+//! to be explicitly opted out of.
+//!
+//! [Advantages]: crate::matchers#advantages
+//!
+//! ## Stream Parsing for Performance
+//! *TODO: citation for this entire paragraph!*
+//! Intel primarily designed the hyperscan library's stream parsing
+//! functionality for extremely low-latency network traffic analysis. This may
+//! involve:
+//! - quite large amounts of data, such that tokenizing the data into lines or
+//!   generally copying/moving it at all introduces an unacceptable level of
+//!   latency (this is why even the smallest `SOM_LEFTMOST` horizon size
+//!   [`Mode::SOM_HORIZON_SMALL`] still stores start-of-match offsets within the
+//!   last 2^16 bytes!),
+//! - received over the network in unpredictable bursts,
+//! - in which the data stream cannot be reordered or split up,
+//! - with patterns that are often expected to span multiple separate
+//!   non-contiguous chunks of data in order to match,
+//! - where it's often more important to be able to know *what pattern* was
+//!   matched (e.g. to classify input packets) than to know the *precise input
+//!   string* that matched it.
+//!
+//! [`Mode::SOM_HORIZON_SMALL`]: crate::flags::Mode::SOM_HORIZON_SMALL
+//!
+//! These unusual constraints led Intel to invest in stream parsing, but this
+//! author would love to see it supported by more regex engines and parsing
+//! frameworks in the future, because **correctly matching patterns that span
+//! non-contiguous input is really difficult to solve outside of the regex
+//! engine**!
+//!
+//! ## Workarounds to Reference Streamed Data
+//! Because streaming matches may span any number of individual contiguous
+//! inputs, neither the vectorscan library nor this crate make any
+//! attempt to preserve any reference to the original string data, as part
+//! of a "zero-copy" interface. However, this means that the
+//! application performing stream parsing can tee the stream input
+//! elsewhere while feeding it to vectorscan (perhaps in a compacted form),
+//! and only needs to pull out that lookup mechanism if needed to perform
+//! further processing on a match that depends on the match's string
+//! contents. When performing this strategy, enabling
+//! [`Flags::SOM_LEFTMOST`] (as it is by default) is recommended to reduce the
+//! cost of reconstructing the match string, at the cost of
+//! slightly lower scan performance.
+//!
+//! [`Flags::SOM_LEFTMOST`]: crate::flags::Flags::SOM_LEFTMOST
+//!
+//! ### Doing Work at Compile Time to Minimize Need for Stream Data
+//! However, before looking into complex mechanisms to keep data around so
+//! it can be queried later, keep in mind that the vectorscan library
+//! makes a great deal of effort to support complex search queries at
+//! "compile time" using features like [`ExpressionSet::with_ids()`] to
+//! identify matched sub-patterns, or [`Flags::COMBINATION`] to generate
+//! complex acceptance criteria for matching a pattern. If possible, a scan
+//! should be performed so that only tracking matches for
+//! [`StreamMatch::id`] is necessary, with
+//! [`StreamMatch::range`] being used at most to *order* the matches instead of
+//! to look up their data.
+//!
+//! [`ExpressionSet::with_ids()`]: crate::expression::ExpressionSet::with_ids
+//! [`Flags::COMBINATION`]: crate::flags::Flags::COMBINATION
+//! [`StreamMatch::id`]: crate::matchers::StreamMatch::id
+//! [`StreamMatch::range`]: crate::matchers::StreamMatch::range
+//!
+//! ## Performance Considerations
+//! Stream parsing [disables several search optimizations], so even the
+//! Intel documentation recommends using [`Mode::BLOCK`] (which returns
+//! [`Match`] in this crate) where possible for best performance.
+//!
+//! [Advantages]: crate::matchers#advantages
+//! [disables several search optimizations]: https://intel.github.io/hyperscan/dev-reference/performance.html#block-based-matching
+//! [`Mode::BLOCK`]: crate::flags::Mode::BLOCK
+//! [`Match`]: crate::matchers::Match
+
 #[cfg(feature = "vectored")]
 use crate::sources::vectored::VectoredByteSlices;
 use crate::{
