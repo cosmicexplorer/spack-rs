@@ -1,12 +1,14 @@
 /*
  * Description: Type-erased strategies for sharing and cloning resources.
  *
- * Copyright (C) 2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
+ * Copyright (C) 2023-2024 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#![warn(rustdoc::missing_crate_level_docs)]
-#![allow(missing_docs)]
+//! Type-erased strategies for sharing and cloning resources.
+
+#![deny(rustdoc::missing_crate_level_docs)]
+#![deny(missing_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 #![deny(clippy::all)]
@@ -15,42 +17,98 @@
 
 use std::{any::Any, mem, ptr, rc::Rc, sync::Arc};
 
+/// A mutable wrapper for a dynamic memory allocation which may fail.
+///
+/// The [`Any`] constraint enables downcasting any [`dyn`] object to a concrete
+/// type with e.g. [`dyn Any::downcast_ref()`] or [`Box::downcast()`]. Note that
+/// [`Any`] also requires the `'static` lifetime bound to do this and therefore
+/// types implementing this trait may not hold any non-static reference fields.
+/// This seemed like an appropriate tradeoff for something that is intended to
+/// represent an allocation from some global memory pool.
+///
+/// [`dyn`]: https://doc.rust-lang.org/std/keyword.dyn.html
 pub trait Resource: Any {
+  /// Error type for allocation and deallocation.
+  ///
+  /// This can be [`()`](prim@unit) if the de/allocation are truly infallible.
   type Error;
 
+  /// Request a new memory allocation, then initialize the allocation with the
+  /// same state as `self`.
   fn deep_clone(&self) -> Result<Self, Self::Error>
   where Self: Sized;
 
+  /// Similar to [`Self::deep_clone()`], but places the concrete type in a
+  /// heap-allocated box.
+  ///
+  /// Because of the type erasure in the return value, this method is also
+  /// accessible to `dyn Resource` vtable instances.
   fn deep_boxed_clone(&self) -> Result<Box<dyn Resource<Error=Self::Error>>, Self::Error>;
 
+  /// Deallocate the memory and release any other resources that were owned by
+  /// this specific object.
+  ///
+  /// This is intended for use with memory pooling smart pointer [`Handle`]s
+  /// which may decide to execute the fallible deallocation method from any of
+  /// the [`Handle`] methods that return [`Result`].
+  ///
+  /// # Safety
+  /// Calling this method more than once is considered a double free, and
+  /// attempting to use the object at all after calling this method is
+  /// considered a use-after-free.
   unsafe fn sync_drop(&mut self) -> Result<(), Self::Error>;
 }
 
+/// A smart pointer strategy to switch between copy-on-write or copy-up-front
+/// techniques.
+///
+/// As with [`Resource`], this trait requires [`Any`] in order to support
+/// downcasting.
 pub trait Handle: Any {
+  /// The underlying fallible resource type that we want to hand out copies of.
+  ///
+  /// Note that [`Handle`] itself does not define its own error type. The "smart
+  /// pointer" role of [`Handle`] is to perform *infallible* operations like
+  /// reference counting, while letting [`Resource`] cover the clumsy fallible
+  /// initialization work.
   type R: Resource;
 
+  /// Given an unboxed resource, produce a handle that has exclusive access to
+  /// the resource.
   fn wrap(r: Self::R) -> Self
   where Self: Sized;
 
+  /// Given an unboxed handle, create another instance with a strong reference
+  /// to it.
   fn clone_handle(&self) -> Result<Self, <Self::R as Resource>::Error>
   where Self: Sized;
 
+  /// Similar to [`Self::clone_handle()`], but places the concrete type in a
+  /// heap-allocated box.
   fn boxed_clone_handle(&self) -> Result<Box<dyn Handle<R=Self::R>>, <Self::R as Resource>::Error>;
 
+  /// Get a read-only reference to the underlying resource.
   fn handle_ref(&self) -> &Self::R;
 
+  /// Return whether these two handles point to the same underlying resource
+  /// allocation.
   fn eq_ref(&self, other: &dyn Handle<R=Self::R>) -> bool { equal_refs(self, other) }
 
+  /// Return [`Some`] if this handle has exclusive access, else [`None`].
   fn get_mut(&mut self) -> Option<&mut Self::R>;
 
+  /// If there are any other strong or weak references to the same resource,
+  /// disassociate them and clone the resource if necessary.
   fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error>;
 
+  /// A combination of [`Self::ensure_exclusive()`] and [`Self::get_mut()`].
   fn make_mut(&mut self) -> Result<&mut Self::R, <Self::R as Resource>::Error> {
     self.ensure_exclusive()?;
     Ok(self.get_mut().unwrap())
   }
 }
 
+/// A free function implementation of [`Handle::eq_ref()`].
 pub fn equal_refs<R: Resource+?Sized>(
   h1: &(impl Handle<R=R>+?Sized),
   h2: &(impl Handle<R=R>+?Sized),
@@ -58,6 +116,7 @@ pub fn equal_refs<R: Resource+?Sized>(
   ptr::eq(h1.handle_ref(), h2.handle_ref())
 }
 
+/// A handle can just be the thing itself, which means it's eagerly cloned.
 impl<R: Resource> Handle for R {
   type R = Self;
 
@@ -85,6 +144,7 @@ impl<R: Resource> Handle for R {
   fn ensure_exclusive(&mut self) -> Result<(), <Self::R as Resource>::Error> { Ok(()) }
 }
 
+/// An `Rc` will lazily clone, but can't be sent across threads.
 impl<R: Resource> Handle for Rc<R> {
   type R = R;
 
@@ -129,6 +189,7 @@ impl<R: Resource> Handle for Rc<R> {
   }
 }
 
+/// An `Arc` will lazily clone and *can* be sent across threads.
 impl<R: Resource> Handle for Arc<R> {
   type R = R;
 
