@@ -536,6 +536,17 @@ impl Scratch {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
+  ///
+  /// Note that if you do not need to know anything other than the offsets of
+  /// the matches, then you could also try using
+  /// [`Self::scan_sync_vectored_stream()`], which passes
+  /// [`StreamMatch`](super::StreamMatch) to the callback method (although
+  /// a subsequent
+  /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync)
+  /// call is necessary to match against end-of-stream markers; see
+  /// [`MatchAtEndBehavior`](crate::expression::info::MatchAtEndBehavior),
+  /// which is returned by
+  /// [`Expression::info()`](crate::expression::Expression::info)).
   #[cfg(feature = "vectored")]
   #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_sync_vectored<'data>(
@@ -563,7 +574,7 @@ impl Scratch {
     Ok(())
   }
 
-  /// Write `data` into the stream object `sink`.
+  /// Write `data` into the stream object `live`.
   ///
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call
@@ -593,6 +604,11 @@ impl Scratch {
     Ok(())
   }
 
+  /// Write vectored `data` into the stream object `live`.
+  ///
+  /// This method is mostly used internally; consumers of this crate will likely
+  /// prefer to call
+  /// [`ScratchStreamSink::scan_vectored()`](crate::stream::ScratchStreamSink::scan_vectored).
   #[cfg(all(feature = "stream", feature = "vectored"))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "stream", feature = "vectored"))))]
   pub fn scan_sync_vectored_stream<'data, 'code>(
@@ -620,7 +636,7 @@ impl Scratch {
     Ok(())
   }
 
-  /// Process any EOD (end-of-data) matches for the stream object `sink`.
+  /// Process any EOD (end-of-data) matches for the stream object `live`.
   ///
   /// This method is mostly used internally; consumers of this crate will likely
   /// prefer to call

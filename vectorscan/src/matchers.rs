@@ -426,25 +426,6 @@ pub(crate) mod vectored_slice {
     /// at the cost of copying the data. [`VectoredSubset::range`] is
     /// also provided, which is what is used to index into
     /// [`VectoredByteSlices::index_range()`].
-    ///
-    /// Note that if you do not need to know anything other than the offsets of
-    /// the matches, then using
-    /// [`StreamMatch`](super::StreamMatch) is recommended.
-    /// The stream matching methods exposed by this crate do not perform the
-    /// work to carve out the matching subsets of the vectored input, and
-    /// the method
-    /// [`Scratch::scan_sync_vectored_stream()`](crate::state::Scratch::scan_sync_vectored_stream)
-    /// will scan in all the data into a single vectorscan method call (although
-    /// a subsequent
-    /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync)
-    /// call is necessary to match against end-of-stream markers; see
-    /// [`MatchAtEndBehavior`](crate::expression::info::MatchAtEndBehavior),
-    /// which is returned by
-    /// [`Expression::info()`](crate::expression::Expression::info)).
-    ///
-    ///```
-    /// todo!("idk");
-    /// ```
     pub source: VectoredSubset<'a, 'a>,
   }
 
