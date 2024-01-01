@@ -394,6 +394,11 @@ impl ops::Drop for LiveStream {
   }
 }
 
+/// A wrapper around all the state needed to execute a stream search.
+///
+/// By holding handles to [`Self::live`] and [`Self::scratch`], the stream
+/// scanning API can be made quite fluent, without as many parameters per call:
+///
 ///```
 /// #[cfg(feature = "compiler")]
 /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
