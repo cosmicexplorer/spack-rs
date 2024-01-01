@@ -664,7 +664,13 @@ impl Scratch {
   }
 }
 
+/// # Convenience Methods
+/// These methods provide quick access to common regex use cases without needing
+/// to provide a closure.
 impl Scratch {
+  /// Return the result from the first match callback, or [`None`] if no match
+  /// was found.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -707,6 +713,9 @@ impl Scratch {
     }
   }
 
+  /// Return the first match result that matches the full length of the input
+  /// string, or [`None`] if no match could be found.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -1754,7 +1763,28 @@ pub mod chimera {
     }
   }
 
+  /// # Convenience Methods
+  /// These methods provide quick access to common regex use cases without
+  /// needing to provide a closure.
   impl ChimeraScratch {
+    /// Return the result from the first match callback, or [`None`] if no match
+    /// was found.
+    ///
+    ///```
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "a+".parse()?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let msg = "aardvark";
+    /// let first_a = scratch.first_match(&db, msg.into())?.unwrap().source.as_slice();
+    /// assert_eq!(first_a, b"aa");
+    /// assert_eq!(first_a.as_ptr(), msg.as_bytes().as_ptr());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn first_match<'data>(
       &mut self,
       db: &ChimeraDb,
@@ -1784,6 +1814,24 @@ pub mod chimera {
       }
     }
 
+    /// Return the first match result that matches the full length of the input
+    /// string, or [`None`] if no match could be found.
+    ///
+    ///```
+    /// # fn main() -> Result<(), vectorscan::error::chimera::ChimeraError> {
+    /// use vectorscan::{expression::chimera::*, flags::chimera::*};
+    ///
+    /// let expr: ChimeraExpression = "a+sdf".parse()?;
+    /// let db = expr.compile(ChimeraFlags::default(), ChimeraMode::NOGROUPS)?;
+    /// let mut scratch = db.allocate_scratch()?;
+    ///
+    /// let msg = "asdf";
+    /// let m = scratch.full_match(&db, msg.into())?.unwrap().source.as_slice();
+    /// assert_eq!(m, msg.as_bytes());
+    /// assert_eq!(m.as_ptr(), msg.as_bytes().as_ptr());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn full_match<'data>(
       &mut self,
       db: &ChimeraDb,
