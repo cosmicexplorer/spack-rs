@@ -1928,26 +1928,6 @@ pub mod env {
        * we additionally lock in-process here. */
       let _lock = ENSURE_ENV_CREATE_LOCK.lock().await;
 
-      let req = EnvList {
-        spack: self.spack.clone(),
-      };
-
-      let completed_sentinel_filename: PathBuf = format!("SENTINEL@env@{}", &self.env.0).into();
-      let sentinel_file = self
-        .spack
-        .cache_location()
-        .join(completed_sentinel_filename);
-      dbg!(&sentinel_file);
-      if sentinel_file.is_file() {
-        assert!(Self::env_exists(req.clone(), &self.env).await?);
-        eprintln!(
-          "env {:?} already exists and sentinel file {} does too!",
-          &self.env,
-          sentinel_file.display()
-        );
-        return Ok(self.env);
-      }
-
       /* FIXME: in-process mutex too!! generalize this! */
       let lockfile_name: PathBuf = format!("env@{}.lock", &self.env.0).into();
       let lockfile_path = self.spack.cache_location().join(lockfile_name);
@@ -1963,6 +1943,37 @@ pub mod env {
       })
       .await
       .unwrap()?;
+
+      let req = EnvList {
+        spack: self.spack.clone(),
+      };
+
+      let completed_sentinel_filename: PathBuf = format!("SENTINEL@env@{}", &self.env.0).into();
+      let sentinel_file = self
+        .spack
+        .cache_location()
+        .join(completed_sentinel_filename);
+      dbg!(&sentinel_file);
+      if sentinel_file.is_file() {
+        if Self::env_exists(req.clone(), &self.env).await? {
+          eprintln!(
+            "env {:?} already exists and sentinel file {} does too!",
+            &self.env,
+            sentinel_file.display()
+          );
+          return Ok(self.env);
+        }
+        eprintln!(
+          "env {:?} does not exist, but the sentinel file {:?} does; removing...",
+          &self.env,
+          sentinel_file.display()
+        );
+        let outfile = sentinel_file.clone();
+        task::spawn_blocking(move || std::fs::remove_file(outfile))
+          .await
+          .unwrap()?;
+        assert!(!sentinel_file.is_file());
+      }
 
       let spack = self.spack.clone();
       let env = self.env.clone();
