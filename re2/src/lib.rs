@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Rust interface to the re2 regular-expression library. RE2 supports
@@ -1117,7 +1117,7 @@ impl RE2 {
   ///   &[(0, None), (1, Some("y")), (2, Some("x")), (3, None), (4, Some("z")), (5, None)] );
   /// # Ok(())
   /// # }
-  pub fn named_and_numbered_groups(&self) -> impl Iterator<Item=Option<&str>>+ExactSizeIterator {
+  pub fn named_and_numbered_groups(&self) -> impl ExactSizeIterator<Item=Option<&str>> {
     NamedAndNumberedGroups::new(self.num_captures(), self.make_named_groups())
   }
 
@@ -1255,7 +1255,7 @@ impl cmp::PartialOrd for RE2 {
 
 impl cmp::Ord for RE2 {
   fn cmp(&self, other: &Self) -> cmp::Ordering {
-    let intermediate = self.pattern().cmp(&other.pattern());
+    let intermediate = self.pattern().cmp(other.pattern());
     if intermediate != cmp::Ordering::Equal {
       return intermediate;
     }

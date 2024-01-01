@@ -1,4 +1,4 @@
-/* Copyright 2023 Danny McClanahan */
+/* Copyright 2023-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #![allow(clippy::single_component_path_imports)]
@@ -49,7 +49,7 @@ async fn main() -> eyre::Result<()> {
     .header("src/c-bindings.hpp");
   bindings = bindings.allowlist_item("re2::.*");
   bindings = bindings.allowlist_item("re2_c_bindings::.*");
-  for p in prefixes.iter().cloned() {
+  for p in prefixes.iter() {
     bindings = bindings.clang_arg(format!("-I{}", p.include_subdir().display()));
   }
   bindings.generate()?.write_to_file(&outfile)?;

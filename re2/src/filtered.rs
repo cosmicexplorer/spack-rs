@@ -1,4 +1,4 @@
-/* Copyright 2023 Danny McClanahan */
+/* Copyright 2023-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Routines for extracting fixed string "atoms" from a set of patterns and
@@ -62,7 +62,7 @@ impl AtomSet {
   }
 
   /// Associate each atom with an [`AtomIndex`].
-  pub fn indexed_atoms(&self) -> impl Iterator<Item=(AtomIndex, StringView)>+ExactSizeIterator+'_ {
+  pub fn indexed_atoms(&self) -> impl ExactSizeIterator<Item=(AtomIndex, StringView)>+'_ {
     self
       .as_slice()
       .iter()
@@ -74,7 +74,7 @@ impl AtomSet {
   pub fn index_by<'a>(
     &'a self,
     m: &'a MatchedSetInfo,
-  ) -> impl Iterator<Item=&'a StringWrapper>+ExactSizeIterator+'a {
+  ) -> impl ExactSizeIterator<Item=&'a StringWrapper>+'a {
     let s = self.as_slice();
     m.as_atom_slice()
       .iter()
@@ -416,7 +416,7 @@ impl FilteredRE2 {
   }
 
   /// Get references to the individual [`RE2`] objects.
-  pub fn inner_regexps(&self) -> impl Iterator<Item=InnerRE2>+ExactSizeIterator {
+  pub fn inner_regexps(&self) -> impl ExactSizeIterator<Item=InnerRE2> {
     (0..self.num_regexps()).map(|i| self.get_re2(i))
   }
 
@@ -424,7 +424,7 @@ impl FilteredRE2 {
   pub fn index_by<'o>(
     &'o self,
     m: &'o MatchedSetInfo,
-  ) -> impl Iterator<Item=InnerRE2<'o>>+ExactSizeIterator {
+  ) -> impl ExactSizeIterator<Item=InnerRE2<'o>> {
     let n = self.num_regexps();
     m.as_expression_slice().iter().map(move |i| {
       let i = i.as_index() as usize;
@@ -554,7 +554,7 @@ impl Filter {
   pub fn get_atoms<'a>(
     &'a self,
     atoms: &'a MatchedSetInfo,
-  ) -> impl Iterator<Item=StringView<'a>>+ExactSizeIterator {
+  ) -> impl ExactSizeIterator<Item=StringView<'a>> {
     self.atom_set.index_by(atoms).map(|sw| sw.as_view())
   }
 
@@ -562,7 +562,7 @@ impl Filter {
   pub fn get_matches<'a>(
     &'a self,
     matches: &'a MatchedSetInfo,
-  ) -> impl Iterator<Item=InnerRE2<'a>>+ExactSizeIterator {
+  ) -> impl ExactSizeIterator<Item=InnerRE2<'a>> {
     self.filter.index_by(matches)
   }
 }
