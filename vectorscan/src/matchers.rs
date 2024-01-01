@@ -1,7 +1,129 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Types used in vectorscan match callbacks.
+//!
+//! # Vectorscan Callback API
+//! Vectorscan employs a very different method of generating "matches"; instead
+//! of returning a single value from a synchronous search method call, it
+//! instead executes a C ABI function pointer referred to as [`match_event_handler()`](https://intel.github.io/hyperscan/dev-reference/api_files.html#c.match_event_handler):
+//!
+//! ## `match_event_handler()`
+//!
+//!```c
+//! typedef int (*match_event_handler)(
+//!   unsigned int id, // expression that matched (0 for single expression)
+//!   unsigned long long from, // always 0, if SOM_LEFTMOST is disabled
+//!   unsigned long long to,   // index of match end in input
+//!   unsigned int flags, // unused
+//!   void *context, // context provided by user to hyperscan search methods
+//! );
+//! ```
+//!
+//! This particular API has several advantages over returning a single value:
+//! - **Overlapping matches** are much easier to support, because the matching
+//!   engine doesn't have to reconstruct its entire state across calls to the
+//!   search method (it's a little like a coroutine in this way).
+//!   - In particular, the callback method returning [`MatchResult`] (converted
+//!     into [`c_int`]) can also be considered to function like a [lisp restart](https://journal.infinitenegativeutility.com/structurally-typed-condition-handling),
+//!     a form of coroutine-like control flow in which the user is able to specify which action to
+//!     take in response to some runtime condition.
+//! - **Stream parsing** is able to use the same API for matching, because the
+//!   callback doesn't provide nor require any reference to the string data it
+//!   was provided.
+//! - **FFI wrappers in other languages (like this crate)** are typically
+//!   easier, as they can figure out how to **most efficiently store the matches**
+//!   and reference the string data they provided to vectorscan's search
+//!   functions using their own language. In comparison, the [`re2`](https://docs.rs/re2) crate
+//!   (also wrapped by this crate's author) required [a separate C++ wrapper](https://github.com/cosmicexplorer/spack-rs/blob/1faa9c32982b4705bc5c9addeb5800d489037dd9/re2/sys/src/c-bindings.hpp#L11)
+//!   in order to wrap things like `std::string` or `absl::string_view` with templated or unstable
+//!   binary interfaces.
+//! - **Complex parsing control flow** can be application-defined in the
+//!   callback, instead of requiring vectorscan to provide separate methods for
+//!   each type of search. In particular, one supported feature is to **invoke a
+//!   separate vectorscan search within the body of a match callback** (although
+//!   this has some caveats: see [Minimizing Scratch
+//!   Contention](crate::state#minimizing-scratch-contention)), which can be
+//!   used to implement higher-level features like capturing groups. Also see
+//!   [Synchronous String Scanning] and [Asynchronous String Scanning] for more
+//!   on how the callback is extended to support [`async`](https://doc.rust-lang.org/std/keyword.async.html)
+//!   use cases.
+//!
+//! [Synchronous String Scanning]: crate::state::Scratch#synchronous-string-scanning
+//! [Asynchronous String Scanning]: crate::state::Scratch#asynchronous-string-scanning
+//!
+//! ## Assurances
+//! Two assurances vectorscan provides which are particularly convenient are:
+//! 1. **The match callback will always be invoked synchronously** (although
+//!    the results may not always be in order; see [`UnorderedMatchBehavior::AllowsUnordered`](crate::expression::info::UnorderedMatchBehavior::AllowsUnordered)
+//!    which can be queried through [`Expression::info()`](crate::expression::Expression::info)).
+//!    This means that the callback function may close over mutable state; in Rust terms, it can be
+//!    an [`FnMut`] (which with Rust can be converted to a [`dyn`](https://doc.rust-lang.org/std/keyword.dyn.html)
+//!    trait to erase the concrete type and use it in the monomorphic C ABI callback method).
+//! 2. **The search is complete when `hs_scan()` or other methods return**,
+//!    meaning that any state which is closed over by the callback method is no
+//!    longer mutably bound, so it can be immediately re-used in another scan.
+//!    While stream parsing still requires retaining state across multiple
+//!    method calls, Rust's fantastic lifetime system comes into play here, as
+//!    the compiler is often able to detect precisely when a
+//!    [`StreamMatcher`](crate::matchers::stream::StreamMatcher) is dropped and
+//!    frees up the closed-over mutable state. For doctests demonstrating this
+//!    interaction, please see the higher-level stream interface in
+//!    [`crate::stream`] and the doctests for e.g.
+//!    [`ScratchStreamSink`](crate::stream::ScratchStreamSink).
+//!
+//! ### `"catch-unwind"`
+//! There is an additional assurance that this crate provides when the
+//! `"catch-unwind"` feature is enabled, which is to catch any
+//! [`panic`](macro@panic) from the Rust-level callback method and safely
+//! re-raise it when vectorscan returns control back to the application, which
+//! would otherwise produce undefined behavior (see
+//! [`std::panic::catch_unwind()`]). While catching panics previously [caused
+//! performance issues for hot-loop function calls in the Servo research browser](https://github.com/rust-lang/rust/issues/34727),
+//! this problem was known to be solvable by just generating the LLVM code used
+//! for `try`/`catch` in C++, and indeed [Servo's issue was fixed after doing so](https://github.com/rust-lang/rust/pull/67502).
+//!
+//! This feature is enabled by default to avoid undefined behavior because of
+//! the work that has gone into optimizing this particular use case from the
+//! Rust team, but can be disabled if it's found to cause a slowdown in a
+//! profile (or Rust can be told to immediately abort upon panic: see
+//! [`std::process::abort()`]). However, also note that the [Asynchronous String
+//! Scanning] API is another approach provided to decouple the match callback
+//! method (which is used only to determine whether to stop matching) from the
+//! application's match processing business logic.
+//!
+//! # This Module
+//! The Rust source file generating this documentation contains the
+//! `pub(crate) extern "C" unsafe fn` declarations which match the
+//! [`match_event_handler()`](#match_event_handler) prototype, but these methods
+//! are considered an implementation detail and thus are not exposed by
+//! themselves. Instead, the public Rust exports from this file are the inputs
+//! and outputs to the match callback function used for different scanning
+//! modes:
+//! - [`Mode::BLOCK`](crate::flags::Mode::BLOCK): [`Match`] is produced by
+//!   [`Scratch::scan_sync()`](crate::state::Scratch::scan_sync), with a single
+//!   [`ByteSlice`](crate::sources::ByteSlice) referenced from the input string.
+//! - [`Mode::VECTORED`](crate::flags::Mode::VECTORED): [`VectoredMatch`] is
+//!   produced by
+//!   [`Scratch::scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored),
+//!   with the slightly more complex
+//!   [`VectoredSubset`](crate::sources::vectored::VectoredSubset) used to
+//!   represent slices of a
+//!   [`VectoredByteSlices`](crate::sources::vectored::VectoredByteSlices)
+//!   input.
+//! - Finally, [`Mode::STREAM`](crate::flags::Mode::STREAM) produces
+//!   [`stream::StreamMatch`] for
+//!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream)
+//!   or [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync),
+//!   which can only store a [`Range`](crate::sources::stream::Range) as a match
+//!   may span across multiple separate inputs, which vectorscan does not
+//!   otherwise retain. While it is possible to provide a
+//!   [`stream::StreamMatcher`] directly to
+//!   [`Scratch::scan_sync_stream()`](crate::state::Scratch::scan_sync_stream),
+//!   the higher-level API provided by the [`crate::stream`] module provides a
+//!   more restricted interface making use of the separate [`handles`] crate to
+//!   manage the more-complex interlocking lifetime requirements of stream
+//!   callbacks.
 
 use cfg_if::cfg_if;
 use displaydoc::Display;
