@@ -617,9 +617,9 @@ impl<'code> ScratchStreamSink<'code> {
 
 pub(crate) mod std_impls {
   use super::ScratchStreamSink;
+  use crate::sources::ByteSlice;
   #[cfg(feature = "vectored")]
   use crate::sources::VectoredByteSlices;
-  use crate::sources::ByteSlice;
 
   use std::io;
   #[cfg(feature = "vectored")]
@@ -988,9 +988,9 @@ pub mod channel {
   #[cfg(feature = "tokio-impls")]
   pub(crate) mod tokio_impls {
     use super::ScratchStreamSinkChannel;
+    use crate::sources::ByteSlice;
     #[cfg(feature = "vectored")]
     use crate::sources::VectoredByteSlices;
-    use crate::sources::ByteSlice;
 
     use futures_util::TryFutureExt;
     use tokio::io;

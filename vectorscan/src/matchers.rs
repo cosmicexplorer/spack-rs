@@ -113,9 +113,8 @@
 //!   produced by
 //!   [`Scratch::scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored),
 //!   with the slightly more complex
-//!   [`VectoredSubset`](crate::sources::VectoredSubset) used to
-//!   represent slices of a
-//!   [`VectoredByteSlices`](crate::sources::VectoredByteSlices)
+//!   [`VectoredSubset`](crate::sources::VectoredSubset) used to represent
+//!   slices of a [`VectoredByteSlices`](crate::sources::VectoredByteSlices)
 //!   input.
 //! - Finally, [`Mode::STREAM`](crate::flags::Mode::STREAM) produces
 //!   [`StreamMatch`] for
