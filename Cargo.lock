@@ -1420,7 +1420,7 @@ dependencies = [
 
 [[package]]
 name = "re2"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "displaydoc",
  "indexmap 1.9.3",
@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "re2-sys"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "bindgen",
  "cc",
@@ -1766,7 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "spack-rs"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "async-stream",
  "async-trait",
