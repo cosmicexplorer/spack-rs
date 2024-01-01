@@ -43,12 +43,9 @@ class Vectorscan(CMakePackage):
                 self.define("BUILD_CHIMERA", "TRUE"),
             ])
 
-        if '+shared+static' in self.spec:
-            args.append(self.define("BUILD_STATIC_AND_SHARED", "ON"))
-        elif '+shared' in self.spec:
+        if '+shared' in self.spec:
             args.append(self.define("BUILD_SHARED_LIBS", "ON"))
-        else:
-            assert '+static' in self.spec
+        if '+static' in self.spec:
             args.append(self.define("BUILD_STATIC_LIBS", "ON"))
 
         args.append(self.define("USE_CPU_NATIVE", "ON"))
