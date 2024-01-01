@@ -574,6 +574,45 @@ pub mod std_impls {
     VectoredByteSlices::from_slices(bufs)
   }
 
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, stream::{*, std_impls::*}, matchers::*};
+  ///   use std::{ops::Range, io::Write};
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   let mut matches: Vec<StreamMatch> = Vec::new();
+  ///   let mut match_fn = |m| {
+  ///     matches.push(m);
+  ///     MatchResult::Continue
+  ///   };
+  ///   // Create a scope to mutably borrow `matches` in via `match_fn`:
+  ///   {
+  ///     let matcher = StreamMatcher::new(&mut match_fn);
+  ///     let sink = ScratchStreamSink::new(live, matcher, scratch);
+  ///     let mut sink = StreamWriter::new(sink);
+  ///
+  ///     sink.write_all(b"aardvark").unwrap();
+  ///     // No analogy for tokio's .shutdown(), but we still
+  ///     // need to explicitly mark end-of-data:
+  ///     sink.inner.flush_eod()?;
+  ///   }
+  ///   // After `sink` (and therefore `matcher`) was dropped,
+  ///   // we can access the closed-over data again!
+  ///   let matches: Vec<Range<usize>> = matches
+  ///     .into_iter()
+  ///     .map(|m| m.range.into())
+  ///     .collect();
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub struct StreamWriter<'code> {
     pub inner: ScratchStreamSink<'code>,
     #[cfg(feature = "vectored")]
