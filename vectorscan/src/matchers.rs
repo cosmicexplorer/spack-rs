@@ -618,11 +618,11 @@ pub(crate) mod stream {
     ///
     /// [`Flags::SOM_LEFTMOST`]: crate::flags::Flags::SOM_LEFTMOST
     ///
-    /// Note that [`LiveStream::try_reset()`] will reset the stream automaton to
+    /// Note that [`LiveStream::reset()`] will reset the stream automaton to
     /// its start state and cause match offsets reported to the callback after
     /// the reset to start once again from 0.
     ///
-    /// [`LiveStream::try_reset()`]: crate::stream::LiveStream::try_reset
+    /// [`LiveStream::reset()`]: crate::stream::LiveStream::reset
     ///
     /// See the [`crate::stream`] module for a further discussion of how and
     /// when to effectively use the streaming interface, especially how to work

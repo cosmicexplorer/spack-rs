@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Compile state machines from expressions or deserialize them from bytes.
@@ -110,7 +110,7 @@ impl Database {
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub fn allocate_stream(&self) -> Result<LiveStream, VectorscanRuntimeError> {
-    LiveStream::try_open(self)
+    LiveStream::open(self)
   }
 
   /// Allocate a new memory region and serialize this in-memory state machine
@@ -621,7 +621,7 @@ impl Database {
   ///
   ///   let expr: Expression = r"\w".parse()?;
   ///   let db = expr.compile(Flags::UTF8 | Flags::UCP, Mode::STREAM)?;
-  ///   let _stream = LiveStream::try_open(&db)?;
+  ///   let _stream = LiveStream::open(&db)?;
   ///
   ///   // Get the stream allocator we just registered and view its live allocations:
   ///   let allocs = get_stream_allocator().as_ref().unwrap().current_allocations();

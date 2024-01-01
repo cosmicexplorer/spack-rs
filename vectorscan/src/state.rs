@@ -539,7 +539,7 @@ impl Scratch {
   /// Note that if you do not need to know anything other than the offsets of
   /// the matches, then you could also try using
   /// [`Self::scan_sync_vectored_stream()`], which passes
-  /// [`StreamMatch`](super::StreamMatch) to the callback method (although
+  /// [`StreamMatch`](crate::matchers::StreamMatch) to the callback method (although
   /// a subsequent
   /// [`Scratch::flush_eod_sync()`](crate::state::Scratch::flush_eod_sync)
   /// call is necessary to match against end-of-stream markers; see

@@ -127,8 +127,15 @@ pub struct LiveStream(*mut NativeStream);
 
 unsafe impl Send for LiveStream {}
 
+/// # Stream Operations
+/// After creation, the stream can be written to, but doing so
+/// requires providing an additional match callback, which is the job of structs
+/// like [`StreamSink`]. Instead, this struct provides [`Self::reset()`] and
+/// [`Self::compress()`] to modify or serialize the stream state, neither
+/// of which require invoking a match callback.
 impl LiveStream {
-  pub fn try_open(db: &Database) -> Result<Self, VectorscanRuntimeError> {
+  /// Initialize a new live stream object into a newly allocated memory region.
+  pub fn open(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
     VectorscanRuntimeError::from_native(unsafe {
       hs::hs_open_stream(
@@ -141,10 +148,18 @@ impl LiveStream {
     Ok(unsafe { Self::from_native(ret) })
   }
 
-  pub fn try_reset(&mut self) -> Result<(), VectorscanRuntimeError> {
+  /// Reset this stream's automaton state to the initial state, and restart
+  /// match offsets at 0.
+  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> {
     VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
   }
 
+  /// Write the stream's current state into a buffer according to the `into`
+  /// strategy.
+  ///
+  /// The stream can later be deserialized from this state into a working
+  /// in-memory stream again with methods such as
+  /// [`compress::CompressedStream::expand()`].
   pub fn compress(
     &self,
     into: compress::CompressReserveBehavior,
@@ -166,12 +181,76 @@ impl LiveStream {
 /// provided by the vectorscan library to get the stream's allocation size from
 /// the stream object itself.
 impl LiveStream {
+  /// Wrap the provided allocation `p`.
+  ///
+  /// # Safety
+  /// The pointer `p` must point to an initialized db allocation prepared by
+  /// [`Self::open()`] or [`compress::CompressedStream::expand_into_at()`]!
+  ///
+  /// This method also makes it especially easy to create multiple references to
+  /// the same allocation, which will then cause a double free when
+  /// [`Self::try_drop()`] is called more than once for the same db allocation.
+  /// To avoid that issue, you can wrap the result in a
+  /// [`ManuallyDrop`](std::mem::ManuallyDrop); but
+  /// unlike [`Database::from_native()`], a stream is a mutable object, so
+  /// multiple copies of it will break Rust's ownership rules:
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, stream::*};
+  ///   use std::{mem::ManuallyDrop, ops::Range};
+  ///
+  ///   // Compile a legitimate stream:
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(
+  ///     Flags::SOM_LEFTMOST,
+  ///     Mode::STREAM | Mode::SOM_HORIZON_LARGE
+  ///   )?;
+  ///   let mut scratch = db.allocate_scratch()?;
+  ///   let mut stream = db.allocate_stream()?;
+  ///
+  ///   // Create two new references to that allocation,
+  ///   // wrapped to avoid calling the drop code:
+  ///   let stream_ptr: *mut NativeStream = stream.as_mut_native();
+  ///   let mut stream_ref_1 = ManuallyDrop::new(unsafe { LiveStream::from_native(stream_ptr) });
+  ///   let mut stream_ref_2 = ManuallyDrop::new(unsafe { LiveStream::from_native(stream_ptr) });
+  ///
+  ///   // Both stream references are valid and can be used for matching.
+  ///
+  ///   let mut matches: Vec<Range<usize>> = Vec::new();
+  ///   let mut match_fn = |StreamMatch { range, .. }| {
+  ///     matches.push(range.into());
+  ///     MatchResult::Continue
+  ///   };
+  ///   let mut matcher = StreamMatcher::new(&mut match_fn);
+  ///   scratch
+  ///     .scan_sync_stream(&mut stream_ref_1, &mut matcher, "aardvarka".into())?;
+  ///   scratch
+  ///     .scan_sync_stream(&mut stream_ref_2, &mut matcher, "aardvarka".into())?;
+  ///   // The 8..11 demonstrates that this was actually the same mutable stream!
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10, 8..11, 14..15, 17..18]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub const unsafe fn from_native(p: *mut NativeStream) -> Self { Self(p) }
 
+  /// Get a read-only reference to the stream allocation.
+  ///
+  /// This method is mostly used internally and cast to a pointer to provide to
+  /// the vectorscan native library methods.
   pub fn as_ref_native(&self) -> &NativeStream { unsafe { &*self.0 } }
 
+  /// Get a mutable reference to the stream allocation.
+  ///
+  /// The result of this method can be cast to a pointer and provided to
+  /// [`Self::from_native()`].
   pub fn as_mut_native(&mut self) -> &mut NativeStream { unsafe { &mut *self.0 } }
 
+  /// Generate a new stream in a newly allocated memory region which matches the
+  /// same db.
   pub fn try_clone(&self) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
     VectorscanRuntimeError::from_native(unsafe {
@@ -180,14 +259,31 @@ impl LiveStream {
     Ok(unsafe { Self::from_native(ret) })
   }
 
+  /// Reset the stream state to the same as that of `source`.
+  ///
   /// # Safety
-  /// `self` and `source` must have been opened against the same db!
+  /// `self` and `source` must have been originally opened against the same db
+  /// (meaning the same compiled database, not necessarily the same db
+  /// allocation)!
   pub unsafe fn try_clone_from(&mut self, source: &Self) -> Result<(), VectorscanRuntimeError> {
     VectorscanRuntimeError::from_native(unsafe {
       hs::hs_direct_reset_and_copy_stream(self.as_mut_native(), source.as_ref_native())
     })
   }
 
+  /// Free the underlying stream allocation.
+  ///
+  /// # Safety
+  /// This method must be called at most once over the lifetime of each stream
+  /// allocation. It is called by default on drop, so
+  /// [`ManuallyDrop`](std::mem::ManuallyDrop) is recommended to wrap instances
+  /// that reference external data in order to avoid attempting to free the
+  /// referenced data.
+  ///
+  /// ## Only Frees Memory
+  /// This method performs no processing other than freeing the allocated
+  /// memory, so it can be skipped without leaking resources if the
+  /// underlying [`NativeStream`] allocation is freed by some other means.
   pub unsafe fn try_drop(&mut self) -> Result<(), VectorscanRuntimeError> {
     VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
   }
@@ -258,9 +354,7 @@ impl<'code> StreamSink<'code> {
     scratch.flush_eod_sync(live.make_mut()?, matcher)
   }
 
-  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> {
-    self.live.make_mut()?.try_reset()
-  }
+  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
 }
 
 ///```
@@ -583,9 +677,7 @@ pub mod channel {
       crate::async_utils::UnboundedReceiverStream(self.rx)
     }
 
-    pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> {
-      self.live.make_mut()?.try_reset()
-    }
+    pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
   }
 
   ///```
@@ -1263,7 +1355,7 @@ pub mod compress {
 /* let expr: Expression = "asdf$".parse()?; */
 /* let db = expr.compile(Flags::UTF8, Mode::STREAM)?; */
 
-/* let live = LiveStream::try_open(&db)?; */
+/* let live = LiveStream::open(&db)?; */
 
 /* let scratch = Arc::new(db.allocate_scratch()?; */
 /* let s2 = Arc::clone(&scratch); */
