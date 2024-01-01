@@ -221,52 +221,6 @@ impl<'code> StreamSink<'code> {
     scratch.scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
-  ///```
-  /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
-  ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*, sources::*};
-  ///   use std::ops::Range;
-  ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
-  ///   let scratch = db.allocate_scratch()?;
-  ///   let live = db.allocate_stream()?;
-  ///
-  ///   let input: [ByteSlice; 2] = [
-  ///     "aardvarka".into(),
-  ///     "asdf".into(),
-  ///   ];
-  ///
-  ///   // Create the `matches` vector which is mutably captured in the dyn closure.
-  ///   let mut matches: Vec<StreamMatch> = Vec::new();
-  ///   // Capture `matches` into `match_fn`;
-  ///   // in this case, `match_fn` is an unboxed stack-allocated closure.
-  ///   let mut match_fn = |m| {
-  ///     matches.push(m);
-  ///     MatchResult::Continue
-  ///   };
-  ///
-  ///   {
-  ///     // `matcher` now keeps the reference to `matches` alive
-  ///     // in rustc's local lifetime tracking.
-  ///     let matcher = StreamMatcher::new(&mut match_fn);
-  ///     let sink = StreamSink::new(live, matcher);
-  ///     let mut sink = ScratchStreamSink::new(sink, scratch);
-  ///
-  ///     sink.scan_vectored(input.as_ref().into())?;
-  ///     sink.flush_eod()?;
-  ///   }
-  ///   // `matches` is now unlocked after `matcher` was dropped!
-  ///   let matches: Vec<Range<usize>> = matches
-  ///     .into_iter()
-  ///     .map(|m| m.range.into())
-  ///     .collect();
-  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
-  ///   Ok(())
-  /// }
-  /// # #[cfg(not(feature = "compiler"))]
-  /// # fn main() {}
-  /// ```
   #[cfg(feature = "vectored")]
   #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_vectored<'data>(
@@ -354,6 +308,52 @@ impl<'code> ScratchStreamSink<'code> {
     sink.scan(scratch.make_mut()?, data)
   }
 
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*, sources::*};
+  ///   use std::ops::Range;
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   let input: [ByteSlice; 2] = [
+  ///     "aardvarka".into(),
+  ///     "asdf".into(),
+  ///   ];
+  ///
+  ///   // Create the `matches` vector which is mutably captured in the dyn closure.
+  ///   let mut matches: Vec<StreamMatch> = Vec::new();
+  ///   // Capture `matches` into `match_fn`;
+  ///   // in this case, `match_fn` is an unboxed stack-allocated closure.
+  ///   let mut match_fn = |m| {
+  ///     matches.push(m);
+  ///     MatchResult::Continue
+  ///   };
+  ///
+  ///   {
+  ///     // `matcher` now keeps the reference to `matches` alive
+  ///     // in rustc's local lifetime tracking.
+  ///     let matcher = StreamMatcher::new(&mut match_fn);
+  ///     let sink = StreamSink::new(live, matcher);
+  ///     let mut sink = ScratchStreamSink::new(sink, scratch);
+  ///
+  ///     sink.scan_vectored(input.as_ref().into())?;
+  ///     sink.flush_eod()?;
+  ///   }
+  ///   // `matches` is now "unlocked" by rustc after `matcher` was dropped!
+  ///   let matches: Vec<Range<usize>> = matches
+  ///     .into_iter()
+  ///     .map(|m| m.range.into())
+  ///     .collect();
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   #[cfg(feature = "vectored")]
   #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
   pub fn scan_vectored<'data>(
