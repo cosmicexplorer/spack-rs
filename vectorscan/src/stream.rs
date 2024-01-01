@@ -142,8 +142,7 @@
 //!     // `matcher` now keeps the reference to `matches` alive
 //!     // in rustc's local lifetime tracking via `match_fn`.
 //!     let matcher = StreamMatcher::new(&mut match_fn);
-//!     let sink = StreamSink::new(live, matcher);
-//!     let mut sink = ScratchStreamSink::new(sink, scratch);
+//!     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
 //!
 //!     // After all this setup, now we have our nice fluent API!
 //!     sink.scan("aardvarka".into())?;
@@ -205,11 +204,14 @@ unsafe impl Send for LiveStream {}
 /// # Stream Operations
 /// After creation, the stream can be written to, but doing so
 /// requires providing an additional match callback, which is the job of structs
-/// like [`StreamSink`]. Instead, this struct provides [`Self::reset()`] and
-/// [`Self::compress()`] to modify or serialize the stream state, neither
-/// of which require invoking a match callback.
+/// like [`ScratchStreamSink`]. Instead, this struct provides [`Self::reset()`]
+/// and [`Self::compress()`] to modify or serialize the instantaneous stream
+/// state, neither of which require invoking a match callback.
 impl LiveStream {
   /// Initialize a new live stream object into a newly allocated memory region.
+  ///
+  /// The stream will be set to the initial automaton state, with match offsets
+  /// starting at 0.
   pub fn open(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
     VectorscanRuntimeError::from_native(unsafe {
@@ -326,6 +328,8 @@ impl LiveStream {
 
   /// Generate a new stream in a newly allocated memory region which matches the
   /// same db.
+  ///
+  /// The stream will be set to the initial automaton state.
   pub fn try_clone(&self) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
     VectorscanRuntimeError::from_native(unsafe {
@@ -390,47 +394,6 @@ impl ops::Drop for LiveStream {
   }
 }
 
-pub struct StreamSink<'code> {
-  pub live: Box<dyn Handle<R=LiveStream>>,
-  pub matcher: StreamMatcher<'code>,
-}
-
-impl<'code> StreamSink<'code> {
-  pub fn new(live: impl Handle<R=LiveStream>, matcher: StreamMatcher<'code>) -> Self {
-    Self {
-      live: Box::new(live),
-      matcher,
-    }
-  }
-
-  pub fn scan<'data>(
-    &mut self,
-    scratch: &mut Scratch,
-    data: ByteSlice<'data>,
-  ) -> Result<(), VectorscanRuntimeError> {
-    let Self { live, matcher } = self;
-    scratch.scan_sync_stream(live.make_mut()?, matcher, data)
-  }
-
-  #[cfg(feature = "vectored")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
-  pub fn scan_vectored<'data>(
-    &mut self,
-    scratch: &mut Scratch,
-    data: VectoredByteSlices<'data, 'data>,
-  ) -> Result<(), VectorscanRuntimeError> {
-    let Self { live, matcher } = self;
-    scratch.scan_sync_vectored_stream(live.make_mut()?, matcher, data)
-  }
-
-  pub fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), VectorscanRuntimeError> {
-    let Self { live, matcher } = self;
-    scratch.flush_eod_sync(live.make_mut()?, matcher)
-  }
-
-  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
-}
-
 ///```
 /// #[cfg(feature = "compiler")]
 /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -453,8 +416,7 @@ impl<'code> StreamSink<'code> {
 ///   // `matcher` now keeps the reference to `matches` alive
 ///   // in rustc's local lifetime tracking.
 ///   let matcher = StreamMatcher::new(&mut match_fn);
-///   let sink = StreamSink::new(live, matcher);
-///   let mut sink = ScratchStreamSink::new(sink, scratch);
+///   let mut sink = ScratchStreamSink::new(live, matcher, scratch);
 ///
 ///   sink.scan("aardvark".into())?;
 ///   sink.flush_eod()?;
@@ -480,21 +442,33 @@ impl<'code> StreamSink<'code> {
 /// # fn main() {}
 /// ```
 pub struct ScratchStreamSink<'code> {
-  pub sink: StreamSink<'code>,
+  pub live: Box<dyn Handle<R=LiveStream>>,
+  pub matcher: StreamMatcher<'code>,
   pub scratch: Box<dyn Handle<R=Scratch>>,
 }
 
 impl<'code> ScratchStreamSink<'code> {
-  pub fn new(sink: StreamSink<'code>, scratch: impl Handle<R=Scratch>) -> Self {
+  pub fn new(
+    live: impl Handle<R=LiveStream>,
+    matcher: StreamMatcher<'code>,
+    scratch: impl Handle<R=Scratch>,
+  ) -> Self {
     Self {
-      sink,
+      live: Box::new(live),
+      matcher,
       scratch: Box::new(scratch),
     }
   }
 
   pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), VectorscanRuntimeError> {
-    let Self { sink, scratch } = self;
-    sink.scan(scratch.make_mut()?, data)
+    let Self {
+      live,
+      matcher,
+      scratch,
+    } = self;
+    scratch
+      .make_mut()?
+      .scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
   ///```
@@ -526,8 +500,7 @@ impl<'code> ScratchStreamSink<'code> {
   ///     // `matcher` now keeps the reference to `matches` alive
   ///     // in rustc's local lifetime tracking.
   ///     let matcher = StreamMatcher::new(&mut match_fn);
-  ///     let sink = StreamSink::new(live, matcher);
-  ///     let mut sink = ScratchStreamSink::new(sink, scratch);
+  ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
   ///
   ///     sink.scan_vectored(input.as_ref().into())?;
   ///     sink.flush_eod()?;
@@ -549,14 +522,28 @@ impl<'code> ScratchStreamSink<'code> {
     &mut self,
     data: VectoredByteSlices<'data, 'data>,
   ) -> Result<(), VectorscanRuntimeError> {
-    let Self { sink, scratch } = self;
-    sink.scan_vectored(scratch.make_mut()?, data)
+    let Self {
+      live,
+      matcher,
+      scratch,
+    } = self;
+    scratch
+      .make_mut()?
+      .scan_sync_vectored_stream(live.make_mut()?, matcher, data)
   }
 
   pub fn flush_eod(&mut self) -> Result<(), VectorscanRuntimeError> {
-    let Self { sink, scratch } = self;
-    sink.flush_eod(scratch.make_mut()?)
+    let Self {
+      live,
+      matcher,
+      scratch,
+    } = self;
+    scratch
+      .make_mut()?
+      .flush_eod_sync(live.make_mut()?, matcher)
   }
+
+  pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
 }
 
 pub mod std_impls {
@@ -651,13 +638,42 @@ pub mod channel {
 
   use std::mem;
 
-  pub struct StreamSinkChannel<'code> {
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
+  ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*};
+  ///   use futures_util::StreamExt;
+  ///   use std::ops::Range;
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   let mut match_fn = |_: &_| MatchResult::Continue;
+  ///   let mut sink = ScratchStreamSinkChannel::new(live, &mut match_fn, scratch);
+  ///
+  ///   sink.scan("aardvark".into()).await?;
+  ///   sink.flush_eod().await?;
+  ///
+  ///   let matches: Vec<Range<usize>> = sink.collect_matches()
+  ///     .map(|m| m.range.into())
+  ///     .collect()
+  ///     .await;
+  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
+  ///   Ok(())
+  /// })}
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
+  pub struct ScratchStreamSinkChannel<'code> {
     pub live: Box<dyn Handle<R=LiveStream>+Send>,
     pub hf: Box<dyn FnMut(StreamMatch) -> MatchResult+Send+'code>,
+    pub scratch: Box<dyn Handle<R=Scratch>+Send>,
     pub rx: mpsc::UnboundedReceiver<StreamMatch>,
   }
 
-  impl<'code> StreamSinkChannel<'code> {
+  impl<'code> ScratchStreamSinkChannel<'code> {
     fn translate_async_sender(
       hf: &'code mut (dyn FnMut(&StreamMatch) -> MatchResult+Send+'code),
       tx: mpsc::UnboundedSender<StreamMatch>,
@@ -672,25 +688,25 @@ pub mod channel {
     pub fn new(
       live: impl Handle<R=LiveStream>+Send,
       hf: &'code mut (dyn FnMut(&StreamMatch) -> MatchResult+Send+'code),
+      scratch: impl Handle<R=Scratch>+Send,
     ) -> Self {
       let (tx, rx) = mpsc::unbounded_channel();
       let hf = Self::translate_async_sender(hf, tx);
       Self {
         live: Box::new(live),
         hf,
+        scratch: Box::new(scratch),
         rx,
       }
     }
 
-    pub async fn scan<'data>(
-      &mut self,
-      scratch: &mut Scratch,
-      data: ByteSlice<'data>,
-    ) -> Result<(), ScanError> {
+    pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
       /* Make the mutable resources static. */
-      let Self { live, hf, .. } = self;
+      let Self {
+        live, hf, scratch, ..
+      } = self;
       let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
-      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
+      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch.make_mut()?) };
       let data: ByteSlice<'static> = unsafe { mem::transmute(data) };
 
       /* Generate a vtable pointing to the heap-allocated handler function hf. */
@@ -707,13 +723,14 @@ pub mod channel {
     #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     pub async fn scan_vectored<'data>(
       &mut self,
-      scratch: &mut Scratch,
       data: VectoredByteSlices<'data, 'data>,
     ) -> Result<(), ScanError> {
       /* Make the mutable resources static. */
-      let Self { live, hf, .. } = self;
+      let Self {
+        live, hf, scratch, ..
+      } = self;
       let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
-      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
+      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch.make_mut()?) };
       let data: VectoredByteSlices<'static, 'static> = unsafe { mem::transmute(data) };
 
       /* Generate a vtable pointing to the heap-allocated handler function hf. */
@@ -728,11 +745,13 @@ pub mod channel {
       Ok(())
     }
 
-    pub async fn flush_eod(&mut self, scratch: &mut Scratch) -> Result<(), ScanError> {
+    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
       /* Make the mutable resources static. */
-      let Self { live, hf, .. } = self;
+      let Self {
+        live, hf, scratch, ..
+      } = self;
       let live: &'static mut LiveStream = unsafe { mem::transmute(live.make_mut()?) };
-      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch) };
+      let scratch: &'static mut Scratch = unsafe { mem::transmute(scratch.make_mut()?) };
 
       /* Generate a vtable pointing to the heap-allocated handler function hf. */
       let hf: &mut (dyn FnMut(StreamMatch) -> MatchResult+Send+'code) = hf;
@@ -752,69 +771,6 @@ pub mod channel {
     }
 
     pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
-  }
-
-  ///```
-  /// #[cfg(feature = "compiler")]
-  /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
-  ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*};
-  ///   use futures_util::StreamExt;
-  ///   use std::ops::Range;
-  ///
-  ///   let expr: Expression = "a+".parse()?;
-  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
-  ///   let scratch = db.allocate_scratch()?;
-  ///   let live = db.allocate_stream()?;
-  ///
-  ///   let mut match_fn = |_: &_| MatchResult::Continue;
-  ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
-  ///   let mut sink = ScratchStreamSinkChannel::new(sink, scratch);
-  ///
-  ///   sink.scan("aardvark".into()).await?;
-  ///   sink.flush_eod().await?;
-  ///
-  ///   let matches: Vec<Range<usize>> = sink.sink.collect_matches()
-  ///     .map(|m| m.range.into())
-  ///     .collect()
-  ///     .await;
-  ///   assert_eq!(&matches, &[0..1, 0..2, 5..6]);
-  ///   Ok(())
-  /// })}
-  /// # #[cfg(not(feature = "compiler"))]
-  /// # fn main() {}
-  /// ```
-  pub struct ScratchStreamSinkChannel<'code> {
-    pub sink: StreamSinkChannel<'code>,
-    pub scratch: Box<dyn Handle<R=Scratch>+Send>,
-  }
-
-  impl<'code> ScratchStreamSinkChannel<'code> {
-    pub fn new(sink: StreamSinkChannel<'code>, scratch: impl Handle<R=Scratch>+Send) -> Self {
-      Self {
-        sink,
-        scratch: Box::new(scratch),
-      }
-    }
-
-    pub async fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), ScanError> {
-      let Self { sink, scratch, .. } = self;
-      sink.scan(scratch.make_mut()?, data).await
-    }
-
-    #[cfg(feature = "vectored")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
-    pub async fn scan_vectored<'data>(
-      &mut self,
-      data: VectoredByteSlices<'data, 'data>,
-    ) -> Result<(), ScanError> {
-      let Self { sink, scratch, .. } = self;
-      sink.scan_vectored(scratch.make_mut()?, data).await
-    }
-
-    pub async fn flush_eod(&mut self) -> Result<(), ScanError> {
-      let Self { sink, scratch, .. } = self;
-      sink.flush_eod(scratch.make_mut()?).await
-    }
   }
 
   #[cfg(feature = "tokio-impls")]
@@ -851,14 +807,13 @@ pub mod channel {
     ///   let live = db.allocate_stream()?;
     ///
     ///   let mut match_fn = |_: &_| MatchResult::Continue;
-    ///   let sink = StreamSinkChannel::new(live, &mut match_fn);
-    ///   let sink = ScratchStreamSinkChannel::new(sink, scratch);
+    ///   let sink = ScratchStreamSinkChannel::new(live, &mut match_fn, scratch);
     ///   let mut sink = StreamWriter::new(sink);
     ///
     ///   sink.write_all(b"aardvark").await.unwrap();
     ///   sink.shutdown().await.unwrap();
     ///
-    ///   let matches: Vec<Range<usize>> = sink.inner.sink.collect_matches()
+    ///   let matches: Vec<Range<usize>> = sink.inner.collect_matches()
     ///     .map(|m| m.range.into())
     ///     .collect()
     ///     .await;
