@@ -90,10 +90,8 @@ pub enum VectorscanRuntimeError {
   /// Note: Not all concurrent uses of scratch regions may be detected. This
   /// error is intended as a best-effort debugging tool, not a guarantee.
   ///
-  /// Note: safe Rust code should never see this error.
-  /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way to
-  /// avoid this while preserving the ergonomics of a [`Clone`] and [`Send`]
-  /// reference type.
+  /// Note: safe Rust code should never see this error. See [`crate::state`] for
+  /// ways to manage scratch spaces.
   ScratchInUse = hs::HS_SCRATCH_IN_USE,
   /// Unsupported CPU architecture.
   ///
@@ -459,10 +457,8 @@ pub mod chimera {
     /// Note: Not all concurrent uses of scratch regions may be detected. This
     /// error is intended as a best-effort debugging tool, not a guarantee.
     ///
-    /// Note: safe Rust code should never see this error.
-    /// [`Arc::make_mut()`](std::sync::Arc::make_mut) is often an effective way
-    /// to avoid this while preserving the ergonomics of a [`Clone`] and
-    /// [`Send`] reference type.
+    /// Note: safe Rust code should never see this error. See [`crate::state`]
+    /// for ways to manage scratch spaces.
     ScratchInUse = hs::CH_SCRATCH_IN_USE,
     /// Unexpected internal error from Vectorscan.
     ///

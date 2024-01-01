@@ -95,6 +95,81 @@
 //! [disables several search optimizations]: https://intel.github.io/hyperscan/dev-reference/performance.html#block-based-matching
 //! [`Mode::BLOCK`]: crate::flags::Mode::BLOCK
 //! [`Match`]: crate::matchers::Match
+//!
+//! # This Module
+//! While creating a [`LiveStream`] is really the only part truly required to
+//! perform stream searching with [`Scratch::scan_sync_stream()`], most of this
+//! module is instead taken up by wrapper structs which combine the
+//! [`LiveStream`] object itself with [`StreamMatcher`] and [`Scratch`]
+//! instances, making use of [`handles`] to select different lazy vs eager
+//! cloning techniques. This decoupling allows [`ScratchStreamSink::scan()`] to
+//! provide the nice and easy API we're used to from other regex engines:
+//!
+//!```
+//! #[cfg(feature = "compiler")]
+//! fn main() -> Result<(), vectorscan::error::VectorscanError> {
+//!   use vectorscan::{expression::*, flags::*, stream::*, state::*, matchers::*};
+//!   use std::ops::Range;
+//!
+//!   let expr: Expression = "a+".parse()?;
+//!   let block_db = expr.compile(Flags::SOM_LEFTMOST, Mode::BLOCK)?;
+//!   let stream_db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+//!   let mut scratch = Scratch::blank();
+//!   scratch.setup_for_db(&block_db)?;
+//!   scratch.setup_for_db(&stream_db)?;
+//!   let live = stream_db.allocate_stream()?;
+//!
+//!   // With the non-streaming API, we only need to provide the scratch space and db:
+//!   let mut matches: Vec<&str> = Vec::new();
+//!   scratch
+//!     .scan_sync(&block_db, "aardvarka".into(), |m| {
+//!       matches.push(unsafe { m.source.as_str() });
+//!       MatchResult::Continue
+//!     })?;
+//!   assert_eq!(&matches, &["a", "aa", "a", "a"]);
+//!
+//!   // With the streaming API, we need a little more setup:
+//!   // Create the `matches` vector which is mutably captured in the dyn closure.
+//!   let mut matches: Vec<StreamMatch> = Vec::new();
+//!   // Capture `matches` into `match_fn`;
+//!   // in this case, `match_fn` is an unboxed stack-allocated closure.
+//!   let mut match_fn = |m| {
+//!     matches.push(m);
+//!     MatchResult::Continue
+//!   };
+//!   // Create a scope to mutably borrow `match_fn` in:
+//!   {
+//!     // `matcher` now keeps the reference to `matches` alive
+//!     // in rustc's local lifetime tracking via `match_fn`.
+//!     let matcher = StreamMatcher::new(&mut match_fn);
+//!     let sink = StreamSink::new(live, matcher);
+//!     let mut sink = ScratchStreamSink::new(sink, scratch);
+//!
+//!     // After all this setup, now we have our nice fluent API!
+//!     sink.scan("aardvarka".into())?;
+//!     sink.scan("a".into())?;
+//!     // Streams must explicitly mark the end of data.
+//!     sink.flush_eod()?;
+//!   }
+//!   // This will also drop `matcher`, which means `match_fn`
+//!   // holds the only reference to `matches`.
+//!   // We could also have used `mem::drop()` explicitly.
+//!
+//!   // Since `match_fn` is otherwise unused outside of `matcher`,
+//!   // rustc can statically determine that no other mutable reference
+//!   // to `matches` exists, so it "unlocks" the value
+//!   // and lets us consume it with `.into_iter()`.
+//!   let matches: Vec<Range<usize>> = matches
+//!     .into_iter()
+//!     .map(|m| m.range.into())
+//!     .collect();
+//!   // The `8..10` match crossed our two non-contiguous inputs!
+//!   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 8..10]);
+//!   Ok(())
+//! }
+//! # #[cfg(not(feature = "compiler"))]
+//! # fn main() {}
+//! ```
 
 #[cfg(feature = "vectored")]
 use crate::sources::vectored::VectoredByteSlices;
@@ -315,7 +390,6 @@ impl ops::Drop for LiveStream {
   }
 }
 
-/* TODO: update ScratchInUse flag docs to point to state/handle module docs! */
 pub struct StreamSink<'code> {
   pub live: Box<dyn Handle<R=LiveStream>>,
   pub matcher: StreamMatcher<'code>,
