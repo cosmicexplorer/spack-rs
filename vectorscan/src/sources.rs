@@ -237,6 +237,24 @@ pub mod vectored {
     /// used in `const` values and `static` initializers.
     pub const fn from_slices(data: &'slice [ByteSlice<'string>]) -> Self { Self(data) }
 
+    #[cfg(feature = "vectored")]
+    pub(crate) fn from_io_slices(
+      cache: &'slice mut Vec<mem::MaybeUninit<ByteSlice<'static>>>,
+      bufs: &'string [std::io::IoSlice<'string>],
+    ) -> Self {
+      cache.clear();
+      cache.reserve(bufs.len());
+      unsafe {
+        cache.set_len(bufs.len());
+      }
+      for (out_slice, in_slice) in cache.iter_mut().zip(bufs.iter()) {
+        let in_slice: &'static std::io::IoSlice<'static> = unsafe { mem::transmute(in_slice) };
+        out_slice.write(ByteSlice::from_slice(&in_slice));
+      }
+      let bufs: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(&cache[..]) };
+      Self::from_slices(bufs)
+    }
+
     pub fn length_sum(&self) -> usize { self.0.iter().map(|s| s.as_slice().len()).sum() }
 
     pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {

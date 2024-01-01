@@ -556,24 +556,6 @@ pub mod std_impls {
   #[cfg(feature = "vectored")]
   use std::mem;
 
-  #[cfg(feature = "vectored")]
-  pub(crate) fn copy_vectored_slices<'string, 'slice>(
-    cache: &'slice mut Vec<mem::MaybeUninit<ByteSlice<'static>>>,
-    bufs: &'string [io::IoSlice<'string>],
-  ) -> VectoredByteSlices<'string, 'slice> {
-    cache.clear();
-    cache.reserve(bufs.len());
-    unsafe {
-      cache.set_len(bufs.len());
-    }
-    for (out_slice, in_slice) in cache.iter_mut().zip(bufs.iter()) {
-      let in_slice: &'static io::IoSlice<'static> = unsafe { mem::transmute(in_slice) };
-      out_slice.write(ByteSlice::from_slice(&in_slice));
-    }
-    let bufs: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(&cache[..]) };
-    VectoredByteSlices::from_slices(bufs)
-  }
-
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -644,7 +626,7 @@ pub mod std_impls {
     #[cfg(feature = "vectored")]
     #[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-      let bufs = copy_vectored_slices(&mut self.vectored_buf_cache, bufs);
+      let bufs = VectoredByteSlices::from_io_slices(&mut self.vectored_buf_cache, bufs);
       let len = bufs.length_sum();
       self
         .inner
@@ -815,9 +797,9 @@ pub mod channel {
   #[cfg(feature = "tokio-impls")]
   #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
   pub mod tokio_impls {
-    #[cfg(feature = "vectored")]
-    use super::super::std_impls::copy_vectored_slices;
     use super::ScratchStreamSinkChannel;
+    #[cfg(feature = "vectored")]
+    use crate::sources::vectored::VectoredByteSlices;
     use crate::sources::ByteSlice;
 
     use futures_util::TryFutureExt;
@@ -986,7 +968,7 @@ pub mod channel {
           let mut fut: Pin<Box<dyn Future<Output=io::Result<usize>>+'code>> = {
             let s: &'code mut Self = unsafe { mem::transmute(self.as_mut().get_mut()) };
             let bufs: &'code [IoSlice<'code>] = unsafe { mem::transmute(bufs) };
-            let bufs = copy_vectored_slices(&mut s.vectored_buf_cache, bufs);
+            let bufs = VectoredByteSlices::from_io_slices(&mut s.vectored_buf_cache, bufs);
             let len = bufs.length_sum();
             Box::pin(
               s.inner
