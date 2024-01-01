@@ -769,7 +769,6 @@ impl ops::Drop for Database {
 }
 
 unsafe impl Send for Database {}
-unsafe impl Sync for Database {}
 
 /// Wrappers over allocations from various sources.
 ///
@@ -795,7 +794,6 @@ pub mod alloc {
   }
 
   unsafe impl Send for MiscAllocation {}
-  unsafe impl Sync for MiscAllocation {}
 
   impl MiscAllocation {
     pub(crate) const fn as_ptr(&self) -> *mut u8 { self.data }
@@ -893,7 +891,6 @@ pub mod alloc {
     }
 
     unsafe impl Send for ChimeraMiscAllocation {}
-    unsafe impl Sync for ChimeraMiscAllocation {}
 
     impl ChimeraMiscAllocation {
       pub(crate) const fn as_ptr(&self) -> *mut u8 { self.data }

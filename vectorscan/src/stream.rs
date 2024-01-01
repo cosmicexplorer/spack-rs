@@ -111,22 +111,23 @@ use handles::{Handle, Resource};
 
 use std::{ops, ptr};
 
+/// Pointer type for stream allocations used in [`LiveStream#Managing
+/// Allocations`](LiveStream#managing-allocations).
 pub type NativeStream = hs::hs_stream;
 
+/// Stateful stream object initialized against some [`Database`].
+///
+/// While this type can be provided directly to methods such as
+/// [`Scratch::scan_sync_stream()`], the other structs in this module wrap it in
+/// a type-erased [`Handle`] as a way to swap out whether lazy or eager cloning
+/// strategies are used.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct LiveStream(*mut NativeStream);
 
 unsafe impl Send for LiveStream {}
-unsafe impl Sync for LiveStream {}
 
 impl LiveStream {
-  pub const unsafe fn from_native(p: *mut NativeStream) -> Self { Self(p) }
-
-  pub fn as_ref_native(&self) -> &NativeStream { unsafe { &*self.0 } }
-
-  pub fn as_mut_native(&mut self) -> &mut NativeStream { unsafe { &mut *self.0 } }
-
   pub fn try_open(db: &Database) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
     VectorscanRuntimeError::from_native(unsafe {
@@ -139,6 +140,37 @@ impl LiveStream {
     })?;
     Ok(unsafe { Self::from_native(ret) })
   }
+
+  pub fn try_reset(&mut self) -> Result<(), VectorscanRuntimeError> {
+    VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
+  }
+
+  pub fn compress(
+    &self,
+    into: compress::CompressReserveBehavior,
+  ) -> Result<compress::CompressedStream, CompressionError> {
+    compress::CompressedStream::compress(into, self)
+  }
+}
+
+/// # Managing Allocations
+/// These methods provide access to the underlying memory allocation containing
+/// the data for the in-memory stream. They can be used along with
+/// [`compress::CompressedStream::expand_into_at()`] to control the memory
+/// location used for the stream, or to preserve stream allocations across
+/// weird lifetime constraints.
+///
+/// Note that [`Database::stream_size()`] can be used to determine the size of
+/// the memory allocation pointed to by [`Self::as_ref_native()`] and
+/// [`Self::as_mut_native()`], but (**FIXME?**) there is currently no method
+/// provided by the vectorscan library to get the stream's allocation size from
+/// the stream object itself.
+impl LiveStream {
+  pub const unsafe fn from_native(p: *mut NativeStream) -> Self { Self(p) }
+
+  pub fn as_ref_native(&self) -> &NativeStream { unsafe { &*self.0 } }
+
+  pub fn as_mut_native(&mut self) -> &mut NativeStream { unsafe { &mut *self.0 } }
 
   pub fn try_clone(&self) -> Result<Self, VectorscanRuntimeError> {
     let mut ret = ptr::null_mut();
@@ -158,17 +190,6 @@ impl LiveStream {
 
   pub unsafe fn try_drop(&mut self) -> Result<(), VectorscanRuntimeError> {
     VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_free_stream(self.as_mut_native()) })
-  }
-
-  pub fn try_reset(&mut self) -> Result<(), VectorscanRuntimeError> {
-    VectorscanRuntimeError::from_native(unsafe { hs::hs_direct_reset_stream(self.as_mut_native()) })
-  }
-
-  pub fn compress(
-    &self,
-    into: compress::CompressReserveBehavior,
-  ) -> Result<compress::CompressedStream, CompressionError> {
-    compress::CompressedStream::compress(into, self)
   }
 }
 

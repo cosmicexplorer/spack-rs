@@ -342,7 +342,6 @@ pub type NativeScratch = hs::hs_scratch;
 pub struct Scratch(Option<NonNull<NativeScratch>>);
 
 unsafe impl Send for Scratch {}
-unsafe impl Sync for Scratch {}
 
 /// # Setup Methods
 /// These methods create a new scratch space or initialize it against a
@@ -1631,7 +1630,6 @@ pub mod chimera {
   pub struct ChimeraScratch(Option<NonNull<NativeChimeraScratch>>);
 
   unsafe impl Send for ChimeraScratch {}
-  unsafe impl Sync for ChimeraScratch {}
 
   /// # Setup Methods
   /// These methods create a new scratch space or initialize it against a
