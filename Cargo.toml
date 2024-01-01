@@ -41,7 +41,7 @@ handles                 = { path = "handles", version = "0.0.1" }
 vectorscan              = { path = "vectorscan", package = "vectorscan-async" }
 vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.1" }
 re2                     = { path = "re2" }
-re2-sys                 = { path = "re2/sys", version = "0.0.5" }
+re2-sys                 = { path = "re2/sys", version = "0.0.6" }
 spack                   = { path = ".", version = "0.0.6", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.1" }
 
