@@ -171,7 +171,7 @@
 //! ```
 
 #[cfg(feature = "vectored")]
-use crate::sources::vectored::VectoredByteSlices;
+use crate::sources::VectoredByteSlices;
 use crate::{
   database::Database,
   error::{CompressionError, VectorscanRuntimeError},
@@ -618,7 +618,7 @@ impl<'code> ScratchStreamSink<'code> {
 pub(crate) mod std_impls {
   use super::ScratchStreamSink;
   #[cfg(feature = "vectored")]
-  use crate::sources::vectored::VectoredByteSlices;
+  use crate::sources::VectoredByteSlices;
   use crate::sources::ByteSlice;
 
   use std::io;
@@ -675,6 +675,7 @@ pub(crate) mod std_impls {
   /// # fn main() {}
   /// ```
   pub struct StreamWriter<'code> {
+    #[allow(missing_docs)]
     pub inner: ScratchStreamSink<'code>,
     #[cfg(feature = "vectored")]
     vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
@@ -739,7 +740,7 @@ pub use std_impls::StreamWriter;
 pub mod channel {
   use super::LiveStream;
   #[cfg(feature = "vectored")]
-  use crate::sources::vectored::VectoredByteSlices;
+  use crate::sources::VectoredByteSlices;
   use crate::{
     error::{ScanError, VectorscanRuntimeError},
     matchers::{
@@ -988,7 +989,7 @@ pub mod channel {
   pub(crate) mod tokio_impls {
     use super::ScratchStreamSinkChannel;
     #[cfg(feature = "vectored")]
-    use crate::sources::vectored::VectoredByteSlices;
+    use crate::sources::VectoredByteSlices;
     use crate::sources::ByteSlice;
 
     use futures_util::TryFutureExt;
@@ -1049,6 +1050,7 @@ pub mod channel {
     /// # fn main() {}
     /// ```
     pub struct AsyncStreamWriter<'code> {
+      #[allow(missing_docs)]
       pub inner: ScratchStreamSinkChannel<'code>,
       #[cfg(feature = "vectored")]
       vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,

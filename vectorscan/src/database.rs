@@ -107,6 +107,39 @@ impl Database {
     Ok(scratch)
   }
 
+  /// Call [`LiveStream::open()`] on `self`.
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, matchers::*, stream::*};
+  ///   use std::ops::Range;
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   let data = "aardvark";
+  ///   let mut matches: Vec<&str> = Vec::new();
+  ///   let mut match_fn = |StreamMatch { range, .. }| {
+  ///     let range: Range<usize> = range.into();
+  ///     matches.push(&data[range]);
+  ///     MatchResult::Continue
+  ///   };
+  ///   {
+  ///     let matcher = StreamMatcher::new(&mut match_fn);
+  ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
+  ///
+  ///     sink.scan(data.into())?;
+  ///     sink.flush_eod()?;
+  ///   }
+  ///   assert_eq!(&matches, &["a", "aa", "a"]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
   pub fn allocate_stream(&self) -> Result<LiveStream, VectorscanRuntimeError> {

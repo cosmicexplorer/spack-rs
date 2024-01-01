@@ -1,7 +1,7 @@
 /* Copyright 2022-2023 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-//! Wrapper for the vectorscan C++ regex library.
+//! Wrapper for the vectorscan C regex library.
 //!
 //! *TODO: describe feature flags!*
 //!
@@ -9,8 +9,8 @@
 //! those!**
 
 /* Warn for missing docs in general, and hard require crate-level docs. */
-// #![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
+#![warn(missing_docs)]
+#![deny(rustdoc::missing_crate_level_docs)]
 /* Make all doctests fail if they produce any warnings. */
 #![doc(test(attr(deny(warnings))))]
 /* Generate docs.rs info for feature switches. */

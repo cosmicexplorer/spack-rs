@@ -186,8 +186,7 @@ impl<'a> ByteSlice<'a> {
 }
 
 #[cfg(feature = "vectored")]
-#[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
-pub mod vectored {
+pub(crate) mod vectored {
   use super::{ByteSlice, Range};
 
   use std::{
@@ -220,7 +219,7 @@ pub mod vectored {
   /// references to [arrays](prim@array) and [slices](prim@slice):
   ///
   ///```
-  /// use vectorscan::sources::vectored::VectoredByteSlices;
+  /// use vectorscan::sources::VectoredByteSlices;
   ///
   /// let b1 = b"asdf";
   /// let b2 = b"bbbb";
@@ -255,6 +254,7 @@ pub mod vectored {
       Self::from_slices(bufs)
     }
 
+    /// Return the sum of all lengths of all slices.
     pub fn length_sum(&self) -> usize { self.0.iter().map(|s| s.as_slice().len()).sum() }
 
     pub(crate) fn pointers_and_lengths(&self) -> (Vec<*const c_char>, Vec<c_uint>) {
@@ -373,7 +373,7 @@ pub mod vectored {
     /// range:
     ///
     ///```
-    /// use vectorscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";
@@ -404,7 +404,7 @@ pub mod vectored {
     /// intended to aid in debugging.
     ///
     ///```
-    /// use vectorscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";
@@ -431,6 +431,8 @@ pub mod vectored {
   /// any additional dynamic allocations.
   #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct VectoredSubset<'string, 'slice> {
+    /// The offsets for the entire match, without reference to the data
+    /// slices.
     pub range: Range,
     start: Option<ByteSlice<'string>>,
     directly_referenced: &'slice [ByteSlice<'string>],
@@ -450,7 +452,7 @@ pub mod vectored {
     /// Iterate over the referenced data.
     ///
     ///```
-    /// use vectorscan::sources::vectored::VectoredByteSlices;
+    /// use vectorscan::sources::VectoredByteSlices;
     ///
     /// let b1 = "asdf";
     /// let b2 = "ok";
@@ -548,7 +550,12 @@ pub mod vectored {
     }
   }
 }
+#[cfg(feature = "vectored")]
+#[cfg_attr(docsrs, doc(cfg(feature = "vectored")))]
+pub use vectored::{VectoredByteSlices, VectoredSubset};
 
+/// An [`ops::Range`] that is also [`Copy`].
+#[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Range {
   pub from: usize,
@@ -560,6 +567,7 @@ static_assertions::assert_eq_size!(usize, c_ulonglong);
 static_assertions::assert_eq_size!((c_ulonglong, c_ulonglong), ops::Range<usize>);
 
 impl Range {
+  #[allow(missing_docs)]
   pub const fn from_range(x: ops::Range<usize>) -> Self {
     let ops::Range { start, end } = x;
     Self {
@@ -568,16 +576,19 @@ impl Range {
     }
   }
 
+  #[allow(missing_docs)]
   pub const fn into_range(self) -> ops::Range<usize> {
     let Self { from, to } = self;
     from..to
   }
 
+  /// Calculate the distance between the ends of the range.
   pub const fn len(&self) -> usize {
     assert!(self.to >= self.from);
     self.to - self.from
   }
 
+  /// Whether [`Self::len()`] is 0.
   pub const fn is_empty(&self) -> bool { self.len() == 0 }
 }
 

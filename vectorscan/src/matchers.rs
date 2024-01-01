@@ -113,9 +113,9 @@
 //!   produced by
 //!   [`Scratch::scan_sync_vectored()`](crate::state::Scratch::scan_sync_vectored),
 //!   with the slightly more complex
-//!   [`VectoredSubset`](crate::sources::vectored::VectoredSubset) used to
+//!   [`VectoredSubset`](crate::sources::VectoredSubset) used to
 //!   represent slices of a
-//!   [`VectoredByteSlices`](crate::sources::vectored::VectoredByteSlices)
+//!   [`VectoredByteSlices`](crate::sources::VectoredByteSlices)
 //!   input.
 //! - Finally, [`Mode::STREAM`](crate::flags::Mode::STREAM) produces
 //!   [`StreamMatch`] for
@@ -397,7 +397,7 @@ pub use contiguous_slice::Match;
 #[cfg(feature = "vectored")]
 pub(crate) mod vectored_slice {
   use super::*;
-  use crate::sources::vectored::{VectoredByteSlices, VectoredSubset};
+  use crate::sources::{VectoredByteSlices, VectoredSubset};
 
   /// Match object returned when searching vectored string data.
   ///
