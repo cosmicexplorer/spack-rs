@@ -546,7 +546,7 @@ impl<'code> ScratchStreamSink<'code> {
   pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
 }
 
-pub mod std_impls {
+pub(crate) mod std_impls {
   use super::ScratchStreamSink;
   #[cfg(feature = "vectored")]
   use crate::sources::vectored::VectoredByteSlices;
@@ -559,7 +559,7 @@ pub mod std_impls {
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
-  ///   use vectorscan::{expression::*, flags::*, stream::{*, std_impls::*}, matchers::*};
+  ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
   ///   use std::{ops::Range, io::Write};
   ///
   ///   let expr: Expression = "a+".parse()?;
@@ -636,6 +636,7 @@ pub mod std_impls {
     }
   }
 }
+pub use std_impls::StreamWriter;
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
@@ -795,8 +796,7 @@ pub mod channel {
   }
 
   #[cfg(feature = "tokio-impls")]
-  #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
-  pub mod tokio_impls {
+  pub(crate) mod tokio_impls {
     use super::ScratchStreamSinkChannel;
     #[cfg(feature = "vectored")]
     use crate::sources::vectored::VectoredByteSlices;
@@ -817,7 +817,7 @@ pub mod channel {
     ///```
     /// #[cfg(feature = "compiler")]
     /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
-    ///   use vectorscan::{expression::*, flags::*, stream::channel::{*, tokio_impls::*}, matchers::*};
+    ///   use vectorscan::{expression::*, flags::*, stream::channel::*, matchers::*};
     ///   use futures_util::StreamExt;
     ///   use tokio::io::AsyncWriteExt;
     ///   use std::ops::Range;
@@ -829,7 +829,7 @@ pub mod channel {
     ///
     ///   let mut match_fn = |_: &_| MatchResult::Continue;
     ///   let sink = ScratchStreamSinkChannel::new(live, &mut match_fn, scratch);
-    ///   let mut sink = StreamWriter::new(sink);
+    ///   let mut sink = AsyncStreamWriter::new(sink);
     ///
     ///   sink.write_all(b"aardvark").await.unwrap();
     ///   sink.shutdown().await.unwrap();
@@ -844,7 +844,7 @@ pub mod channel {
     /// # #[cfg(not(feature = "compiler"))]
     /// # fn main() {}
     /// ```
-    pub struct StreamWriter<'code> {
+    pub struct AsyncStreamWriter<'code> {
       pub inner: ScratchStreamSinkChannel<'code>,
       #[cfg(feature = "vectored")]
       vectored_buf_cache: Vec<mem::MaybeUninit<ByteSlice<'static>>>,
@@ -852,7 +852,7 @@ pub mod channel {
       shutdown_future: Option<Pin<Box<dyn Future<Output=io::Result<()>>+'code>>>,
     }
 
-    impl<'code> StreamWriter<'code> {
+    impl<'code> AsyncStreamWriter<'code> {
       pub fn new(inner: ScratchStreamSinkChannel<'code>) -> Self {
         Self {
           inner,
@@ -864,9 +864,9 @@ pub mod channel {
       }
     }
 
-    unsafe impl<'code> Send for StreamWriter<'code> {}
+    unsafe impl<'code> Send for AsyncStreamWriter<'code> {}
 
-    impl<'code> io::AsyncWrite for StreamWriter<'code> {
+    impl<'code> io::AsyncWrite for AsyncStreamWriter<'code> {
       fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -989,6 +989,9 @@ pub mod channel {
       }
     }
   }
+  #[cfg(feature = "tokio-impls")]
+  #[cfg_attr(docsrs, doc(cfg(feature = "tokio-impls")))]
+  pub use tokio_impls::AsyncStreamWriter;
 }
 
 pub mod compress {
