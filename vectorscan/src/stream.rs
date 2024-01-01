@@ -447,12 +447,17 @@ impl ops::Drop for LiveStream {
 /// # fn main() {}
 /// ```
 pub struct ScratchStreamSink<'code> {
+  /// Cloneable handle to a stateful stream.
   pub live: Box<dyn Handle<R=LiveStream>>,
+  /// Type-erased wrapper over the user-provided match callback.
   pub matcher: StreamMatcher<'code>,
+  /// Cloneable handle to a scratch space initialized for the same db as
+  /// [`Self::live`].
   pub scratch: Box<dyn Handle<R=Scratch>>,
 }
 
 impl<'code> ScratchStreamSink<'code> {
+  /// Collate all the state necessary to match against a stream.
   pub fn new(
     live: impl Handle<R=LiveStream>,
     matcher: StreamMatcher<'code>,
@@ -465,6 +470,49 @@ impl<'code> ScratchStreamSink<'code> {
     }
   }
 
+  /// Write a single contiguous string into the automaton.
+  ///
+  ///```
+  /// #[cfg(feature = "compiler")]
+  /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+  ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
+  ///   use std::ops::Range;
+  ///
+  ///   let expr: Expression = "a+".parse()?;
+  ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_LARGE)?;
+  ///   let scratch = db.allocate_scratch()?;
+  ///   let live = db.allocate_stream()?;
+  ///
+  ///   // Create the `matches` vector which is mutably captured in the dyn closure.
+  ///   let mut matches: Vec<StreamMatch> = Vec::new();
+  ///   // Capture `matches` into `match_fn`;
+  ///   // in this case, `match_fn` is an unboxed stack-allocated closure.
+  ///   let mut match_fn = |m| {
+  ///     matches.push(m);
+  ///     MatchResult::Continue
+  ///   };
+  ///
+  ///   {
+  ///     // `matcher` now keeps the reference to `matches` alive
+  ///     // in rustc's local lifetime tracking.
+  ///     let matcher = StreamMatcher::new(&mut match_fn);
+  ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
+  ///
+  ///     sink.scan("aadvarka".into())?;
+  ///     sink.scan("a".into())?;
+  ///     sink.flush_eod()?;
+  ///   }
+  ///   // `matches` is now "unlocked" by rustc after `matcher` was dropped!
+  ///   let matches: Vec<Range<usize>> = matches
+  ///     .into_iter()
+  ///     .map(|m| m.range.into())
+  ///     .collect();
+  ///   assert_eq!(&matches, &[0..1, 0..2, 4..5, 7..8, 7..9]);
+  ///   Ok(())
+  /// }
+  /// # #[cfg(not(feature = "compiler"))]
+  /// # fn main() {}
+  /// ```
   pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), VectorscanRuntimeError> {
     let Self {
       live,
@@ -476,6 +524,8 @@ impl<'code> ScratchStreamSink<'code> {
       .scan_sync_stream(live.make_mut()?, matcher, data)
   }
 
+  /// Write vectored string data into the automaton.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -537,6 +587,16 @@ impl<'code> ScratchStreamSink<'code> {
       .scan_sync_vectored_stream(live.make_mut()?, matcher, data)
   }
 
+  /// Trigger any match callbacks that require matching against the end of data
+  /// (EOD).
+  ///
+  /// [`Expression::info()`] returns a [`MatchAtEndBehavior`] can be used to
+  /// determine whether this check is necessary. But it typically makes sense
+  /// to execute it exactly once at the end of every stream instead of trying
+  /// to optimize this away.
+  ///
+  /// [`Expression::info()`]: crate::expression::Expression::info
+  /// [`MatchAtEndBehavior`]: crate::expression::info::MatchAtEndBehavior
   pub fn flush_eod(&mut self) -> Result<(), VectorscanRuntimeError> {
     let Self {
       live,
@@ -548,6 +608,7 @@ impl<'code> ScratchStreamSink<'code> {
       .flush_eod_sync(live.make_mut()?, matcher)
   }
 
+  /// Reach into [`Self::live`] and call [`LiveStream::reset()`].
   pub fn reset(&mut self) -> Result<(), VectorscanRuntimeError> { self.live.make_mut()?.reset() }
 }
 
@@ -561,6 +622,15 @@ pub(crate) mod std_impls {
   #[cfg(feature = "vectored")]
   use std::mem;
 
+  /// A wrapper over [`ScratchStreamSink`] which implements [`io::Write`].
+  ///
+  /// The reason this is separate from [`ScratchStreamSink`] is that in the case
+  /// of vectored writes, [`io::IoSlice`] must be converted into
+  /// [`VectoredByteSlices`]. This would typically require a dynamic memory
+  /// allocation, but this struct maintains an internal buffer of strings
+  /// which is re-used for subsequent vectored writes to avoid repeated dynamic
+  /// memory allocation.
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
@@ -607,6 +677,7 @@ pub(crate) mod std_impls {
   }
 
   impl<'code> StreamWriter<'code> {
+    /// Construct a wrapper over `inner`.
     pub fn new(inner: ScratchStreamSink<'code>) -> Self {
       Self {
         inner,
@@ -643,6 +714,22 @@ pub(crate) mod std_impls {
 }
 pub use std_impls::StreamWriter;
 
+/// Higher-level wrappers for `async` stream parsing.
+///
+/// # `async` and Stream Parsing
+/// As discussed in [Asynchronous String Scanning], `async` code can
+/// occasionally offer additional opportunities for parallelism by sending
+/// vectorscan matches through an async channel. However, `async` can be
+/// particularly useful for stream parsing applications for a different reason:
+/// because it uses up much less resources waiting on things like bursty inputs.
+/// For example, if you have a pattern with an extremely high match rate, it
+/// might be beneficial to buffer its output somewhat instead of performing
+/// logic directly in the match callback.
+///
+/// These structs implement idiomatic `async` interfaces that allow vectorscan
+/// to be plugged into a variety of `async` codebases.
+///
+/// [Asynchronous String Scanning]: crate::state::Scratch#asynchronous-string-scanning
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub mod channel {
@@ -665,6 +752,12 @@ pub mod channel {
 
   use std::mem;
 
+  /// An `async` version of [`super::ScratchStreamSink`].
+  ///
+  /// By holding handles to [`Self::live`] and [`Self::scratch`], the stream
+  /// scanning API can be made quite fluent, without as many parameters per
+  /// call:
+  ///
   ///```
   /// #[cfg(feature = "compiler")]
   /// fn main() -> Result<(), vectorscan::error::VectorscanError> { tokio_test::block_on(async {
@@ -694,9 +787,15 @@ pub mod channel {
   /// # fn main() {}
   /// ```
   pub struct ScratchStreamSinkChannel<'code> {
+    /// Cloneable handle to a stateful stream.
     pub live: Box<dyn Handle<R=LiveStream>+Send>,
+    /// A "handler function" synthesized by [`Self::new()`] which closes over an
+    /// [`mpsc::UnboundedSender`].
     pub hf: Box<dyn FnMut(StreamMatch) -> MatchResult+Send+'code>,
+    /// Cloneable handle to a scratch space initialized for the same db as
+    /// [`Self::live`].
     pub scratch: Box<dyn Handle<R=Scratch>+Send>,
+    /// The other half of the sender/receiver pair created by [`Self::new()`].
     pub rx: mpsc::UnboundedReceiver<StreamMatch>,
   }
 

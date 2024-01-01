@@ -920,7 +920,7 @@ pub mod chimera {
   /// [`ChimeraMode::NOGROUPS`](crate::flags::chimera::ChimeraMode::NOGROUPS) is
   /// used, [`Self::captures`] will always be [`None`], and `.clone()` can be
   /// called without any heap allocation. As an additional optimization,
-  /// patterns with up to 9 capturing groups (the 0th group being the entire
+  /// patterns with up to 19 capturing groups (the 0th group being the entire
   /// match) are stored on the stack with [`smallvec`].
   #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
   pub struct ChimeraMatch<'a> {
@@ -948,7 +948,7 @@ pub mod chimera {
     /// empty string. The 0th capture always corresponds to the entire match
     /// text, so it is always [`Some`] and should always be
     /// equal to [`Self::source`].
-    pub captures: Option<SmallVec<Option<ByteSlice<'a>>, 10>>,
+    pub captures: Option<SmallVec<Option<ByteSlice<'a>>, 20>>,
   }
 
   impl<'a> hash::Hash for ChimeraMatch<'a> {
