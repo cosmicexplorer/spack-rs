@@ -1,5 +1,7 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+#![allow(clippy::single_component_path_imports)]
 
 use spack::utils::declarative::resolve;
 

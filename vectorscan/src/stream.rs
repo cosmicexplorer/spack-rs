@@ -514,6 +514,7 @@ impl<'code> ScratchStreamSink<'code> {
   /// # #[cfg(not(feature = "compiler"))]
   /// # fn main() {}
   /// ```
+  #[allow(clippy::needless_lifetimes)]
   pub fn scan<'data>(&mut self, data: ByteSlice<'data>) -> Result<(), VectorscanRuntimeError> {
     let Self {
       live,

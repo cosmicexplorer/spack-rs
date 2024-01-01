@@ -249,7 +249,7 @@ pub mod vectored {
       }
       for (out_slice, in_slice) in cache.iter_mut().zip(bufs.iter()) {
         let in_slice: &'static std::io::IoSlice<'static> = unsafe { mem::transmute(in_slice) };
-        out_slice.write(ByteSlice::from_slice(&in_slice));
+        out_slice.write(ByteSlice::from_slice(in_slice));
       }
       let bufs: &'slice [ByteSlice<'string>] = unsafe { mem::transmute(&cache[..]) };
       Self::from_slices(bufs)
@@ -470,7 +470,7 @@ pub mod vectored {
     /// ragged substrings which are also stored in this struct.
     pub fn iter_slices(
       &self,
-    ) -> impl Iterator<Item=ByteSlice<'string>>+ExactSizeIterator+DoubleEndedIterator+'_ {
+    ) -> impl ExactSizeIterator<Item=ByteSlice<'string>>+DoubleEndedIterator+'_ {
       VectorIter::new(self)
     }
   }

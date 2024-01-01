@@ -580,6 +580,7 @@ impl Scratch {
   /// [`ScratchStreamSink::scan()`](crate::stream::ScratchStreamSink::scan).
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+  #[allow(clippy::needless_lifetimes)]
   pub fn scan_sync_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
@@ -610,6 +611,7 @@ impl Scratch {
   /// [`ScratchStreamSink::scan_vectored()`](crate::stream::ScratchStreamSink::scan_vectored).
   #[cfg(all(feature = "stream", feature = "vectored"))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "stream", feature = "vectored"))))]
+  #[allow(clippy::needless_lifetimes)]
   pub fn scan_sync_vectored_stream<'data, 'code>(
     &mut self,
     live: &mut LiveStream,
@@ -642,6 +644,7 @@ impl Scratch {
   /// [`ScratchStreamSink::flush_eod()`](crate::stream::ScratchStreamSink::flush_eod).
   #[cfg(feature = "stream")]
   #[cfg_attr(docsrs, doc(cfg(feature = "stream")))]
+  #[allow(clippy::needless_lifetimes)]
   pub fn flush_eod_sync<'code>(
     &mut self,
     live: &mut LiveStream,
@@ -686,6 +689,7 @@ impl Scratch {
     data: ByteSlice<'data>,
   ) -> Result<Option<Match<'data>>, VectorscanRuntimeError> {
     let mut capture_text: Option<Match<'data>> = None;
+    #[allow(clippy::blocks_in_conditions)]
     match self.scan_sync(db, data, |m| {
       debug_assert!(capture_text.is_none());
       capture_text = Some(m);
@@ -727,6 +731,7 @@ impl Scratch {
     data: ByteSlice<'data>,
   ) -> Result<Option<Match<'data>>, VectorscanRuntimeError> {
     let mut fully_matched_expr: Option<Match<'data>> = None;
+    #[allow(clippy::blocks_in_conditions)]
     match self.scan_sync(db, data, |m| {
       debug_assert!(fully_matched_expr.is_none());
       if m.source.as_slice().len() == data.as_slice().len() {
@@ -1756,6 +1761,7 @@ pub mod chimera {
       data: ByteSlice<'data>,
     ) -> Result<Option<ChimeraMatch<'data>>, ChimeraRuntimeError> {
       let mut capture: Option<ChimeraMatch<'data>> = None;
+      #[allow(clippy::blocks_in_conditions)]
       match self.scan_sync(
         db,
         data,
@@ -1784,6 +1790,7 @@ pub mod chimera {
       data: ByteSlice<'data>,
     ) -> Result<Option<ChimeraMatch<'data>>, ChimeraRuntimeError> {
       let mut fully_matched_expr: Option<ChimeraMatch<'data>> = None;
+      #[allow(clippy::blocks_in_conditions)]
       match self.scan_sync(
         db,
         data,
