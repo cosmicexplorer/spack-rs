@@ -1,4 +1,4 @@
-/* Copyright 2022-2023 Danny McClanahan */
+/* Copyright 2022-2024 Danny McClanahan */
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 //! Errors returned by methods in this library.
@@ -114,7 +114,7 @@ pub enum VectorscanRuntimeError {
   /// [`LiveStream::compress()`](crate::stream::LiveStream) when requesting the
   /// amount of memory to allocate for a compressed stream. Users of this
   /// library should never see this error when using the
-  /// [`CompressReserveBehavior`](crate::stream::compress::CompressReserveBehavior)
+  /// [`CompressReserveBehavior`](crate::stream::CompressReserveBehavior)
   /// interface.
   InsufficientSpace = hs::HS_INSUFFICIENT_SPACE,
   /// Unexpected internal error.

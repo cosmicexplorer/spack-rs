@@ -232,23 +232,23 @@ impl LiveStream {
   }
 
   /// Write the stream's current state into a buffer according to the `into`
-  /// strategy using [`compress::CompressedStream::compress()`].
+  /// strategy using [`CompressedStream::compress()`].
   ///
   /// The stream can later be deserialized from this state into a working
   /// in-memory stream again with methods such as
-  /// [`compress::CompressedStream::expand()`].
+  /// [`CompressedStream::expand()`].
   pub fn compress(
     &self,
-    into: compress::CompressReserveBehavior,
-  ) -> Result<compress::CompressedStream, CompressionError> {
-    compress::CompressedStream::compress(into, self)
+    into: CompressReserveBehavior,
+  ) -> Result<CompressedStream, CompressionError> {
+    CompressedStream::compress(into, self)
   }
 }
 
 /// # Managing Allocations
 /// These methods provide access to the underlying memory allocation containing
 /// the data for the in-memory stream. They can be used along with
-/// [`compress::CompressedStream::expand_into_at()`] to control the memory
+/// [`CompressedStream::expand_into_at()`] to control the memory
 /// location used for the stream, or to preserve stream allocations across
 /// weird lifetime constraints.
 ///
@@ -262,7 +262,7 @@ impl LiveStream {
   ///
   /// # Safety
   /// The pointer `p` must point to an initialized db allocation prepared by
-  /// [`Self::open()`] or [`compress::CompressedStream::expand_into_at()`]!
+  /// [`Self::open()`] or [`CompressedStream::expand_into_at()`]!
   ///
   /// This method also makes it especially easy to create multiple references to
   /// the same allocation, which will then cause a double free when
@@ -1198,7 +1198,7 @@ pub mod channel {
   pub use tokio_impls::AsyncStreamWriter;
 }
 
-pub mod compress {
+pub(crate) mod compress {
   use super::{LiveStream, NativeStream};
   use crate::{
     database::Database,
@@ -1208,13 +1208,34 @@ pub mod compress {
 
   use std::{mem, ptr};
 
+  /// How to allocate the buffer in [`CompressedStream::compress()`].
   pub enum CompressReserveBehavior {
+    /// Allocate a new buffer of the appropriate size.
     NewBuf,
+    /// Re-use the given buffer, but expand its size by reallocating if needed.
     ExpandBuf(Vec<u8>),
+    /// Re-use the given buffer, and raise an error if reallocation is
+    /// necessary.
     FixedSizeBuf(Vec<u8>),
   }
 
   impl CompressReserveBehavior {
+    /// Get a mutable reference to the existing buffer contents, if available.
+    ///
+    /// The contents can be moved out of the resulting mutable vector with e.g.
+    /// [`mem::take()`]:
+    ///
+    ///```
+    /// use vectorscan::stream::CompressReserveBehavior;
+    /// use std::mem;
+    ///
+    /// let mut buf = CompressReserveBehavior::NewBuf;
+    /// assert!(buf.current_buf().is_none());
+    /// buf = CompressReserveBehavior::FixedSizeBuf(vec![0; 32]);
+    /// let b = mem::take(buf.current_buf().unwrap());
+    /// assert_eq!(buf.current_buf(), Some(&mut vec![]));
+    /// assert_eq!(b, vec![0; 32]);
+    /// ```
     pub fn current_buf(&mut self) -> Option<&mut Vec<u8>> {
       match self {
         Self::NewBuf => None,
@@ -1251,11 +1272,95 @@ pub mod compress {
     }
   }
 
+  /// Analogous to [`SerializedDb`](crate::database::SerializedDb), but for
+  /// serializing streams!
   pub struct CompressedStream {
-    pub buf: Vec<u8>,
+    buf: Box<[u8]>,
   }
 
   impl CompressedStream {
+    /// Consume this struct and return the contents of the internal buffer.
+    ///
+    /// The resulting box can be converted into a [`Vec`] with
+    /// [`slice::into_vec()`](prim@slice::into_vec()).
+    pub fn into_buf(self) -> Box<[u8]> { self.buf }
+
+    /// Write the stream's current state into a buffer according to the `into`
+    /// strategy.
+    ///
+    /// The stream can later be deserialized from this state into a working
+    /// in-memory stream again with methods such as [`Self::expand()`].
+    ///
+    /// If this method fails to allocate space due to the decision of the `into`
+    /// strategy, it will return [`CompressionError::NoSpace`].
+    ///
+    /// [`Self::into_buf()`] can be applied similarly to
+    /// [`CompressReserveBehavior::current_buf()`] in order to reuse the backing
+    /// storage for a subsequent [`CompressReserveBehavior`] request:
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+    ///   use vectorscan::{expression::*, flags::*, matchers::*, stream::*, state::*};
+    ///   use std::{mem, ops::Range};
+    ///
+    ///   let a_expr: Expression = "a+".parse()?;
+    ///   let b_expr: Expression = "b+".parse()?;
+    ///   let a_db = a_expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+    ///   let b_db = b_expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+    ///   let mut scratch = Scratch::blank();
+    ///   scratch.setup_for_db(&a_db)?;
+    ///   scratch.setup_for_db(&b_db)?;
+    ///   let a_live = a_db.allocate_stream()?;
+    ///   let b_live = b_db.allocate_stream()?;
+    ///
+    ///   // Allocate a new buffer.
+    ///   let a_compressed = a_live.compress(CompressReserveBehavior::NewBuf)?;
+    ///   // We no longer need the old stream:
+    ///   mem::drop(a_live);
+    ///   // Deserialize the buffer into a new stream allocation:
+    ///   let a_live = a_compressed.expand(&a_db)?;
+    ///
+    ///   // Extract the buffer: let's reuse it for another stream.
+    ///   let buf: Vec<u8> = a_compressed.into_buf().into_vec();
+    ///   let b_compressed = b_live.compress(CompressReserveBehavior::ExpandBuf(buf))?;
+    ///   // We no longer need the old stream:
+    ///   mem::drop(b_live);
+    ///   // Deserialize the buffer into a new stream allocation:
+    ///   let b_live = b_compressed.expand(&b_db)?;
+    ///
+    ///   let mut matches: Vec<StreamMatch> = Vec::new();
+    ///   let mut match_fn = |m| {
+    ///     matches.push(m);
+    ///     MatchResult::Continue
+    ///   };
+    ///
+    ///   // Both streams work:
+    ///   {
+    ///     let matcher = StreamMatcher::new(&mut match_fn);
+    ///     let mut sink = ScratchStreamSink::new(a_live, matcher, scratch);
+    ///
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///     // Overwrite the live stream object,
+    ///     // but retain the scratch and match callback:
+    ///     *sink.live.make_mut()? = b_live;
+    ///     // The stream allocation from `a_live` has now been dropped!
+    ///     sink.scan("imbibbe".into())?;
+    ///     sink.flush_eod()?;
+    ///   }
+    ///
+    ///   let matches: Vec<Range<usize>> = matches
+    ///     .into_iter()
+    ///     .map(|m| m.range.into())
+    ///     .collect();
+    ///   // The matches beginning with 2..3 are from `b_live`!
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 2..3, 4..5, 4..6]);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     pub fn compress(
       mut into: CompressReserveBehavior,
       live: &LiveStream,
@@ -1264,7 +1369,7 @@ pub mod compress {
 
       /* If we already have an existing buffer to play around with, try that right
        * off to see if it was enough to avoid further allocations. */
-      if let Some(ref mut buf) = into.current_buf() {
+      if let Some(buf) = into.current_buf() {
         match VectorscanRuntimeError::from_native(unsafe {
           hs::hs_compress_stream(
             live.as_ref_native(),
@@ -1281,7 +1386,7 @@ pub mod compress {
               buf.set_len(required_space);
             }
             return Ok(Self {
-              buf: mem::take(buf),
+              buf: mem::take(buf).into_boxed_slice(),
             });
           },
         }
@@ -1333,9 +1438,62 @@ pub mod compress {
         },
       };
 
-      Ok(Self { buf })
+      Ok(Self {
+        buf: buf.into_boxed_slice(),
+      })
     }
 
+    /// Deserialize the current buffer into a newly allocated stream object.
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+    ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
+    ///   use std::ops::Range;
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let live = db.allocate_stream()?;
+    ///
+    ///   // Allocate a new buffer.
+    ///   let behavior = CompressReserveBehavior::NewBuf;
+    ///   // Compress into the buffer.
+    ///   let compressed = live.compress(behavior)?;
+    ///
+    ///   // Deserialize the stream from the buffer into a new stream allocation:
+    ///   let live2 = compressed.expand(&db)?;
+    ///
+    ///   let mut matches: Vec<StreamMatch> = Vec::new();
+    ///   let mut match_fn = |m| {
+    ///     matches.push(m);
+    ///     MatchResult::Continue
+    ///   };
+    ///
+    ///   // Both streams work:
+    ///   {
+    ///     let matcher = StreamMatcher::new(&mut match_fn);
+    ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
+    ///
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///     // This is safe because `live` and `live2` are for the same db!
+    ///     unsafe { sink.live.make_mut()?.try_clone_from(&live2)?; }
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///   }
+    ///
+    ///   let matches: Vec<Range<usize>> = matches
+    ///     .into_iter()
+    ///     .map(|m| m.range.into())
+    ///     .collect();
+    ///   // The second round of matches starting with 0..1 is from `live2`!
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 0..1, 0..2, 5..6, 8..9]);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     pub fn expand(&self, db: &Database) -> Result<LiveStream, VectorscanRuntimeError> {
       let mut inner = ptr::null_mut();
       VectorscanRuntimeError::from_native(unsafe {
@@ -1349,8 +1507,57 @@ pub mod compress {
       Ok(unsafe { LiveStream::from_native(inner) })
     }
 
+    /// Deserialize the current buffer into a previously allocated stream
+    /// object.
+    ///
     /// # Safety
     /// `self` and `to` must have been opened against the same db!
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+    ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
+    ///   use std::ops::Range;
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let mut live = db.allocate_stream()?;
+    ///
+    ///   // Allocate a new buffer.
+    ///   let behavior = CompressReserveBehavior::NewBuf;
+    ///   // Compress into the buffer.
+    ///   let compressed = live.compress(behavior)?;
+    ///
+    ///   // Expand into an existing live stream:
+    ///   // This is safe because they were opened against the same db!
+    ///   unsafe { compressed.expand_into(&mut live)?; }
+    ///
+    ///   let mut matches: Vec<StreamMatch> = Vec::new();
+    ///   let mut match_fn = |m| {
+    ///     matches.push(m);
+    ///     MatchResult::Continue
+    ///   };
+    ///
+    ///   // The stream works normally after expanding into it:
+    ///   {
+    ///     let matcher = StreamMatcher::new(&mut match_fn);
+    ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
+    ///
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///   }
+    ///
+    ///   let matches: Vec<Range<usize>> = matches
+    ///     .into_iter()
+    ///     .map(|m| m.range.into())
+    ///     .collect();
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9]);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     pub unsafe fn expand_into(&self, to: &mut LiveStream) -> Result<(), VectorscanRuntimeError> {
       VectorscanRuntimeError::from_native(hs::hs_direct_expand_into(
         to.as_mut_native(),
@@ -1359,9 +1566,66 @@ pub mod compress {
       ))
     }
 
+    /// Deserialize the current buffer into an allocation from anywhere at all.
+    ///
     /// # Safety
     /// `to` must point to an allocation of at least [`Database::stream_size()`]
     /// bytes in size given `db`!
+    ///
+    ///```
+    /// #[cfg(feature = "compiler")]
+    /// fn main() -> Result<(), vectorscan::error::VectorscanError> {
+    ///   use vectorscan::{expression::*, flags::*, stream::*, matchers::*};
+    ///   use std::{mem, ops::Range};
+    ///
+    ///   let expr: Expression = "a+".parse()?;
+    ///   let db = expr.compile(Flags::SOM_LEFTMOST, Mode::STREAM | Mode::SOM_HORIZON_SMALL)?;
+    ///   let scratch = db.allocate_scratch()?;
+    ///   let live = db.allocate_stream()?;
+    ///
+    ///   // Allocate a new buffer.
+    ///   let behavior = CompressReserveBehavior::NewBuf;
+    ///   // Compress into the buffer.
+    ///   let compressed = live.compress(behavior)?;
+    ///
+    ///   // Expand into a stream allocated from somewhere totally different:
+    ///   let mut allocation = vec![0; db.stream_size()?];
+    ///   let live2 = unsafe {
+    ///     let allocation = allocation.as_mut_ptr() as *mut NativeStream;
+    ///     compressed.expand_into_at(&db, allocation)?;
+    ///     // ManuallyDrop avoids calling the stream dealloc method on our vector data:
+    ///     mem::ManuallyDrop::new(LiveStream::from_native(allocation))
+    ///   };
+    ///
+    ///   let mut matches: Vec<StreamMatch> = Vec::new();
+    ///   let mut match_fn = |m| {
+    ///     matches.push(m);
+    ///     MatchResult::Continue
+    ///   };
+    ///
+    ///   // Both streams work:
+    ///   {
+    ///     let matcher = StreamMatcher::new(&mut match_fn);
+    ///     let mut sink = ScratchStreamSink::new(live, matcher, scratch);
+    ///
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///     // This is safe because `live` and `live2` are for the same db!
+    ///     unsafe { sink.live.make_mut()?.try_clone_from(&live2)?; }
+    ///     sink.scan("aardvarka".into())?;
+    ///     sink.flush_eod()?;
+    ///   }
+    ///
+    ///   let matches: Vec<Range<usize>> = matches
+    ///     .into_iter()
+    ///     .map(|m| m.range.into())
+    ///     .collect();
+    ///   assert_eq!(&matches, &[0..1, 0..2, 5..6, 8..9, 0..1, 0..2, 5..6, 8..9]);
+    ///   Ok(())
+    /// }
+    /// # #[cfg(not(feature = "compiler"))]
+    /// # fn main() {}
+    /// ```
     pub unsafe fn expand_into_at(
       &self,
       db: &Database,
@@ -1376,3 +1640,4 @@ pub mod compress {
     }
   }
 }
+pub use compress::{CompressReserveBehavior, CompressedStream};
