@@ -1,0 +1,39 @@
+[package]
+name                    = "libpexl-sys"
+description             = "Bindings to the libpexl library via spack."
+version                 = "0.0.0"
+edition.workspace       = true
+license                 = "BSD-3-Clause"
+repository.workspace    = true
+authors.workspace       = true
+links                   = "pexl"
+
+[build-dependencies]
+bindgen.workspace       = true
+eyre.workspace          = true
+spack.workspace         = true
+tokio                   = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[features]
+default                 = []
+dynamic                 = []
+static                  = []
+
+[package.metadata.spack.repo]
+path                    = "local-repo"
+
+[package.metadata.spack.envs.libpexl-dynamic]
+spec                    = "libpexl@arbitrary"
+features                = { needed = ["dynamic"], conflicting = ["static"] }
+
+[package.metadata.spack.envs.libpexl-dynamic.deps.libpexl]
+type                    = "dynamic"
+lib_names               = ["pexl"]
+
+[package.metadata.spack.envs.libpexl-static]
+spec                    = "libpexl@arbitrary"
+features                = { needed = ["static"], conflicting = ["dynamic"] }
+
+[package.metadata.spack.envs.libpexl-static.deps.libpexl]
+type                    = "static"
+lib_names               = ["pexl"]

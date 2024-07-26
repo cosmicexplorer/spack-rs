@@ -1,6 +1,8 @@
 [workspace]
 members                 = [
     ".",
+    "libpexl",
+    "libpexl/sys",
     "re2",
     "re2/sys",
     "vectorscan",
@@ -10,6 +12,8 @@ members                 = [
 ]
 default-members         = [
     ".",
+    "libpexl",
+    "libpexl/sys",
     "re2",
     "re2/sys",
     "vectorscan",
@@ -38,6 +42,8 @@ name                    = "spack"
 
 [workspace.dependencies]
 handles                 = { path = "handles", version = "0.0.1" }
+libpexl                 = { path = "libpexl" }
+libpexl-sys             = { path = "libpexl/sys", version = "0.0.0" }
 vectorscan              = { path = "vectorscan", package = "vectorscan-async" }
 vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.1" }
 re2                     = { path = "re2" }
