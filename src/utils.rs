@@ -138,21 +138,22 @@ mod test {
     // Locate all the executables.
     let spack = SpackInvocation::summon().await?;
 
-    // Let's look for an `m4` installation, and find the `m4` executable.
-    let m4_prefix = utils::ensure_prefix(spack, "m4".into()).await?;
-    let m4_bin_path = m4_prefix.path.join("bin").join("m4");
+    // Let's look for a `zip` installation, and find the `zip` executable.
+    let zip_prefix = utils::ensure_prefix(spack, "zip".into()).await?;
+    let zip_bin_path = zip_prefix.path.join("bin").join("zip");
 
     // Let's make sure the executable can be executed successfully!
     let command = exe::Command {
-      exe: exe::Exe(fs::File(m4_bin_path)),
+      exe: exe::Exe(fs::File(zip_bin_path)),
       argv: ["--version"].as_ref().into(),
       ..Default::default()
     };
     let output = command
+      .clone()
       .invoke()
       .await
-      .expect("expected m4 command to succeed");
-    assert!(output.stdout.starts_with(b"m4 "));
+      .expect("expected zip command to succeed");
+    assert!(output.decode(command).unwrap().stdout.contains("\nThis is Zip "));
     Ok(())
   }
 
@@ -161,9 +162,9 @@ mod test {
     // Locate all the executables.
     let spack = crate::SpackInvocation::summon().await?;
 
-    // Let's look for an `m4` installation.
-    let m4_spec = crate::utils::ensure_installed(spack, "m4".into()).await?;
-    assert!(&m4_spec.name == "m4");
+    // Let's look for a `zlib` installation.
+    let zlib_spec = crate::utils::ensure_installed(spack, "zlib".into()).await?;
+    assert!(&zlib_spec.name == "zlib");
     Ok(())
   }
 }

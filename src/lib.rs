@@ -48,10 +48,10 @@ pub mod versions {
     use super::hex;
 
     pub const PATCHES_SPACK_URL: &str =
-      "https://github.com/cosmicexplorer/spack/archive/refs/tags/cargo-patches-v2.tar.gz";
+      "https://github.com/cosmicexplorer/spack/archive/refs/tags/cargo-patches-v5.tar.gz";
     pub const PATCHES_SHA256SUM: [u8; 32] =
-      hex!("32fc4ed023ecddde91fc5803f20dc8982681914747cbfcacd306dec123283442");
-    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-cargo-patches-v2";
+      hex!("f63f78227ef477ac3811d8e73aa69ad482aaee66a974fb04a0c43aab6b4119ab");
+    pub const PATCHES_TOPLEVEL_COMPONENT: &str = "spack-cargo-patches-v5";
   }
 
   /// The most recently released version of spack.
@@ -59,10 +59,10 @@ pub mod versions {
     use super::hex;
 
     pub const MOST_RECENT_HARDCODED_SPACK_URL: &str =
-      "https://github.com/spack/spack/archive/refs/tags/v0.20.3.tar.gz";
+      "https://github.com/spack/spack/archive/refs/tags/v0.23.1.tar.gz";
     pub const MOST_RECENT_HARDCODED_URL_SHA256SUM: [u8; 32] =
-      hex!("c7deaa2f51502ff6f84f79845d8bd23202b0524f7669d3f779bd2049bc43e177");
-    pub const MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.20.3";
+      hex!("32ca622c49448a3b4e398eb1397d8ff9a6aa987a248de621261e24e65f287593");
+    pub const MOST_RECENT_HARDCODED_SPACK_ARCHIVE_TOPLEVEL_COMPONENT: &str = "spack-0.23.1";
   }
 
   /// A spack branch with support for emscripten as a compiler, enabling

@@ -11,6 +11,7 @@
 
 #[allow(unused, improper_ctypes, clippy::all)]
 mod bindings {
+  /* include!("bindings.rs"); */
   include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 pub use bindings::root::{re2, re2_c_bindings as re2_c};

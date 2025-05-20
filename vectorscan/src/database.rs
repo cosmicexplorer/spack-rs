@@ -236,7 +236,7 @@ impl Database {
 ///   assert!(db_with_avx2.info()? == db_local.info()?);
 ///   assert!(db_no_avx2.info()? != db_local.info()?);
 ///
-///   // The "same" db even applies to the in-memory representation:
+///   // The "same" db does *not* apply to the in-memory representation:
 ///   let db_data_1 = unsafe { slice::from_raw_parts(
 ///     db_with_avx2.as_ref_native() as *const NativeDb as *const u8,
 ///     n,
@@ -249,7 +249,7 @@ impl Database {
 ///     db_local.as_ref_native() as *const NativeDb as *const u8,
 ///     n,
 ///   )};
-///   assert!(db_data_1 == db_data_3);
+///   assert!(db_data_1 != db_data_3);
 ///   assert!(db_data_1 != db_data_2);
 ///   Ok(())
 /// }

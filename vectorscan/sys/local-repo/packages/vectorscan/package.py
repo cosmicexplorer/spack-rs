@@ -50,7 +50,7 @@ class Vectorscan(CMakePackage):
 
         args.append(self.define("USE_CPU_NATIVE", "ON"))
 
-        features = self.spec.architecture.target.microarchitecture.features
+        features = self.spec.architecture.target.features
         if 'avx2' in features:
             args.append(self.define("BUILD_AVX2", "ON"))
         if 'avx512' in features:

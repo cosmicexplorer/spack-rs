@@ -54,23 +54,39 @@ impl MatchedSetInfo {
 
   /// Interpret this `std::vector<int>` as a slice of expression indices.
   pub fn as_expression_slice(&self) -> &[ExpressionIndex] {
-    unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+    if self.is_empty() {
+      &[]
+    } else {
+      unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+    }
   }
 
   /// Interpret this `std::vector<int>` as a mutable slice of expression
   /// indices.
   pub fn as_mut_expression_slice(&mut self) -> &mut [ExpressionIndex] {
-    unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
+    if self.is_empty() {
+      &mut []
+    } else {
+      unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
+    }
   }
 
   /// Interpret this `std::vector<int>` as a slice of atom indices.
   pub fn as_atom_slice(&self) -> &[AtomIndex] {
-    unsafe { slice::from_raw_parts(self.atom_data_pointer(), self.len()) }
+    if self.is_empty() {
+      &[]
+    } else {
+      unsafe { slice::from_raw_parts(self.atom_data_pointer(), self.len()) }
+    }
   }
 
   /// Interpret this `std::vector<int>` as a mutable slice of atom indices.
   pub fn as_mut_atom_slice(&mut self) -> &mut [AtomIndex] {
-    unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
+    if self.is_empty() {
+      &mut []
+    } else {
+      unsafe { slice::from_raw_parts_mut(mem::transmute(self.0.data()), self.len()) }
+    }
   }
 
   /// Return the capacity of the backing vector.

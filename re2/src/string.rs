@@ -94,7 +94,11 @@ impl<'a> StringView<'a> {
 
   /// Produce a Rust-compatible view of this byte slice.
   pub const fn as_slice(&self) -> &'a [u8] {
-    unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+    if self.is_empty() {
+      &[]
+    } else {
+      unsafe { slice::from_raw_parts(self.data_pointer(), self.len()) }
+    }
   }
 
   /// Produce a Rust string view of this byte slice.
@@ -238,7 +242,11 @@ impl<'a> StringMut<'a> {
 
   /// Produce a Rust-compatible view of this mutable byte slice.
   pub fn as_mut_slice(&self) -> &'a mut [u8] {
-    unsafe { slice::from_raw_parts_mut(self.mut_data_pointer(), self.len()) }
+    if self.is_empty() {
+      &mut []
+    } else {
+      unsafe { slice::from_raw_parts_mut(self.mut_data_pointer(), self.len()) }
+    }
   }
 
   /// Produce a Rust string view of this mutable byte slice.

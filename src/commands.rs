@@ -55,7 +55,7 @@ impl ArgvWrapper for RepoDirs {
       return;
     }
     assert!(self.0.iter().all(|p| p.is_absolute()));
-    self.0.push("$spack/var/spack/repos/builtin".into());
+    self.0.push("$spack/var/spack/repos/spack_repo/builtin".into());
     let joined = self
       .0
       .into_iter()
@@ -374,10 +374,11 @@ pub mod find {
     /// concrete package version: {0}
     pub version: ConcreteVersion,
     pub arch: serde_json::Value,
-    pub compiler: serde_json::Value,
     pub namespace: String,
     pub parameters: serde_json::Value,
+    pub package_hash: String,
     pub dependencies: Option<serde_json::Value>,
+    pub annotations: serde_json::Value,
     /// 32-character hash uniquely identifying this spec: {0}
     pub hash: String,
   }
@@ -576,17 +577,17 @@ pub mod find {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure an m4 is installed.
+      // Ensure a zlib is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("m4"),
+        spec: CLISpec::new("zlib@1.3.1"),
         verbosity: Default::default(),
         env: None,
         repos: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
-      // Look for an m4 spec with that exact hash.
+      // Look for a zlib spec with that exact hash.
       let find = Find {
         spack,
         spec: found_spec.hashed_spec(),
@@ -602,12 +603,12 @@ pub mod find {
         .map_err(|e| crate::commands::CommandError::Find(find, e))?;
 
       // Here, we just check the first of the found specs.
-      assert!(&found_specs[0].name == "m4");
+      assert!(&found_specs[0].name == "zlib");
       // Verify that this is the same spec as before.
       assert!(&found_specs[0].hash == &found_spec.hash);
       // The fields of the '--json' output of 'find'
       // are deserialized into FoundSpec instances.
-      assert!(&found_specs[0].version.0[..4] == "1.4.");
+      assert!(&found_specs[0].version.0[..5] == "1.3.1");
       Ok(())
     }
 
@@ -622,10 +623,10 @@ pub mod find {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure an m4 is installed.
+      // Ensure a zip is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("m4"),
+        spec: CLISpec::new("zip"),
         verbosity: Default::default(),
         env: None,
         repos: None,
@@ -636,7 +637,7 @@ pub mod find {
         .await
         .map_err(|e| crate::commands::CommandError::Install(install, e))?;
 
-      // Look for an m4 spec with that exact hash.
+      // Look for a zip spec with that exact hash.
       let find_prefix = FindPrefix {
         spack,
         spec: found_spec.hashed_spec(),
@@ -645,16 +646,16 @@ pub mod find {
       };
 
       // .find_prefix() will return the spec's prefix root wrapped in an Option.
-      let m4_prefix = find_prefix
+      let zip_prefix = find_prefix
         .clone()
         .find_prefix()
         .await
         .map_err(|e| crate::commands::CommandError::FindPrefix(find_prefix, e))?
         .unwrap();
 
-      // Verify that this prefix contains the m4 executable.
-      let m4_exe = m4_prefix.path.join("bin").join("m4");
-      assert!(fs::File::open(m4_exe).is_ok());
+      // Verify that this prefix contains the zip executable.
+      let zip_exe = zip_prefix.path.join("bin").join("zip");
+      assert!(fs::File::open(zip_exe).is_ok());
       Ok(())
     }
   }
@@ -758,28 +759,35 @@ pub mod load {
       // Locate all the executables.
       let spack = SpackInvocation::summon().await?;
 
-      // Ensure an m4 is installed.
+      // Ensure a zlib is installed.
       let install = Install {
         spack: spack.clone(),
-        spec: CLISpec::new("m4"),
+        spec: CLISpec::new("zlib"),
         verbosity: Default::default(),
         env: None,
         repos: None,
       };
       let found_spec = install.clone().install_find().await.unwrap();
 
-      // Look for a m4 spec with that exact hash.
+      // Look for a zlib spec with that exact hash.
       let load = Load {
         spack,
         specs: vec![found_spec.hashed_spec()],
       };
-      let exe::EnvModifications(m4_env) = load
+      // This is the contents of a source-able environment script.
+      let exe::EnvModifications(zlib_env) = load
         .clone()
         .load()
         .await
         .map_err(|e| crate::commands::CommandError::Load(load, e))?;
-      // This is the contents of a source-able environment script.
-      assert!(m4_env.contains_key(OsStr::new("M4")));
+      let hashes: Vec<&str> = zlib_env
+        .get(OsStr::new("SPACK_LOADED_HASHES"))
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(":")
+        .collect();
+      assert_eq!(&hashes[0], &found_spec.hash);
       Ok(())
     }
   }
@@ -1444,14 +1452,17 @@ pub mod compiler_find {
   /// A compiler found by [`CompilerFind::compiler_find`].
   #[derive(Debug, Display, Serialize, Deserialize, Clone)]
   pub struct FoundCompiler {
-    pub compiler: CompilerSpec,
+    pub spec: OuterSpec,
+  }
+
+  #[derive(Debug, Display, Serialize, Deserialize, Clone)]
+  pub struct OuterSpec {
+    pub nodes: Vec<CompilerSpec>,
   }
 
   impl FoundCompiler {
     pub fn into_compiler_spec_string(self) -> String {
-      let Self {
-        compiler: CompilerSpec { name, version },
-      } = self;
+      let CompilerSpec { name, version } = &self.spec.nodes[0];
       format!("{}@{}", name, version)
     }
   }
@@ -1536,31 +1547,8 @@ pub mod compiler_find {
         .await
         .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
       // The first compiler on the list is gcc or clang!
-      let first_name = &found_compilers[0].compiler.name;
-      assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
-      Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_find_compiler_specs() -> Result<(), crate::Error> {
-      use crate::{commands::compiler_find::*, SpackInvocation};
-
-      // Locate all the executables.
-      let spack = SpackInvocation::summon().await.unwrap();
-
-      // Create compiler-find execution request.
-      let find_compiler_specs = FindCompilerSpecs {
-        spack: spack.clone(),
-        paths: vec![],
-      };
-      let found_compilers = find_compiler_specs
-        .clone()
-        .find_compiler_specs()
-        .await
-        .map_err(|e| CommandError::FindCompilerSpecs(find_compiler_specs, e))?;
-      // The first compiler on the list is gcc or clang!
-      let first_name = &found_compilers[0].compiler.name;
-      assert!(first_name.starts_with("gcc") || first_name.starts_with("clang"));
+      let first_name = &found_compilers[0].spec.nodes[0].name;
+      assert!(first_name == "gcc" || first_name == "llvm");
       Ok(())
     }
   }

@@ -13,6 +13,7 @@
 
 #[allow(unused, improper_ctypes, clippy::all)]
 mod bindings {
+  /* include!("bindings.rs"); */
   include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 pub use bindings::root as hs;

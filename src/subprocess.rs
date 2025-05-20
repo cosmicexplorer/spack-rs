@@ -267,7 +267,7 @@ pub mod spack {
 
       let bootstrap_install = commands::install::Install {
         spack: self.clone(),
-        spec: commands::CLISpec::new("m4"),
+        spec: commands::CLISpec::new("zlib"),
         verbosity: Default::default(),
         env: None,
         repos: None,
@@ -321,7 +321,7 @@ pub mod spack {
     async fn test_summon() -> Result<(), crate::Error> {
       let spack = SpackInvocation::summon().await?;
       // This is the current version number for the spack installation.
-      assert_eq!(spack.version, "0.22.0.dev0");
+      assert_eq!(spack.version, "1.0.0.dev0");
       Ok(())
     }
 
@@ -336,7 +336,7 @@ pub mod spack {
       let spack = SpackInvocation::create(python, spack_exe).await?;
 
       // This is the current version number for the spack installation.
-      assert_eq!(spack.version, "0.22.0.dev0");
+      assert_eq!(spack.version, "1.0.0.dev0");
       Ok(())
     }
   }
