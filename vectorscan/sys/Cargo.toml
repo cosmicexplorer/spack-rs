@@ -1,7 +1,7 @@
 [package]
 name                    = "vectorscan-sys"
 description             = "Bindings to the vectorscan library via spack."
-version                 = "0.0.1"
+version                 = "0.0.2"
 edition.workspace       = true
 license                 = "BSD-3-Clause"
 repository.workspace    = true

@@ -31,7 +31,7 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 [package]
 name                    = "spack-rs"
 description             = "Summon spack from rust build scripts!"
-version                 = "0.0.6"
+version                 = "0.0.7"
 edition.workspace       = true
 license                 = "(Apache-2.0 OR MIT)"
 repository.workspace    = true
@@ -43,12 +43,12 @@ name                    = "spack"
 [workspace.dependencies]
 handles                 = { path = "handles", version = "0.0.1" }
 libpexl                 = { path = "libpexl" }
-libpexl-sys             = { path = "libpexl/sys", version = "0.0.0" }
+libpexl-sys             = { path = "libpexl/sys", version = "0.0.1" }
 vectorscan              = { path = "vectorscan", package = "vectorscan-async" }
-vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.1" }
+vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.2" }
 re2                     = { path = "re2" }
-re2-sys                 = { path = "re2/sys", version = "0.0.6" }
-spack                   = { path = ".", version = "0.0.6", package = "spack-rs" }
+re2-sys                 = { path = "re2/sys", version = "0.0.7" }
+spack                   = { path = ".", version = "0.0.7", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.1" }
 
 async-stream            = "0.3.3"
