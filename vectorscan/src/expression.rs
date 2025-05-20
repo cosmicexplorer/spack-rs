@@ -81,7 +81,7 @@ use std::{
 /// # }
 /// ```
 ///
-/// [Pattern Support]: https://intel.github.io/vectorscan/dev-reference/compilation.html#pattern-support
+/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/compilation.html#pattern-support
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expression(CString);
 
@@ -807,7 +807,7 @@ pub mod info {
 /// These parameters cover various types of fuzzy search as well as input
 /// subsetting features. See [Extended Parameters] for a further reference.
 ///
-/// [Extended Parameters]: https://intel.github.io/vectorscan/dev-reference/compilation.html#extparam
+/// [Extended Parameters]: https://intel.github.io/hyperscan/dev-reference/compilation.html#extparam
 ///
 /// This structure may be passed in when building a database with
 /// [`ExpressionSet::with_exts()`], or used to interrogate a single expression
@@ -1239,7 +1239,7 @@ impl<'a> LiteralSet<'a> {
 ///
 /// As per [Pattern Support], chimera has full support for PCRE.
 ///
-/// [Pattern Support]: https://intel.github.io/vectorscan/dev-reference/chimera.html#pattern-support
+/// [Pattern Support]: https://intel.github.io/hyperscan/dev-reference/chimera.html#pattern-support
 ///
 /// As chimera focuses mainly on supporting PCRE compatibility and group
 /// matching support, this interface is less full-featured than the standard
