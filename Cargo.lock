@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "re2"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "displaydoc",
  "indexmap 1.9.3",
@@ -1444,7 +1444,7 @@ dependencies = [
 
 [[package]]
 name = "re2-sys"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "bindgen",
  "cc",
@@ -2150,7 +2150,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vectorscan-async"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "cfg-if",
  "displaydoc",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "vectorscan-sys"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "bindgen",
  "eyre",

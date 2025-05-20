@@ -61,13 +61,21 @@ pub mod root {
   pub const HS_MODE_SOM_HORIZON_MEDIUM: u32 = 33554432;
   pub const HS_MODE_SOM_HORIZON_SMALL: u32 = 67108864;
   pub const HS_OFFSET_PAST_HORIZON: i8 = -1;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_database;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_error_t;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_platform_info;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_compile_error;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_expr_ext;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_expr_info;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_scratch;
+  #[derive(Debug, Copy, Clone)]
   pub struct hs_stream;
   pub const CH_SUCCESS: u8 = 0;
   pub const CH_INVALID: i8 = -1;

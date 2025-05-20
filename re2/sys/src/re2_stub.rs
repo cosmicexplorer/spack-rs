@@ -42,21 +42,35 @@ pub mod root {
     pub const RE2_Set_ErrorKind_kOutOfMemory: RE2_Set_ErrorKind = 2;
     pub const RE2_Set_ErrorKind_kInconsistent: RE2_Set_ErrorKind = 3;
     pub type RE2_Set_ErrorKind = ::std::os::raw::c_uint;
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2_Set_ErrorInfo;
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2_Options;
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2;
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2_Set;
   }
   pub mod re2_c_bindings {
+    #[derive(Debug, Copy, Clone)]
     pub struct StringView;
+    #[derive(Debug, Copy, Clone)]
     pub struct StringMut;
+    #[derive(Debug, Copy, Clone)]
     pub struct NamedGroup;
+    #[derive(Debug, Copy, Clone)]
     pub struct MatchedSetInfo;
+    #[derive(Debug, Copy, Clone)]
     pub struct RE2Wrapper;
+    #[derive(Debug, Copy, Clone)]
     pub struct SetWrapper;
+    #[derive(Debug, Copy, Clone)]
     pub struct StringWrapper;
+    #[derive(Debug, Copy, Clone)]
     pub struct NamedCapturingGroups;
+    #[derive(Debug, Copy, Clone)]
     pub struct StringSet;
+    #[derive(Debug, Copy, Clone)]
     pub struct FilteredRE2Wrapper;
   }
 }
