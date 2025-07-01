@@ -310,6 +310,10 @@ int SetWrapper::add(const StringView pattern, StringWrapper *error) {
 
 bool SetWrapper::compile() { return set_->Compile(); }
 
+int SetWrapper::size() const {
+  return set_->Size();
+}
+
 bool SetWrapper::match_routine(const StringView text, MatchedSetInfo *v) const {
   return set_->Match(text.into_absl_view(), v->get_mutable());
 }

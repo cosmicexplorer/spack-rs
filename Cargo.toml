@@ -47,7 +47,7 @@ libpexl-sys             = { path = "libpexl/sys", version = "0.0.1" }
 vectorscan              = { path = "vectorscan", package = "vectorscan-async" }
 vectorscan-sys          = { path = "vectorscan/sys", version = "0.0.3" }
 re2                     = { path = "re2" }
-re2-sys                 = { path = "re2/sys", version = "0.0.8" }
+re2-sys                 = { path = "re2/sys", version = "0.0.9" }
 spack                   = { path = ".", version = "0.0.8", package = "spack-rs" }
 super-process           = { path = "super-process", version = "0.0.1" }
 

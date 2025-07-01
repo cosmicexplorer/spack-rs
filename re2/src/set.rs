@@ -201,6 +201,9 @@ impl SetBuilder {
       Err(SetCompileError::OutOfMemory)
     }
   }
+
+  /// Return the number of patterns the set will match after building.
+  pub fn size(&self) -> usize { unsafe { self.0.size() }.try_into().unwrap() }
 }
 
 impl ops::Drop for SetBuilder {
@@ -221,8 +224,11 @@ impl ops::Drop for SetBuilder {
 ///
 /// let mut builder = SetBuilder::new(Options::default(), Anchor::Unanchored);
 /// let a = builder.add("a+")?;
+/// assert_eq!(builder.size(), 1);
 /// let b = builder.add("b+")?;
+/// assert_eq!(builder.size(), 2);
 /// let s = builder.compile()?;
+/// assert_eq!(s.size(), 2);
 ///
 /// let mut m = MatchedSetInfo::empty();
 /// assert!(s.match_routine_with_error("aaaa bbbb", &mut m)?);
@@ -234,6 +240,9 @@ impl ops::Drop for SetBuilder {
 pub struct Set(pub(crate) re2_c::SetWrapper);
 
 impl Set {
+  /// Return the number of patterns the set will match.
+  pub fn size(&self) -> usize { unsafe { self.0.size() }.try_into().unwrap() }
+
   pub(crate) fn match_routine_view(&self, text: StringView, matches: &mut MatchedSetInfo) -> bool {
     unsafe {
       self

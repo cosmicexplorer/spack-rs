@@ -186,6 +186,7 @@ public:
 
   int add(StringView pattern, StringWrapper *error);
   bool compile();
+  int size() const;
 
   bool match_routine(StringView text, MatchedSetInfo *v) const;
   bool match_routine_with_error(StringView text, MatchedSetInfo *v,
