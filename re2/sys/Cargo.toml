@@ -20,8 +20,11 @@ default                 = []
 dynamic                 = []
 static                  = []
 
+[package.metadata.spack.repo]
+path                    = "local-repo"
+
 [package.metadata.spack.envs.re2-dynamic]
-spec                    = "re2@2024-07-02+shared+pic ^ abseil-cpp+shared cxxstd=20"
+spec                    = "re2@2025-06-26b+shared+pic ^ abseil-cpp+shared cxxstd=20"
 features                = { needed = ["dynamic"], conflicting = ["static"] }
 
 [package.metadata.spack.envs.re2-dynamic.deps.re2]
@@ -42,7 +45,7 @@ lib_names               = [
 ]
 
 [package.metadata.spack.envs.re2-static]
-spec                    = "re2@2024-07-02~shared ^ abseil-cpp~shared cxxstd=20"
+spec                    = "re2@2025-06-26b~shared ^ abseil-cpp~shared cxxstd=20"
 features                = { needed = ["static"], conflicting = ["dynamic"] }
 
 [package.metadata.spack.envs.re2-static.deps.re2]
